@@ -104,4 +104,6 @@ swift test                   # 端末エミュレータとマクロのテスト
 
 ## ライセンス
 
-Tera Term と同じ BSD ライセンス (リポジトリ直下の `LICENSE.md`) に従います。
+MIT License ([LICENSE](LICENSE))。ホームページ: https://github.com/satorunet/teraterm_macos
+
+アイコンは Tera Term の `teraterm/common/teraterm.ico` を変換したもので、Tera Term の BSD ライセンス (© T. Teranishi / TeraTerm Project) に従います (LICENSE の Third-party notice を参照)。

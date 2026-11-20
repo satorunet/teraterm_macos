@@ -1,15 +1,44 @@
-﻿# Tera Term
+# Tera Term Mac
 
-| CI | Workflow | Status |
-|----|----------|--------|
-| GitHub Actions | Build Installer | [![Build Status](https://github.com/TeraTermProject/teraterm/actions/workflows/msbuild.yml/badge.svg)](https://github.com/TeraTermProject/teraterm/actions/workflows/msbuild.yml) |
-| GitHub Actions | Bulid with cmake (experimental) |[![Bulid with cmake (experimental)](https://github.com/TeraTermProject/teraterm/actions/workflows/build_cmake.yml/badge.svg)](https://github.com/TeraTermProject/teraterm/actions/workflows/build_cmake.yml) |
+<img src="macos/docs/icon.png" width="96" align="right" alt="">
 
-Tera Term is a free software terminal emulator
+**Tera Term の macOS 版です。** シリアル通信・SSH・Telnet・TTL マクロ・TeraTerm Menu (接続先ランチャー) が Mac で使えます。
 
-[URLs](https://github.com/TeraTermProject/teraterm/wiki/Urls)
+- ダウンロード: **[最新版 (Releases)](https://github.com/satorunet/teraterm_macos/releases/latest)** — `TeraTermMac-<版>.dmg`
+- ソース: [`macos/`](macos/) (Swift / AppKit)
+- ライセンス: **MIT** ([macos/LICENSE](macos/LICENSE))
+- 対応: macOS 11 以降 (Apple Silicon / Intel)
 
-## About Signed Binaries
+## インストール
 
-We thank [SignPath.io](https://signpath.io) for providing a free code signing service, and the [SignPath Foundation](https://signpath.org/) for providing a certificate for free code signing.
+1. Releases から `TeraTermMac-<版>.dmg` をダウンロードして開く
+2. 「Tera Term Mac」のアイコンを「アプリケーション」へドラッグ
 
+Apple の公証済みなので、そのまま起動できます。
+
+## アンインストール
+
+Tera Term Mac のメニュー →「Tera Term Mac をアンインストール…」
+(アプリ本体・設定と接続リスト・保存したパスワードを選んで削除できます)
+
+## できること
+
+| 機能 | 内容 |
+|---|---|
+| 接続 | シリアルポート / SSH / Telnet / 生 TCP / ローカルシェル |
+| 端末 | VT100 / xterm 互換、256 色・TrueColor、UTF-8 / Shift_JIS / EUC-JP、日本語入力 |
+| TeraTerm Menu | メニューバーに常駐する接続先ランチャー。自動ログイン、ttpmenu.ini の読み込み・書き出し |
+| 設定 | Windows の TERATERM.INI を読み込み、配色かんたん設定 (Terminal.app のプロファイルも) |
+| マクロ | TTL マクロの主な命令、`/M=` での起動 |
+
+詳しくは [macos/README.md](macos/README.md) を見てください。
+
+## このリポジトリについて
+
+[TeraTermProject/teraterm](https://github.com/TeraTermProject/teraterm) の fork です。
+
+- **`macos/`** — Tera Term Mac (このプロジェクト)。**MIT License**
+- それ以外 — 元の Tera Term (Windows 版) のソース。元のライセンス ([LICENSE.md](LICENSE.md), BSD 3-Clause) のまま
+  - 元の README は [README.teraterm.md](README.teraterm.md) にあります
+
+アイコンは Tera Term (© T. Teranishi / TeraTerm Project, BSD License) のものを使っています。

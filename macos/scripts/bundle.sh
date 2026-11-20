@@ -51,7 +51,7 @@ plist() {
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>NSHumanReadableCopyright</key><string>Based on Tera Term (BSD License)</string>
+    <key>NSHumanReadableCopyright</key><string>© 2026 satorunet. MIT License. https://github.com/satorunet/teraterm_macos</string>
 $6
 </dict>
 </plist>
@@ -63,6 +63,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINDIR/TeraMac" "$APP/Contents/MacOS/TeraMac"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# ライセンス (アイコンの元の Tera Term の BSD ライセンス表示も含む)
+cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 plist "$APP/Contents/Info.plist" TeraMac "$BUNDLE_ID" "$NAME" AppIcon '    <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

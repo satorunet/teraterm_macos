@@ -188,12 +188,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         c.connect(.shell)
     }
 
+    static let homepage = URL(string: "https://github.com/satorunet/teraterm_macos")!
+
     @objc func showAbout(_ sender: Any?) {
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "Tera Term Mac",
-            .credits: NSAttributedString(string: "Tera Term の Mac 版。\nシリアル / SSH / Telnet / TTL マクロ対応。\nTera Term Project (BSD License) の機能をもとに Swift で作り直したものです。"),
-        ])
+        let credits = NSMutableAttributedString(string: "Tera Term の Mac 版。シリアル / SSH / Telnet / TTL マクロ対応。\n")
+        credits.append(NSAttributedString(string: AppDelegate.homepage.absoluteString, attributes: [.link: AppDelegate.homepage]))
+        credits.append(NSAttributedString(string: "\n\nMIT License\nアイコンは Tera Term (BSD License, © T. Teranishi / TeraTerm Project) のものです。"))
+        let p = NSMutableParagraphStyle()
+        p.alignment = .center
+        credits.addAttributes([.paragraphStyle: p, .font: NSFont.systemFont(ofSize: 11)], range: NSRange(location: 0, length: credits.length))
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Tera Term Mac", .credits: credits])
     }
+
+    @objc func openHomepage(_ sender: Any?) { NSWorkspace.shared.open(AppDelegate.homepage) }
 
     private func buildMenu() {
         let main = NSMenu()
@@ -214,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         _ = add("Tera Term Mac", [
             item("Tera Term Mac について", #selector(showAbout(_:))),
+            item("ホームページ (GitHub)…", #selector(openHomepage(_:))),
             .separator(),
             item("端末の設定…", #selector(S.showTerminalSetup(_:)), ","),
             .separator(),
