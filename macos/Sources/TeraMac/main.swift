@@ -191,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let homepage = URL(string: "https://github.com/satorunet/teraterm_macos")!
 
     @objc func showAbout(_ sender: Any?) {
-        let credits = NSMutableAttributedString(string: "Tera Term の Mac 版。シリアル / SSH / Telnet / TTL マクロ対応。\n")
+        let credits = NSMutableAttributedString(string: "Tera Term の Mac 版 (非公式)。シリアル / SSH / Telnet / TTL マクロ対応。\nTeraTerm Project とは関係のない個人の移植です。\n")
         credits.append(NSAttributedString(string: AppDelegate.homepage.absoluteString, attributes: [.link: AppDelegate.homepage]))
         credits.append(NSAttributedString(string: "\n\nMIT License\nアイコンは Tera Term (BSD License, © T. Teranishi / TeraTerm Project) のものです。"))
         let p = NSMutableParagraphStyle()

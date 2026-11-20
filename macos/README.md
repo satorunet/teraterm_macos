@@ -3,6 +3,8 @@
 Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したものです。
 (元の Tera Term は Win32 API で書かれているため、Mac ではそのまま動きません。)
 
+> **非公式版です。** TeraTerm Project とは関係のない個人の移植で、TeraTerm Project の公認・支援を受けたものではありません。
+
 ## できること
 
 | 機能 | 内容 |
