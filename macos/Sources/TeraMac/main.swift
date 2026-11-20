@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .separator(),
             item("Tera Term Mac を終了", #selector(NSApplication.terminate(_:)), "q"),
         ])
-        _ = add("ファイル", [
+        _ = add("接続", [
             item("新しい接続…", #selector(S.newConnection(_:)), "n", [.command, .shift]),
             item("新しいウインドウ…", #selector(newWindow(_:)), "n"),
             item("新しいローカルシェル", #selector(newShellWindow(_:)), "t"),
@@ -188,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("文字を小さく", #selector(S.smallerFont(_:)), "-"),
         ])
         // TeraTerm Menu の一覧 (開くたびに作り直す)
-        let hosts = add("接続先", [])
+        let hosts = add("接続リスト", [])
         hosts.delegate = TeraMenuController.shared
         _ = add("コントロール", [
             item("ブレーク信号を送る", #selector(S.sendBreak(_:)), "b"),

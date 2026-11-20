@@ -322,7 +322,7 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
         TeraMenuLauncher.launch(e)
     }
 
-    /// アプリのメニューバーの「接続先」メニュー
+    /// アプリのメニューバーの「接続リスト」メニュー
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let edit = NSMenuItem(title: "リスト設定…", action: #selector(showEditor(_:)), keyEquivalent: "e")
