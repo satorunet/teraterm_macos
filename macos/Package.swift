@@ -6,7 +6,8 @@ let package = Package(
     platforms: [.macOS(.v11)],
     targets: [
         .target(name: "TeraCore", path: "Sources/TeraCore"),
-        .executableTarget(name: "TeraMac", dependencies: ["TeraCore"], path: "Sources/TeraMac"),
+        .target(name: "TeraUninstall", path: "Sources/TeraUninstall"),
+        .executableTarget(name: "TeraMac", dependencies: ["TeraCore", "TeraUninstall"], path: "Sources/TeraMac"),
         .testTarget(name: "TeraCoreTests", dependencies: ["TeraCore"], path: "Tests/TeraCoreTests"),
     ]
 )

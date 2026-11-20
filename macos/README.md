@@ -15,6 +15,16 @@ Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したも�
 | マクロ | TTL マクロの主な命令 (`connect` `send` `sendln` `wait` `waitln` `if/elseif/else/endif` `while` `for` `do/loop` `goto` `call` `messagebox` `inputbox` `passwordbox` `logopen` `strconcat` `sprintf2` ほか) |
 | 設定 | 端末サイズ、文字コード、改行コード (送信/受信)、ローカルエコー、BS キー、Option を Meta に、フォント、配色 |
 
+## インストール / アンインストール
+
+**インストール**: `TeraTermMac-<版>.dmg` を開き、「Tera Term Mac」のアイコンを右の「アプリケーション」へドラッグするだけです (Apple の公証済みなので警告は出ません)。
+ディスクイメージやダウンロードフォルダから直接起動した場合は、アプリケーションフォルダへ移動するか聞かれます。
+
+**アンインストール**: Tera Term Mac のメニュー →「Tera Term Mac をアンインストール…」で、消すもの (アプリ本体 / 設定と接続リスト / 保存したパスワード) を選んで削除できます。アプリ本体はゴミ箱に入ります。
+この項目はアプリケーションフォルダにインストールされているときだけ表示されます。
+
+接続リストを残したいときは、先にリスト設定の「ttpmenu.ini 書き出し」で保存しておいてください。
+
 ## TeraTerm Menu (メニューバー常駐ランチャー)
 
 Windows 版の TeraTerm Menu (ttpmenu) を標準で組み込んでいます。**Tera Term Mac を起動すると、まずこの接続先一覧 (リスト設定) が開きます** (ホスト名や /M= を付けて起動したときは直接接続)。タスクトレイの代わりに **メニューバーの Tera Term アイコン** に常駐します。
@@ -56,6 +66,7 @@ cd macos
 ./scripts/bundle.sh          # "build/Tera Term Mac.app" ができる
 open "build/Tera Term Mac.app"
 swift test                   # 端末エミュレータとマクロのテスト
+./scripts/bundle.sh --dmg    # 配布用インストーラー build/TeraTermMac-<版>.dmg (署名・公証つき)
 ```
 
 ## コマンドライン (Tera Term と似た書き方)

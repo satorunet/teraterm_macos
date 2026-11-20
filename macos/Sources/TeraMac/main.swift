@@ -1,5 +1,6 @@
 import AppKit
 import TeraCore
+import TeraUninstall
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openedByFile = false
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SelfTest.run(dir: dir)
             return
         }
+        offerMoveToApplications()
         // TeraTerm Menu: メニューバーに常駐
         TeraMenuController.shared.install()
         DispatchQueue.main.async {
@@ -67,7 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !CommandLine.arguments.contains("--menu") { NSApp.activate(ignoringOtherApps: true) }
         if let out = ProcessInfo.processInfo.environment["TERAMAC_DEBUG_WINDOWS"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                let t = NSApp.windows.filter { $0.isVisible }.map { "\($0.className) '\($0.title)' \(Int($0.frame.width))x\(Int($0.frame.height))" }
+                var t = NSApp.windows.filter { $0.isVisible }.map { "\($0.className) '\($0.title)' \(Int($0.frame.width))x\(Int($0.frame.height))" }
+                for i in NSApp.mainMenu?.items.first?.submenu?.items ?? [] where !i.isSeparatorItem {
+                    t.append("MENU \(i.title)\(i.isHidden ? " (非表示)" : "")")
+                }
                 try? t.joined(separator: "\n").write(toFile: out, atomically: true, encoding: .utf8)
             }
         }
@@ -98,6 +103,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Dock アイコンの右クリックにも登録一覧を出す
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         TeraMenuController.shared.listMenu
+    }
+
+    /// アプリケーションフォルダにインストールされて動いているか
+    var isInstalled: Bool {
+        let p = Bundle.main.bundlePath
+        return p.hasPrefix("/Applications/") || p.hasPrefix(NSHomeDirectory() + "/Applications/")
+    }
+
+    /// アンインストールのメニューは、インストールされているときだけ出す
+    private func uninstallItem(_ i: NSMenuItem) -> NSMenuItem {
+        i.isHidden = !isInstalled
+        return i
+    }
+
+    @objc func uninstall(_ sender: Any?) {
+        let before = TeraUninstall.appLocations()
+        TeraUninstall.confirmAndRun(inApp: true)
+        // 何か消したら終了する (設定を書き戻さないように、終了確認はとばす)
+        let removedApp = before.contains { !FileManager.default.fileExists(atPath: $0.path) }
+        let removedPrefs = UserDefaults.standard.persistentDomain(forName: TeraUninstall.bundleID)?.isEmpty ?? true
+        if removedApp || removedPrefs {
+            SessionWindowController.all.forEach { $0.disconnect(silent: true) }
+            exit(0)
+        }
+    }
+
+    /// DMG やダウンロードフォルダから起動されたら、アプリケーションフォルダへの移動をすすめる
+    private func offerMoveToApplications() {
+        let path = Bundle.main.bundlePath
+        let env = ProcessInfo.processInfo.environment
+        guard env["TERAMAC_SNAPSHOT"] == nil, env["TERAMAC_DEBUG_WINDOWS"] == nil,
+              path.hasSuffix(".app"),
+              !path.hasPrefix("/Applications/"), !path.hasPrefix(NSHomeDirectory() + "/Applications/"),
+              path.hasPrefix("/Volumes/") || path.contains("/Downloads/") || path.contains("/AppTranslocation/") else { return }
+        let a = NSAlert()
+        a.messageText = "アプリケーションフォルダに移動しますか?"
+        a.informativeText = "いまは \(path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/") ? "ディスクイメージ" : "ダウンロードフォルダ") から動いています。アプリケーションフォルダに入れると、次からは Launchpad などから起動できます。"
+        a.addButton(withTitle: "移動する")
+        a.addButton(withTitle: "このまま使う")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let fm = FileManager.default
+        let dest = URL(fileURLWithPath: "/Applications/" + (path as NSString).lastPathComponent)
+        do {
+            if fm.fileExists(atPath: dest.path) { try fm.trashItem(at: dest, resultingItemURL: nil) }
+            try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
+        } catch {
+            let e = NSAlert()
+            e.messageText = "移動できませんでした"
+            e.informativeText = "\(error.localizedDescription)\n\nFinder で「アプリケーション」フォルダへドラッグしてください。"
+            e.runModal()
+            return
+        }
+        // ダウンロードフォルダのものは元を消す (ディスクイメージはそのまま)
+        if path.contains("/Downloads/") { try? fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        p.arguments = ["-n", dest.path]
+        try? p.run()
+        exit(0)
     }
 
     @objc func showMenuEditor(_ sender: Any?) { TeraMenuController.shared.showEditor(sender) }
@@ -157,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("ほかを隠す", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
             item("すべてを表示", #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
+            uninstallItem(item("Tera Term Mac をアンインストール…", #selector(uninstall(_:)))),
             item("Tera Term Mac を終了", #selector(NSApplication.terminate(_:)), "q"),
         ])
         _ = add("接続", [
@@ -357,6 +422,11 @@ extension SelfTest {
             }
         }
     }
+}
+
+// アンインストーラーから呼ばれる: 保存したパスワードを消して終わる (画面は出さない)
+if CommandLine.arguments.contains("--purge-keychain") {
+    exit(TeraUninstall.deleteKeychain() ? 0 : 1)
 }
 
 let app = NSApplication.shared
