@@ -43,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let startedAny = args.isEmpty ? TeraMenuLauncher.runStartupEntries() : false
             // ログイン時の起動 (--menu) ではメニューバーだけ。起動時の項目を開いたら空のウインドウは出さない
             if args.isEmpty && (menuOnly || startedAny) { return }
+            // ふつうに起動したときは TeraTerm Menu の接続先一覧を出す (単体の接続ウインドウは出さない)
+            if args.isEmpty {
+                TeraMenuController.shared.showEditor(nil)
+                return
+            }
             let c = SessionWindowController()
             c.showWindow(nil)
             // /M=マクロ.ttl でマクロを実行 (Tera Term と同じ)
@@ -53,13 +58,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 c.runMacro(url: URL(fileURLWithPath: path))
                 return
             }
-            if !args.isEmpty, let spec = ConnectionSpec.parse(args.joined(separator: " ")) {
+            if let spec = ConnectionSpec.parse(args.joined(separator: " ")) {
                 c.connect(spec)
             } else {
                 c.showConnectDialog()
             }
         }
         if !CommandLine.arguments.contains("--menu") { NSApp.activate(ignoringOtherApps: true) }
+        if let out = ProcessInfo.processInfo.environment["TERAMAC_DEBUG_WINDOWS"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                let t = NSApp.windows.filter { $0.isVisible }.map { "\($0.className) '\($0.title)' \(Int($0.frame.width))x\(Int($0.frame.height))" }
+                try? t.joined(separator: "\n").write(toFile: out, atomically: true, encoding: .utf8)
+            }
+        }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
@@ -79,7 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { newWindow(nil) }
+        // Dock のアイコンを押したとき、ウインドウがなければ接続先一覧を出す
+        if !flag { TeraMenuController.shared.showEditor(nil) }
         return true
     }
 
