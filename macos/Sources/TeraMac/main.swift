@@ -10,10 +10,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SelfTest.run(dir: dir)
             return
         }
+        // TeraTerm Menu: メニューバーに常駐
+        TeraMenuController.shared.install()
         DispatchQueue.main.async {
             guard !self.openedByFile else { return }
             // コマンドライン: TeraMac host:22 /ssh /user=root など (Tera Term と似た書き方)
-            let args = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn") && !$0.hasPrefix("-NS") && !$0.hasPrefix("-Apple") }
+            let all = CommandLine.arguments.dropFirst()
+            let menuOnly = all.contains("--menu")
+            let args = all.filter { !$0.hasPrefix("-psn") && !$0.hasPrefix("-NS") && !$0.hasPrefix("-Apple") && $0 != "--menu" }
+            // 「起動時に実行」の項目を開く
+            let startedAny = args.isEmpty ? TeraMenuLauncher.runStartupEntries() : false
+            // ログイン時の起動 (--menu) ではメニューバーだけ。起動時の項目を開いたら空のウインドウは出さない
+            if args.isEmpty && (menuOnly || startedAny) { return }
             let c = SessionWindowController()
             c.showWindow(nil)
             // /M=マクロ.ttl でマクロを実行 (Tera Term と同じ)
@@ -30,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 c.showConnectDialog()
             }
         }
-        NSApp.activate(ignoringOtherApps: true)
+        if !CommandLine.arguments.contains("--menu") { NSApp.activate(ignoringOtherApps: true) }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
@@ -46,7 +54,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// TeraTerm Menu と同じく、ウインドウを閉じても常駐し続ける
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { newWindow(nil) }
+        return true
+    }
+
+    /// Dock アイコンの右クリックにも登録一覧を出す
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        TeraMenuController.shared.listMenu
+    }
+
+    @objc func showMenuEditor(_ sender: Any?) { TeraMenuController.shared.showEditor(sender) }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let live = SessionWindowController.all.filter { $0.isConnected }
@@ -133,6 +154,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("文字を大きく", #selector(S.biggerFont(_:)), "+"),
             item("文字を小さく", #selector(S.smallerFont(_:)), "-"),
         ])
+        // TeraTerm Menu の一覧 (開くたびに作り直す)
+        let hosts = add("接続先", [])
+        hosts.delegate = TeraMenuController.shared
         _ = add("コントロール", [
             item("ブレーク信号を送る", #selector(S.sendBreak(_:)), "b"),
             item("端末をリセット", #selector(S.resetTerminal(_:))),
@@ -232,10 +256,48 @@ enum SelfTest {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                             snap(sd.panel.contentView!, dir + "/setup.png")
                             sd.cancel()
-                            exit(0)
+                            menuTest(dir: dir)
                         }
                     }
                 }
+        }
+    }
+}
+
+extension SelfTest {
+    /// TeraTerm Menu の画面と自動ログインを確かめる (利用者の登録内容は最後に元に戻す)
+    static func menuTest(dir: String) {
+        let d = UserDefaults.standard
+        let saved = d.data(forKey: "menuEntries")
+        var e1 = MenuEntry(); e1.name = "本番サーバ (SSH)"; e1.host = "prod.example.com"; e1.user = "admin"; e1.useSSH = true; e1.startup = true
+        var e2 = MenuEntry(); e2.name = "ルータ (Telnet)"; e2.host = "192.168.1.1"; e2.useSSH = false; e2.user = "cisco"
+        var e3 = MenuEntry(); e3.name = "定期バックアップ"; e3.mode = .macro; e3.macroFile = "~/backup.ttl"
+        var e4 = MenuEntry(); e4.name = "検証用 自動ログイン"; e4.useSSH = false; e4.user = "tester"
+        e4.host = "127.0.0.1:" + (ProcessInfo.processInfo.environment["TERAMAC_LOGINPORT"] ?? "47124")
+        e4.option = "/T=0 /passwd=s3cret"
+        MenuStore.shared.entries = [e1, e2, e3, e4]
+        let ed = MenuEditorWindowController()
+        ed.showWindow(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            snap(ed.window!.contentView!, dir + "/menu_editor.png")
+            let dd = MenuDetailsDialog(entry: e4)
+            dd.begin(on: ed.window!) { _ in }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                snap(dd.panel.contentView!, dir + "/menu_details.png")
+                dd.cancel()
+                let m = TeraMenuController.shared.listMenu
+                try? m.items.map { $0.title }.joined(separator: "\n").write(toFile: dir + "/menu_list.txt", atomically: true, encoding: .utf8)
+                if ProcessInfo.processInfo.environment["TERAMAC_LOGINPORT"] != nil {
+                    TeraMenuLauncher.launch(e4)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    if let c = SessionWindowController.all.last {
+                        try? c.term.screenText.write(toFile: dir + "/menu_login.txt", atomically: true, encoding: .utf8)
+                    }
+                    if let s = saved { d.set(s, forKey: "menuEntries") } else { d.removeObject(forKey: "menuEntries") }
+                    exit(0)
+                }
+            }
         }
     }
 }

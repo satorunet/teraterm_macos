@@ -14,7 +14,9 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     private var log: FileHandle?
     private(set) var logPath: String?
     private var logAtLineStart = true
-    private var pendingPassword: String?
+    /// 自動ログイン: プロンプトが出たら順に答える (TeraTerm Menu の自動ログイン)
+    struct LoginStep { var prompt: String; var response: String }
+    private var loginSteps: [LoginStep] = []
     private var recentOutput = ""
     var macro: MacroRunner?
     private var statusLabel: NSTextField?
@@ -104,7 +106,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @discardableResult
-    func connect(_ spec: ConnectionSpec, password: String? = nil) -> Bool {
+    func connect(_ spec: ConnectionSpec, password: String? = nil, loginSteps steps: [LoginStep] = []) -> Bool {
         disconnect(silent: true)
         self.spec = spec
         remoteTitle = nil
@@ -123,7 +125,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             tcp.onConnected = { [weak self] in self?.notice("\(spec.title) に接続しました") }
             notice("\(spec.title) に接続しています…")
         }
-        pendingPassword = (password?.isEmpty ?? true) ? nil : password
+        loginSteps = steps
+        if let pw = password, !pw.isEmpty, steps.isEmpty { loginSteps = [LoginStep(prompt: "password:", response: pw)] }
         recentOutput = ""
         do {
             try c.start()
@@ -170,13 +173,19 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         term.feed(s)
         termView.dataArrived()
         macro?.received(s)
-        if let pw = pendingPassword {
-            recentOutput = String((recentOutput + s).suffix(200))
-            let low = recentOutput.lowercased()
-            if low.range(of: "password:\\s*$", options: .regularExpression) != nil ||
-                low.range(of: "パスワード.*[:：]\\s*$", options: .regularExpression) != nil {
-                pendingPassword = nil
-                sendBytes(settings.encoding.encode(pw) + [0x0D], echo: false)
+        if let step = loginSteps.first {
+            recentOutput = String((recentOutput + s).suffix(300))
+            let tail = recentOutput.lowercased().replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+            let prompt = step.prompt.lowercased().trimmingCharacters(in: .whitespaces)
+            var hit = !prompt.isEmpty && tail.hasSuffix(prompt)
+            // パスワードは日本語のプロンプトも受ける
+            if !hit && prompt.contains("password") {
+                hit = tail.range(of: "パスワード.*[:：]$", options: .regularExpression) != nil
+            }
+            if hit {
+                loginSteps.removeFirst()
+                recentOutput = ""
+                sendBytes(settings.encoding.encode(step.response) + settings.sendNewlineBytes, echo: false)
             }
         }
     }
