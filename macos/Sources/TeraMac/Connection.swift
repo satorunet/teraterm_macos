@@ -49,10 +49,15 @@ enum ConnectionSpec: Equatable {
             else if l.hasPrefix("/p=") { port = Int(w.dropFirst(3)) }
             else if l == "/shell" { return .shell }
             else if !w.hasPrefix("/") {
-                if let at = w.firstIndex(of: "@"), !w.hasPrefix("[") {
+                if let at = w.lastIndex(of: "@"), !w.hasPrefix("[") {
                     user = String(w[..<at]); host = String(w[w.index(after: at)...])
                 } else { host = w }
-                if let c = host.lastIndex(of: ":"), host.filter({ $0 == ":" }).count == 1 {
+                if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
+                    // IPv6: [addr] / [addr]:port
+                    let rest = host[host.index(after: close)...]
+                    if rest.hasPrefix(":") { port = Int(rest.dropFirst()) }
+                    host = String(host[host.index(after: host.startIndex)..<close])
+                } else if let c = host.lastIndex(of: ":"), host.filter({ $0 == ":" }).count == 1 {
                     port = Int(host[host.index(after: c)...]); host = String(host[..<c])
                 }
             }

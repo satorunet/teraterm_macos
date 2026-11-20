@@ -6,6 +6,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         buildMenu()
+        // TERAMAC_INI_DRYRUN=<ini>: 読み込み結果を書き出して終わる (設定は変えない。確認用)
+        if TeraTermIniImport.dryRunIfRequested() { exit(0) }
+        // TERAMAC_TTMENU_TEST=<ttpmenu.ini>: 読んで書き出し、もう一度読んだ結果を <ini>.out.txt に (確認用・保存はしない)
+        if let path = ProcessInfo.processInfo.environment["TERAMAC_TTMENU_TEST"] {
+            var out: [String] = []
+            if let d = FileManager.default.contents(atPath: path), let ini = IniFile(data: d) {
+                let r = TTMenuIni.read(ini)
+                for e in r.entries {
+                    out.append("\(e.name) | host=\(e.host) mode=\(e.mode.rawValue) ssh=\(e.useSSH) user=\(e.useUser):\(e.user) pw=\(r.passwords[e.id] ?? "-") startup=\(e.startup) opt=\(e.option) macro=\(e.macroFile)")
+                }
+                out += r.notes
+                let written = TTMenuIni.write(r.entries, includePasswords: false)
+                try? written.write(to: URL(fileURLWithPath: path + ".written.ini"))
+                if let again = IniFile(data: written) {
+                    out.append("ROUNDTRIP " + TTMenuIni.read(again).entries.map { $0.name + "=" + $0.host }.joined(separator: ", "))
+                }
+                out.append("ENC " + TTMenuIni.encodePassword("pass") + "-> " + (TTMenuIni.decodePassword(TTMenuIni.encodePassword("pass")) ?? "nil"))
+            }
+            try? out.joined(separator: "\n").write(toFile: path + ".out.txt", atomically: true, encoding: .utf8)
+            exit(0)
+        }
         if let dir = ProcessInfo.processInfo.environment["TERAMAC_SNAPSHOT"] {
             SelfTest.run(dir: dir)
             return
@@ -46,8 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (AppKit は "/ssh" "/M=..." のようなコマンドライン引数もここに渡してくるので、実在するファイルだけ扱う)
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDir), !isDir.boolValue else { return false }
-        openedByFile = true
         let url = URL(fileURLWithPath: filename)
+        openedByFile = true
         let c = SessionWindowController()
         c.showWindow(nil)
         c.runMacro(url: url)
@@ -93,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showAbout(_ sender: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "TeraMac",
+            .applicationName: "Tera Term Mac",
             .credits: NSAttributedString(string: "Tera Term の Mac 版。\nシリアル / SSH / Telnet / TTL マクロ対応。\nTera Term Project (BSD License) の機能をもとに Swift で作り直したものです。"),
         ])
     }
@@ -115,16 +136,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let S = SessionWindowController.self
 
-        _ = add("TeraMac", [
-            item("TeraMac について", #selector(showAbout(_:))),
+        _ = add("Tera Term Mac", [
+            item("Tera Term Mac について", #selector(showAbout(_:))),
             .separator(),
             item("端末の設定…", #selector(S.showTerminalSetup(_:)), ","),
             .separator(),
-            item("TeraMac を隠す", #selector(NSApplication.hide(_:)), "h"),
+            item("Tera Term Mac を隠す", #selector(NSApplication.hide(_:)), "h"),
             item("ほかを隠す", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
             item("すべてを表示", #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
-            item("TeraMac を終了", #selector(NSApplication.terminate(_:)), "q"),
+            item("Tera Term Mac を終了", #selector(NSApplication.terminate(_:)), "q"),
         ])
         _ = add("ファイル", [
             item("新しい接続…", #selector(S.newConnection(_:)), "n", [.command, .shift]),
@@ -255,6 +276,7 @@ enum SelfTest {
                         sd.begin(on: c.window!) { _ in }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                             snap(sd.panel.contentView!, dir + "/setup.png")
+                            schemeSheet(dir + "/schemes.png")
                             sd.cancel()
                             menuTest(dir: dir)
                         }
@@ -265,6 +287,29 @@ enum SelfTest {
 }
 
 extension SelfTest {
+    /// 配色の候補を一覧の絵にする (見本 + プレビュー)
+    static func schemeSheet(_ path: String) {
+        let list = ColorScheme.presets + ColorScheme.terminalProfiles()
+        let cols = 3, cellW: CGFloat = 330, cellH: CGFloat = 150
+        let rows = (list.count + cols - 1) / cols
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: CGFloat(cols) * cellW, height: CGFloat(rows) * cellH))
+        for (i, s) in list.enumerated() {
+            let x = CGFloat(i % cols) * cellW, y = CGFloat(rows - 1 - i / cols) * cellH
+            let label = NSTextField(labelWithString: s.name)
+            label.frame = NSRect(x: x + 110, y: y + cellH - 22, width: 220, height: 18)
+            let sw = NSImageView(image: s.swatch())
+            sw.frame = NSRect(x: x + 6, y: y + cellH - 24, width: 96, height: 20)
+            let pv = SchemePreview(frame: NSRect(x: x + 6, y: y + 4, width: cellW - 12, height: cellH - 32))
+            pv.fg = s.fg; pv.bg = s.bg; pv.cursor = s.cursor
+            pv.ansi = s.ansi16 ?? Array(Palette.colors.prefix(16))
+            pv.font = NSFont(name: "Menlo-Regular", size: 10)!
+            [label, sw, pv].forEach { host.addSubview($0) }
+        }
+        let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        win.contentView = host
+        snap(host, path)
+    }
+
     /// TeraTerm Menu の画面と自動ログインを確かめる (利用者の登録内容は最後に元に戻す)
     static func menuTest(dir: String) {
         let d = UserDefaults.standard

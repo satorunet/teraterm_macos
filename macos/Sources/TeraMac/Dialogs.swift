@@ -322,12 +322,14 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
 final class SetupDialog: SheetDialog {
     private var settings: TermSettings
     private var completion: ((TermSettings?) -> Void)?
+    private var schemes: [ColorScheme] = []
 
     private let colsField = field("80", width: 60)
     private let rowsField = field("24", width: 60)
     private let encPopup = popup(TermEncoding.allCases.map { $0.rawValue }, "UTF-8")
     private let recvPopup = popup(["AUTO", "CR", "LF"], "AUTO")
     private let sendPopup = popup(["CR", "CRLF", "LF"], "CR")
+    private let cursorPopup = popup(["ブロック", "縦線", "下線"], "ブロック")
     private let echoCheck = NSButton(checkboxWithTitle: "ローカルエコー", target: nil, action: nil)
     private let bsCheck = NSButton(checkboxWithTitle: "BS キーで DEL (0x7F) を送る (オフなら BS 0x08)", target: nil, action: nil)
     private let metaCheck = NSButton(checkboxWithTitle: "Option キーを Meta (ESC) として使う", target: nil, action: nil)
@@ -344,7 +346,8 @@ final class SetupDialog: SheetDialog {
     private let scrollField = field("10000", width: 80)
     private let charDelayField = field("0", width: 50)
     private let lineDelayField = field("0", width: 50)
-    private let schemePopup = popup(["白文字・黒背景", "黒文字・白背景", "緑文字・黒背景", "Solarized Dark"], "")
+    private let schemePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let preview = SchemePreview()
 
     init(settings: TermSettings) {
         self.settings = settings
@@ -358,43 +361,51 @@ final class SetupDialog: SheetDialog {
     }
 
     private func build() {
-        let s = settings
-        colsField.stringValue = String(s.cols)
-        rowsField.stringValue = String(s.rows)
-        encPopup.selectItem(withTitle: s.encoding.rawValue)
-        recvPopup.selectItem(withTitle: s.recvNewline)
-        sendPopup.selectItem(withTitle: s.sendNewline)
-        echoCheck.state = s.localEcho ? .on : .off
-        bsCheck.state = s.bsSendsDel ? .on : .off
-        metaCheck.state = s.optionAsMeta ? .on : .off
-        ambCheck.state = s.ambiguousWide ? .on : .off
-        copyCheck.state = s.copyOnSelect ? .on : .off
-        rclickCheck.state = s.rightClickPaste ? .on : .off
-        confirmCheck.state = s.confirmMultilinePaste ? .on : .off
-        blinkCheck.state = s.cursorBlink ? .on : .off
-        tsCheck.state = s.logTimestamp ? .on : .off
-        fgWell.color = s.fg; bgWell.color = s.bg; cursorWell.color = s.cursorColor
         for w in [fgWell, bgWell, cursorWell] {
             w.translatesAutoresizingMaskIntoConstraints = false
             w.widthAnchor.constraint(equalToConstant: 44).isActive = true
             w.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            w.target = self
+            w.action = #selector(colorEdited(_:))
         }
-        scrollField.stringValue = String(s.scrollback)
-        charDelayField.stringValue = String(s.charDelayMs)
-        lineDelayField.stringValue = String(s.lineDelayMs)
-        updateFontLabel()
-        schemePopup.insertItem(withTitle: "配色を選ぶ…", at: 0)
-        schemePopup.selectItem(at: 0)
-        schemePopup.target = self; schemePopup.action = #selector(schemeChosen)
+
+        // 配色かんたん設定: おすすめ + 標準のターミナルのプロファイル
+        schemes = ColorScheme.presets + ColorScheme.terminalProfiles()
+        schemePopup.removeAllItems()
+        schemePopup.addItem(withTitle: "候補から選ぶ…")
+        for (i, s) in schemes.enumerated() {
+            if i == ColorScheme.presets.count {
+                schemePopup.menu?.addItem(.separator())
+            }
+            let item = NSMenuItem(title: s.name, action: nil, keyEquivalent: "")
+            item.image = s.swatch()
+            item.tag = i
+            schemePopup.menu?.addItem(item)
+        }
+        schemePopup.target = self
+        schemePopup.action = #selector(schemeChosen)
+
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        preview.widthAnchor.constraint(equalToConstant: 440).isActive = true
+        preview.heightAnchor.constraint(equalToConstant: 118).isActive = true
+        preview.wantsLayer = true
+        preview.layer?.cornerRadius = 6
+        preview.layer?.masksToBounds = true
+
+        fill()
 
         let fontButton = NSButton(title: "フォント…", target: self, action: #selector(chooseFont))
+        let iniButton = NSButton(title: "Windows の TERATERM.INI を読み込む…", target: self, action: #selector(importIni))
         func row(_ v: [NSView]) -> NSStackView { let s = NSStackView(views: v); s.spacing = 8; return s }
         let grid = NSGridView(views: [
+            [label("配色かんたん設定:"), schemePopup],
+            [NSGridCell.emptyContentView, preview],
+            [label("色:"), row([label("文字"), fgWell, label("背景"), bgWell, label("カーソル"), cursorWell])],
+            [label("フォント:"), row([fontLabel, fontButton])],
+            [label("カーソル形:"), cursorPopup],
             [label("端末サイズ:"), row([colsField, NSTextField(labelWithString: "×"), rowsField, NSTextField(labelWithString: "(桁 × 行)")])],
             [label("文字コード:"), encPopup],
             [label("改行コード 受信:"), row([recvPopup, label("送信:"), sendPopup])],
-            [label("フォント:"), row([fontLabel, fontButton])],
-            [label("色:"), row([label("文字"), fgWell, label("背景"), bgWell, label("カーソル"), cursorWell, schemePopup])],
             [label("スクロールバッファ:"), row([scrollField, NSTextField(labelWithString: "行")])],
             [label("シリアル送信遅延:"), row([charDelayField, NSTextField(labelWithString: "ミリ秒/文字"), lineDelayField, NSTextField(labelWithString: "ミリ秒/行")])],
             [NSGridCell.emptyContentView, echoCheck],
@@ -406,15 +417,52 @@ final class SetupDialog: SheetDialog {
             [NSGridCell.emptyContentView, confirmCheck],
             [NSGridCell.emptyContentView, blinkCheck],
             [NSGridCell.emptyContentView, tsCheck],
+            [label("Windows 版から:"), iniButton],
         ])
         grid.rowSpacing = 8
         grid.column(at: 0).xPlacement = .trailing
         layout(grid)
     }
 
+    /// settings の内容を画面に出す
+    private func fill() {
+        let s = settings
+        colsField.stringValue = String(s.cols)
+        rowsField.stringValue = String(s.rows)
+        encPopup.selectItem(withTitle: s.encoding.rawValue)
+        recvPopup.selectItem(withTitle: s.recvNewline)
+        sendPopup.selectItem(withTitle: s.sendNewline)
+        cursorPopup.selectItem(at: s.cursorShape == "vertical" ? 1 : (s.cursorShape == "horizontal" ? 2 : 0))
+        echoCheck.state = s.localEcho ? .on : .off
+        bsCheck.state = s.bsSendsDel ? .on : .off
+        metaCheck.state = s.optionAsMeta ? .on : .off
+        ambCheck.state = s.ambiguousWide ? .on : .off
+        copyCheck.state = s.copyOnSelect ? .on : .off
+        rclickCheck.state = s.rightClickPaste ? .on : .off
+        confirmCheck.state = s.confirmMultilinePaste ? .on : .off
+        blinkCheck.state = s.cursorBlink ? .on : .off
+        tsCheck.state = s.logTimestamp ? .on : .off
+        fgWell.color = s.fg; bgWell.color = s.bg; cursorWell.color = s.cursorColor
+        scrollField.stringValue = String(s.scrollback)
+        charDelayField.stringValue = String(s.charDelayMs)
+        lineDelayField.stringValue = String(s.lineDelayMs)
+        updateFontLabel()
+        updatePreview()
+    }
+
+    private func updatePreview() {
+        preview.fg = fgWell.color
+        preview.bg = bgWell.color
+        preview.cursor = cursorWell.color
+        preview.ansi = settings.ansi16 ?? Array(Palette.colors.prefix(16))
+        preview.font = NSFont(name: settings.fontName, size: 12) ?? preview.font
+    }
+
     private func updateFontLabel() {
         fontLabel.stringValue = "\(settings.font.displayName ?? settings.fontName) \(Int(settings.fontSize))pt"
     }
+
+    @objc private func colorEdited(_ sender: Any?) { updatePreview() }
 
     @objc private func chooseFont() {
         let fm = NSFontManager.shared
@@ -430,30 +478,62 @@ final class SetupDialog: SheetDialog {
         settings.fontName = f.fontName
         settings.fontSize = f.pointSize
         updateFontLabel()
+        updatePreview()
     }
 
     @objc private func schemeChosen() {
-        func c(_ hex: UInt32) -> NSColor {
-            NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-        }
-        switch schemePopup.indexOfSelectedItem {
-        case 1: fgWell.color = c(0xD9D9D9); bgWell.color = c(0x000000); cursorWell.color = c(0x99FF99)
-        case 2: fgWell.color = c(0x000000); bgWell.color = c(0xFFFFFF); cursorWell.color = c(0x3366CC)
-        case 3: fgWell.color = c(0x33FF66); bgWell.color = c(0x000000); cursorWell.color = c(0x33FF66)
-        case 4: fgWell.color = c(0x93A1A1); bgWell.color = c(0x002B36); cursorWell.color = c(0xB58900)
-        default: break
-        }
+        guard let item = schemePopup.selectedItem, schemePopup.indexOfSelectedItem > 0 else { return }
+        let s = schemes[item.tag]
+        fgWell.color = s.fg
+        bgWell.color = s.bg
+        cursorWell.color = s.cursor
+        settings.ansi16 = s.ansi16
+        updatePreview()
         schemePopup.selectItem(at: 0)
+        schemePopup.selectedItem?.title = "候補から選ぶ… (いま: \(s.name))"
     }
 
-    override func ok() {
-        NSFontManager.shared.fontPanel(false)?.orderOut(nil)
+    /// Windows 版の TERATERM.INI を読んで、この画面に反映する (OK で確定)
+    @objc private func importIni() {
+        let p = NSOpenPanel()
+        p.message = "Windows 版 Tera Term の TERATERM.INI を選んでください"
+        p.allowedFileTypes = ["ini", "INI"]
+        p.allowsOtherFileTypes = true
+        p.beginSheetModal(for: panel) { r in
+            guard r == .OK, let url = p.url else { return }
+            guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data),
+                  ini.hasSection("Tera Term") || ini.hasSection("Hosts") else {
+                let a = NSAlert()
+                a.messageText = "TERATERM.INI として読めませんでした"
+                a.informativeText = url.path
+                a.beginSheetModal(for: self.panel)
+                return
+            }
+            var base = self.currentFormSettings()
+            base.ansi16 = self.settings.ansi16
+            let res = TeraTermIniImport.read(ini, base: base)
+            // 接続先の履歴・シリアルなどはすぐ保存、端末の設定はこの画面に出して OK で確定
+            TeraTermIniImport.applyConnectionDefaults(res)
+            self.settings = res.settings
+            self.fill()
+            let a = NSAlert()
+            a.messageText = "\(url.lastPathComponent) を読み込みました"
+            var text = "反映した設定:\n" + res.applied.map { "・" + $0 }.joined(separator: "\n")
+            if !res.skipped.isEmpty { text += "\n\n反映しなかった設定:\n" + res.skipped.map { "・" + $0 }.joined(separator: "\n") }
+            a.informativeText = text + "\n\n端末の設定は OK を押すと確定します。"
+            a.beginSheetModal(for: self.panel)
+        }
+    }
+
+    /// 画面の内容を settings にしたもの
+    private func currentFormSettings() -> TermSettings {
         var s = settings
         s.cols = max(10, min(500, Int(colsField.stringValue) ?? s.cols))
         s.rows = max(2, min(300, Int(rowsField.stringValue) ?? s.rows))
         s.encoding = TermEncoding(rawValue: encPopup.titleOfSelectedItem ?? "") ?? .utf8
         s.recvNewline = recvPopup.titleOfSelectedItem ?? "AUTO"
         s.sendNewline = sendPopup.titleOfSelectedItem ?? "CR"
+        s.cursorShape = ["block", "vertical", "horizontal"][max(0, cursorPopup.indexOfSelectedItem)]
         s.localEcho = echoCheck.state == .on
         s.bsSendsDel = bsCheck.state == .on
         s.optionAsMeta = metaCheck.state == .on
@@ -467,6 +547,12 @@ final class SetupDialog: SheetDialog {
         s.scrollback = max(0, min(1_000_000, Int(scrollField.stringValue) ?? s.scrollback))
         s.charDelayMs = max(0, min(1000, Int(charDelayField.stringValue) ?? 0))
         s.lineDelayMs = max(0, min(5000, Int(lineDelayField.stringValue) ?? 0))
+        return s
+    }
+
+    override func ok() {
+        NSFontManager.shared.fontPanel(false)?.orderOut(nil)
+        let s = currentFormSettings()
         close()
         completion?(s)
     }

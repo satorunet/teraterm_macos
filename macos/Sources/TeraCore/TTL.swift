@@ -503,13 +503,13 @@ public final class TTLInterpreter {
         case "mpause":
             try sleep(Double(try arg(0).intValue) / 1000)
         case "messagebox":
-            host.ttlMessage(try arg(0).description, title: try argOr(1, .str("TeraMac")).description)
+            host.ttlMessage(try arg(0).description, title: try argOr(1, .str("Tera Term Mac")).description)
         case "inputbox", "passwordbox":
-            let r = host.ttlInput(try arg(0).description, title: try argOr(1, .str("TeraMac")).description, secret: cmd == "passwordbox")
+            let r = host.ttlInput(try arg(0).description, title: try argOr(1, .str("Tera Term Mac")).description, secret: cmd == "passwordbox")
             vars["inputstr"] = .str(r ?? "")
             vars["result"] = .int(r == nil ? 0 : 1)
         case "yesnobox":
-            vars["result"] = .int(host.ttlYesNo(try arg(0).description, title: try argOr(1, .str("TeraMac")).description) ? 1 : 0)
+            vars["result"] = .int(host.ttlYesNo(try arg(0).description, title: try argOr(1, .str("Tera Term Mac")).description) ? 1 : 0)
         case "statusbox":
             host.ttlStatus(try arg(0).description)
         case "closesbox": host.ttlStatus("")

@@ -26,6 +26,10 @@ struct TermSettings {
     var charDelayMs = 0
     var lineDelayMs = 0
     var logTimestamp = false
+    /// block / vertical / horizontal (Tera Term の CursorShape)
+    var cursorShape = "block"
+    /// ANSI 16 色を差し替えるとき (Tera Term の ANSIColor)。nil なら標準
+    var ansi16: [NSColor]?
 
     private static let d = UserDefaults.standard
 
@@ -65,6 +69,11 @@ struct TermSettings {
         if let c = color(d.string(forKey: "fg")) { s.fg = c }
         if let c = color(d.string(forKey: "bg")) { s.bg = c }
         if let c = color(d.string(forKey: "cursorColor")) { s.cursorColor = c }
+        if let v = d.string(forKey: "cursorShape") { s.cursorShape = v }
+        if let list = d.string(forKey: "ansi16") {
+            let cs = list.split(separator: ",").compactMap { color(String($0)) }
+            if cs.count == 16 { s.ansi16 = cs }
+        }
         return s
     }
 
@@ -92,6 +101,8 @@ struct TermSettings {
         d.set(hex(fg), forKey: "fg")
         d.set(hex(bg), forKey: "bg")
         d.set(hex(cursorColor), forKey: "cursorColor")
+        d.set(cursorShape, forKey: "cursorShape")
+        if let a = ansi16 { d.set(a.map { hex($0) }.joined(separator: ","), forKey: "ansi16") } else { d.removeObject(forKey: "ansi16") }
     }
 
     var font: NSFont {

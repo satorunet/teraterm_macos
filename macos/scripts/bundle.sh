@@ -1,5 +1,5 @@
 #!/bin/bash
-# release ビルドして build/TeraMac.app を作る
+# release ビルドして build/Tera Term Mac.app を作る
 #   ./scripts/bundle.sh             … この Mac 用
 #   ./scripts/bundle.sh --universal … Apple Silicon と Intel の両対応
 set -euo pipefail
@@ -16,7 +16,7 @@ else
     BIN=".build/release/TeraMac"
 fi
 
-APP="build/TeraMac.app"
+APP="build/Tera Term Mac.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/TeraMac"
@@ -29,8 +29,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleExecutable</key><string>TeraMac</string>
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
-    <key>CFBundleName</key><string>TeraMac</string>
-    <key>CFBundleDisplayName</key><string>TeraMac</string>
+    <key>CFBundleName</key><string>Tera Term Mac</string>
+    <key>CFBundleDisplayName</key><string>Tera Term Mac</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>

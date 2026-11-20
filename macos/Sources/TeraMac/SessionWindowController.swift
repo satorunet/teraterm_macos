@@ -90,7 +90,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     func updateTitle() {
         var t = remoteTitle ?? spec?.title ?? "未接続"
         if spec != nil && !connected { t += " (切断)" }
-        window?.title = "\(t) - TeraMac \(term.cols)x\(term.rows)"
+        window?.title = "\(t) - Tera Term Mac \(term.cols)x\(term.rows)"
         window?.tab.title = remoteTitle ?? spec?.title ?? "未接続"
     }
 

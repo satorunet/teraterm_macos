@@ -97,7 +97,7 @@ enum Keychain {
         let q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
             kSecAttrAccount as String: account, kSecValueData as String: Data(value.utf8),
-            kSecAttrLabel as String: "TeraMac メニュー",
+            kSecAttrLabel as String: "Tera Term Mac メニュー",
         ]
         SecItemAdd(q as CFDictionary, nil)
     }
@@ -224,10 +224,11 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
     func install() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let b = item.button {
-            let img = NSImage(systemSymbolName: "terminal", accessibilityDescription: "TeraMac メニュー")
-            img?.isTemplate = true
+            // 元の Tera Term のアイコン (アプリのアイコン) をメニューバーにも使う
+            let img = (NSApp.applicationIconImage.copy() as? NSImage) ?? NSImage()
+            img.size = NSSize(width: 18, height: 18)
             b.image = img
-            b.toolTip = "TeraMac メニュー"
+            b.toolTip = "Tera Term Mac メニュー"
             b.target = self
             b.action = #selector(statusClicked(_:))
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -286,7 +287,7 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
         add("フォント指定…", #selector(chooseFont(_:)))
         add("左クリックで一覧を表示", #selector(toggleLeftClick(_:)), store.leftClickList)
         add("ホットキー (⌃⌥M) で一覧を表示", #selector(toggleHotkey(_:)), store.hotkey)
-        add("Mac にログインしたら TeraMac を起動", #selector(toggleLoginItem(_:)), LoginItem.enabled)
+        add("Mac にログインしたら Tera Term Mac を起動", #selector(toggleLoginItem(_:)), LoginItem.enabled)
         add("バージョン情報", #selector(showVersion(_:)))
         m.addItem(.separator())
         add("実行 (新しい接続)…", #selector(execute(_:)))
@@ -450,7 +451,7 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
     init() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 520), styleMask: [.titled, .closable, .miniaturizable],
                          backing: .buffered, defer: false)
-        w.title = "リスト設定 - TeraMac メニュー"
+        w.title = "リスト設定 - Tera Term Mac メニュー"
         super.init(window: w)
         w.delegate = self
         build()
@@ -551,10 +552,11 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         connectButton.keyEquivalent = "\r"
         let closeButton = NSButton(title: "閉じる", target: self, action: #selector(closeEditor(_:)))
         closeButton.keyEquivalent = "\u{1B}"
-        let note = NSTextField(labelWithString: "一覧はメニューバーの端末アイコン、ホットキー ⌃⌥M、Dock アイコンの右クリックから開けます")
-        note.textColor = .secondaryLabelColor
-        note.font = NSFont.systemFont(ofSize: 11)
-        let bottom = hstack([note, NSView(), closeButton, connectButton])
+        let importButton = NSButton(title: "ttpmenu.ini 読み込み…", target: self, action: #selector(importTTMenu(_:)))
+        let exportButton = NSButton(title: "ttpmenu.ini 書き出し…", target: self, action: #selector(exportTTMenu(_:)))
+        importButton.toolTip = "Windows 版 TeraTerm Menu の ttpmenu.ini から接続先を読み込む"
+        exportButton.toolTip = "Windows 版 TeraTerm Menu で読める ttpmenu.ini に書き出す"
+        let bottom = hstack([importButton, exportButton, NSView(), closeButton, connectButton])
 
         let root = NSStackView(views: [top, bottom])
         root.orientation = .vertical
@@ -749,6 +751,47 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
 
     @objc private func closeEditor(_ sender: Any?) { window?.performClose(nil) }
 
+    @objc private func importTTMenu(_ sender: Any?) {
+        let p = NSOpenPanel()
+        p.message = "Windows 版 TeraTerm Menu の ttpmenu.ini を選んでください"
+        p.allowedFileTypes = ["ini", "INI"]
+        p.allowsOtherFileTypes = true
+        p.beginSheetModal(for: window!) { r in
+            guard r == .OK, let url = p.url else { return }
+            let res = TTMenuIni.importFile(url)
+            self.entries = MenuStore.shared.entries
+            self.table.reloadData()
+            if !self.entries.isEmpty { self.table.selectRowIndexes([0], byExtendingSelection: false); self.loadSelected() }
+            let a = NSAlert()
+            a.messageText = res.ok ? "\(url.lastPathComponent) を読み込みました" : "読み込めませんでした"
+            a.informativeText = res.message
+            a.beginSheetModal(for: self.window!)
+        }
+    }
+
+    @objc private func exportTTMenu(_ sender: Any?) {
+        guard !entries.isEmpty else { NSSound.beep(); return }
+        let p = NSSavePanel()
+        p.nameFieldStringValue = "ttpmenu.ini"
+        p.message = "Windows 版 TeraTerm Menu で読める形式で書き出します"
+        let check = NSButton(checkboxWithTitle: "パスワードも書き出す (Windows 版と同じ簡易な暗号化なので取り扱い注意)", target: nil, action: nil)
+        check.state = .off
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 32))
+        check.frame = NSRect(x: 12, y: 6, width: 500, height: 20)
+        box.addSubview(check)
+        p.accessoryView = box
+        p.beginSheetModal(for: window!) { r in
+            guard r == .OK, let url = p.url else { return }
+            let data = TTMenuIni.write(self.entries, includePasswords: check.state == .on)
+            do {
+                try data.write(to: url)
+            } catch {
+                let a = NSAlert(error: error)
+                a.beginSheetModal(for: self.window!)
+            }
+        }
+    }
+
     @objc private func chooseKey(_ sender: Any?) {
         let p = NSOpenPanel()
         p.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.ssh")
@@ -913,5 +956,154 @@ final class MenuDetailsDialog: SheetDialog {
     override func cancel() {
         close()
         completion?(nil)
+    }
+}
+
+// MARK: - Windows 版 TeraTerm Menu の ttpmenu.ini の読み書き
+
+enum TTMenuIni {
+    struct ImportResult {
+        var entries: [MenuEntry] = []
+        var passwords: [String: String] = [:]   // id → パスワード
+        var notes: [String] = []
+    }
+
+    /// Windows 版の簡易暗号: 文字を逆順にして各バイトを 0xFF で XOR (同じ操作で元に戻る)
+    static func flip(_ b: [UInt8]) -> [UInt8] { b.reversed().map { $0 ^ 0xFF } }
+
+    static func decodePassword(_ hex: String) -> String? {
+        let bytes = hex.split(separator: " ").compactMap { UInt8($0, radix: 16) }
+        guard !bytes.isEmpty else { return nil }
+        let raw = flip(bytes)
+        return String(bytes: raw, encoding: .shiftJIS) ?? String(bytes: raw, encoding: .utf8)
+    }
+
+    static func encodePassword(_ pw: String) -> String {
+        let raw = [UInt8](pw.data(using: .shiftJIS) ?? Data(pw.utf8))
+        return flip(raw).map { String(format: "%02X ", $0) }.joined()
+    }
+
+    /// 数値は 10 進 (ttpmenu) と 16 進 8 桁 (付属の変換スクリプト) の両方を受ける
+    private static func num(_ s: String?) -> Int? {
+        guard let s = s?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
+        if s.count == 8, let v = Int(s, radix: 16) { return v }
+        return Int(s) ?? Int(s, radix: 16)
+    }
+
+    static func read(_ ini: IniFile) -> ImportResult {
+        var r = ImportResult()
+        for name in ini.sectionNames where name.lowercased() != "ttermmenu" {
+            func str(_ k: String) -> String { ini.string(name, k) ?? "" }
+            func flag(_ k: String) -> Bool { (num(ini.string(name, k)) ?? 0) != 0 }
+            guard ini.string(name, "HostName") != nil || ini.string(name, "Mode") != nil else { continue }
+            var e = MenuEntry()
+            e.name = name
+            e.host = str("HostName")
+            switch num(ini.string(name, "Mode")) ?? 0 {
+            case 1: e.mode = .macro
+            case 2: e.mode = .direct
+            default: e.mode = .login
+            }
+            e.useUser = flag("UserFlag")
+            e.user = str("UserName")
+            e.usePassword = flag("PasswdFlag")
+            e.useSSH = flag("TeraTerm Mode")
+            e.keyFile = str("PrivateKeyFile")
+            e.macroFile = str("MacroFile")
+            e.startup = flag("Startup")
+            e.logFile = str("Log")
+            if !str("LoginPrompt").isEmpty { e.loginPrompt = str("LoginPrompt") }
+            if !str("PasswdPrompt").isEmpty { e.passwordPrompt = str("PasswdPrompt") }
+            e.option = str("Option")
+            if e.usePassword {
+                if flag("LockBoxFlag") {
+                    e.usePassword = false
+                    r.notes.append("「\(name)」のパスワードは LockBox で暗号化されているため読めません (リスト設定で入れ直してください)")
+                } else if let pw = decodePassword(str("Password")), !pw.isEmpty {
+                    r.passwords[e.id] = pw
+                } else {
+                    e.usePassword = false
+                }
+            }
+            for (label, path) in [("鍵ファイル", e.keyFile), ("マクロ", e.macroFile), ("ログ", e.logFile)] where path.contains(":\\") {
+                r.notes.append("「\(name)」の\(label)は Windows のパスです: \(path)")
+            }
+            r.entries.append(e)
+        }
+        return r
+    }
+
+    /// Windows 版と同じ書式 (UTF-16LE, BOM 付き, CRLF) で書き出す
+    static func write(_ entries: [MenuEntry], includePasswords: Bool) -> Data {
+        let store = MenuStore.shared
+        var lines = ["[TTermMenu]",
+                     "IconMode=\(store.largeIcon ? 1 : 0)",
+                     "LeftButtonPopup=\(store.leftClickList ? 1 : 0)",
+                     "Hotkey=\(store.hotkey ? 1 : 0)", ""]
+        for e in entries {
+            let pw = (includePasswords && e.usePassword) ? (Keychain.get(e.id) ?? "") : ""
+            let name = e.name.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")")
+            lines += [
+                "[\(name)]",
+                "HostName=\(e.host)",
+                "Mode=\(e.mode == .macro ? 1 : (e.mode == .direct ? 2 : 0))",
+                "UserFlag=\(e.useUser ? 1 : 0)",
+                "UserName=\(e.user)",
+                "PasswdFlag=\(pw.isEmpty ? 0 : 1)",
+                "LockBoxFlag=0",
+                "Password=\(pw.isEmpty ? "" : encodePassword(pw))",
+                "TeraTerm=",
+                "INI_File=",
+                "Option=\(e.option)",
+                "LoginPrompt=\(e.loginPrompt)",
+                "PasswdPrompt=\(e.passwordPrompt)",
+                "MacroFile=\(e.macroFile)",
+                "TeraTerm Mode=\(e.useSSH ? 1 : 0)",
+                "Startup=\(e.startup ? 1 : 0)",
+                "Log=\(e.logFile)",
+                "PrivateKeyFile=\(e.keyFile)",
+                "Challenge=0",
+                "Pageant=0",
+                "",
+            ]
+        }
+        let text = lines.joined(separator: "\r\n")
+        return Data([0xFF, 0xFE]) + (text.data(using: .utf16LittleEndian) ?? Data())
+    }
+
+    /// 読み込んで今の一覧にまとめる (同じ名前は上書き)。結果の説明を返す
+    static func importFile(_ url: URL) -> (ok: Bool, message: String) {
+        guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data) else {
+            return (false, "読み込めませんでした: \(url.path)")
+        }
+        let r = read(ini)
+        guard !r.entries.isEmpty else { return (false, "接続先が見つかりませんでした。ttpmenu.ini ではないかもしれません。") }
+        var list = MenuStore.shared.entries
+        var added = 0, replaced = 0
+        for var e in r.entries {
+            let pw = r.passwords[e.id]
+            if let i = list.firstIndex(where: { $0.name == e.name }) {
+                e.id = list[i].id
+                list[i] = e
+                replaced += 1
+            } else {
+                list.append(e)
+                added += 1
+            }
+            if let pw = pw { Keychain.set(pw, for: e.id) } else if !e.usePassword { Keychain.delete(e.id) }
+        }
+        MenuStore.shared.entries = list
+        // 全体の設定
+        let T = "TTermMenu"
+        if let v = num(ini.string(T, "IconMode")) { MenuStore.shared.largeIcon = v != 0 }
+        if let v = num(ini.string(T, "LeftButtonPopup")) { MenuStore.shared.leftClickList = v != 0 }
+        if let v = num(ini.string(T, "Hotkey")) {
+            MenuStore.shared.hotkey = v != 0
+            TeraMenuController.shared.updateHotkey()
+        }
+        var msg = "追加 \(added) 件、上書き \(replaced) 件"
+        if !r.passwords.isEmpty { msg += "\nパスワード \(r.passwords.count) 件はキーチェーンに保存しました" }
+        if !r.notes.isEmpty { msg += "\n\n" + r.notes.map { "・" + $0 }.joined(separator: "\n") }
+        return (true, msg)
     }
 }

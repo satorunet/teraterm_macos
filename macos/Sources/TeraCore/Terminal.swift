@@ -74,6 +74,8 @@ public final class Terminal {
     public private(set) var cursorVisible = true
     public private(set) var reverseScreen = false
     public private(set) var cursorStyle: CursorStyle = .block
+    /// 既定のカーソル形 (Tera Term の CursorShape)。リセットするとこれに戻る
+    public var defaultCursorStyle: CursorStyle = .block { didSet { cursorStyle = defaultCursorStyle } }
     public private(set) var mouseMode = 0     // 0 / 1000 / 1002 / 1003
     public private(set) var mouseSGR = false
     private var autowrap = true
@@ -515,7 +517,7 @@ public final class Terminal {
         appCursor = false; appKeypad = false; bracketedPaste = false
         cursorVisible = true; reverseScreen = false; autowrap = true
         insertMode = false; originMode = false; lnm = false
-        mouseMode = 0; mouseSGR = false; cursorStyle = .block
+        mouseMode = 0; mouseSGR = false; cursorStyle = defaultCursorStyle
         g = [.ascii, .ascii, .ascii, .ascii]; gl = 0
         saved = Saved(); savedAlt = Saved()
         resetTabs()
@@ -564,7 +566,8 @@ public final class Terminal {
         if priv != nil { return }
         if inter == " " && f == "q" {
             switch p0(0) {
-            case 0, 1, 2: cursorStyle = .block
+            case 0: cursorStyle = defaultCursorStyle
+            case 1, 2: cursorStyle = .block
             case 3, 4: cursorStyle = .underline
             default: cursorStyle = .bar
             }

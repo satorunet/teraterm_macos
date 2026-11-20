@@ -79,6 +79,7 @@ final class TerminalView: NSView, NSTextInputClient {
         cellH = ceil(lm.defaultLineHeight(for: font))
         baseline = ceil(font.ascender)
         term.ambiguousWide = settings.ambiguousWide
+        term.defaultCursorStyle = settings.cursorShape == "vertical" ? .bar : (settings.cursorShape == "horizontal" ? .underline : .block)
         term.scrollbackLimit = settings.scrollback
     }
 
@@ -123,8 +124,10 @@ final class TerminalView: NSView, NSTextInputClient {
         switch c {
         case .def: return isFG ? settings.fg : settings.bg
         case .idx(let i):
-            if isFG && bold && i < 8 { return Palette.colors[Int(i) + 8] }
-            return Palette.colors[Int(i)]
+            var n = Int(i)
+            if isFG && bold && n < 8 { n += 8 }
+            if n < 16, let a = settings.ansi16 { return a[n] }
+            return Palette.colors[n]
         case .rgb(let r, let g, let b):
             return NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
         }

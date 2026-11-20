@@ -220,3 +220,32 @@ final class TTLTests: XCTestCase {
         XCTAssertEqual(i.variable("f")?.description, "World-007")
     }
 }
+
+final class IniFileTests: XCTestCase {
+    func testParse() {
+        let text = """
+        ; comment
+        [Tera Term]
+        TerminalSize=100,30
+        KanjiReceive = SJIS
+        LocalEcho=on
+        [hosts]
+        Host1=a.example.com
+        Host2=user@b:2222 /ssh
+        """
+        let f = IniFile(text: text)
+        XCTAssertEqual(f.ints("tera term", "terminalsize"), [100, 30])
+        XCTAssertEqual(f.string("Tera Term", "KanjiReceive"), "SJIS")
+        XCTAssertEqual(f.onOff("Tera Term", "LocalEcho"), true)
+        XCTAssertEqual(f.keys("Hosts").map { $0.1 }, ["a.example.com", "user@b:2222 /ssh"])
+    }
+
+    func testEncodings() {
+        let s = "[Tera Term]\r\nTitle=日本語\r\n"
+        for enc in [String.Encoding.utf16LittleEndian, .utf8, .shiftJIS] {
+            var d = s.data(using: enc)!
+            if enc == .utf16LittleEndian { d = Data([0xFF, 0xFE]) + d }
+            XCTAssertEqual(IniFile(data: d)?.string("Tera Term", "Title"), "日本語", "\(enc)")
+        }
+    }
+}

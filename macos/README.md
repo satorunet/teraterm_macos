@@ -1,4 +1,4 @@
-# TeraMac — Tera Term の macOS 版
+# Tera Term Mac — Tera Term の macOS 版
 
 Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したものです。
 (元の Tera Term は Win32 API で書かれているため、Mac ではそのまま動きません。)
@@ -17,7 +17,7 @@ Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したも�
 
 ## TeraTerm Menu (メニューバー常駐ランチャー)
 
-Windows 版の TeraTerm Menu (ttpmenu) を標準で組み込んでいます。タスクトレイの代わりに **メニューバーの端末アイコン** に常駐します。
+Windows 版の TeraTerm Menu (ttpmenu) を標準で組み込んでいます。タスクトレイの代わりに **メニューバーの Tera Term アイコン** に常駐します。
 
 - **左クリック**: 登録した接続先の一覧 → 選ぶと新しいウインドウで接続
 - **右クリック**: リスト設定 / 大きいアイコンで表示 / フォント指定 / 左クリックで一覧を表示 / ホットキー (⌃⌥M) で一覧を表示 / Mac にログインしたら起動 / バージョン情報 / 実行 / 終了
@@ -33,10 +33,19 @@ Windows 版の TeraTerm Menu (ttpmenu) を標準で組み込んでいます。�
 | 起動方法: マクロファイル指定 | 接続してから TTL マクロを実行 |
 | 起動方法: 起動のみ | 接続だけ |
 | 詳細 | ログファイル (`%Y%m%d` などで日時)、ユーザー名プロンプト、パスワードプロンプト、オプション (`/KR=SJIS /KT=SJIS` で文字コード、`/C= /BAUD=` でシリアル、`/T=0` で生 TCP など) |
-| 起動時に実行 | TeraMac の起動時に自動で接続 |
+| 起動時に実行 | Tera Term Mac の起動時に自動で接続 |
 
 パスワードは Windows 版の LockBox の代わりに **macOS のキーチェーン** に暗号化して保存します。
+
+**ttpmenu.ini の読み込み・書き出し** (リスト設定の左下のボタン): Windows 版の ttpmenu.ini (UTF-16 / UTF-8 / Shift_JIS、レジストリ変換スクリプトの 16 進形式も可) から接続先とパスワードを読み込み、Windows 版でそのまま読める形式 (UTF-16, CRLF) で書き出せます。LockBox で暗号化されたパスワードは読めないので入れ直してください。書き出し時のパスワードは任意 (Windows 版と同じ簡易な暗号化)。
 ウインドウを全部閉じてもメニューバーに残ります (終了はメニューバーの右クリック →「終了」か ⌘Q)。
+
+## 設定画面 (⌘,)
+
+- **配色かんたん設定**: ダーク / ホワイト / 暖色 / 暖色 (明るい) / ピンク / ピンク (ダーク) / Tera Term 標準 / Solarized に加え、標準のターミナル (Terminal.app) のプロファイル (Basic, Pro, Homebrew, Ocean など) の配色を候補から選べます。見本を見ながら選べ、ANSI 16 色もまとめて変わります
+- **Windows の TERATERM.INI を読み込む**: 端末サイズ・文字コード・改行コード・ローカルエコー・BS キー・色 (VTColor / ANSIColor)・フォント・カーソル形・貼り付け確認・スクロールバッファ・シリアル設定・接続先の履歴 ([Hosts])・SSH の既定ユーザー名を反映します。反映した/しなかった項目は一覧で表示されます
+
+フォントの既定は標準のターミナルと同じ (通常 Menlo 11pt) です。
 
 ## ビルド
 
@@ -44,21 +53,21 @@ Xcode (コマンドラインツール) が入った Mac で:
 
 ```sh
 cd macos
-./scripts/bundle.sh          # build/TeraMac.app ができる
-open build/TeraMac.app
+./scripts/bundle.sh          # "build/Tera Term Mac.app" ができる
+open "build/Tera Term Mac.app"
 swift test                   # 端末エミュレータとマクロのテスト
 ```
 
 ## コマンドライン (Tera Term と似た書き方)
 
 ```sh
-TeraMac.app/Contents/MacOS/TeraMac host:22 /ssh /user=root
-TeraMac.app/Contents/MacOS/TeraMac host /telnet
-TeraMac.app/Contents/MacOS/TeraMac /C=/dev/cu.usbserial-XXXX /BAUD=115200
-TeraMac.app/Contents/MacOS/TeraMac /M=~/macro.ttl
+"Tera Term Mac.app/Contents/MacOS/TeraMac" host:22 /ssh /user=root
+"Tera Term Mac.app/Contents/MacOS/TeraMac" host /telnet
+"Tera Term Mac.app/Contents/MacOS/TeraMac" /C=/dev/cu.usbserial-XXXX /BAUD=115200
+"Tera Term Mac.app/Contents/MacOS/TeraMac" /M=~/macro.ttl
 ```
 
-`.ttl` ファイルを TeraMac で開くとマクロが実行されます。
+`.ttl` ファイルを Tera Term Mac で開くとマクロが実行されます。
 
 ## 主なショートカット
 
