@@ -3,8 +3,9 @@ import TeraCore
 
 /// 端末の設定 (UserDefaults に保存。Tera Term の TERATERM.INI に相当)
 struct TermSettings {
-    var fontName = "Menlo"
-    var fontSize: CGFloat = 14
+    // 標準のターミナル (Terminal.app) の既定プロファイルと同じフォントにする
+    var fontName = TermSettings.terminalAppFont.fontName
+    var fontSize: CGFloat = TermSettings.terminalAppFont.pointSize
     var cols = 80
     var rows = 24
     var encoding: TermEncoding = .utf8
@@ -27,6 +28,17 @@ struct TermSettings {
     var logTimestamp = false
 
     private static let d = UserDefaults.standard
+
+    /// Terminal.app の既定プロファイルのフォント (読めなければ Terminal の初期値 Menlo 11pt)
+    static let terminalAppFont: NSFont = {
+        let fallback = NSFont(name: "Menlo-Regular", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        guard let t = UserDefaults(suiteName: "com.apple.Terminal"),
+              let profile = t.string(forKey: "Default Window Settings"),
+              let all = t.dictionary(forKey: "Window Settings"),
+              let p = all[profile] as? [String: Any] else { return fallback }
+        guard let data = p["Font"] as? Data else { return fallback }
+        return (try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSFont.self, from: data)) ?? fallback
+    }()
 
     static func load() -> TermSettings {
         var s = TermSettings()

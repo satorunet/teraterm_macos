@@ -144,6 +144,8 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // macOS の「フォントスムージング」は暗い背景の明るい文字を太く見せるので切る (Terminal.app の見た目に合わせる)
+        NSGraphicsContext.current?.cgContext.setShouldSmoothFonts(false)
         let screenRev = term.reverseScreen
         (screenRev ? settings.fg : settings.bg).setFill()
         dirtyRect.fill()
