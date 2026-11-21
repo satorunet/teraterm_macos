@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.3.0"
+VERSION="${VERSION:-0.3.1}"
 BUILD_NUMBER="1"
 BUNDLE_ID="${BUNDLE_ID:-net.satoru.teramac}"
 NAME="Tera Term Mac"
@@ -45,7 +45,7 @@ plist() {
     <key>CFBundleIconFile</key><string>$5</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
+    <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleDevelopmentRegion</key><string>ja</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
@@ -62,6 +62,9 @@ APP="build/${NAME}.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINDIR/TeraMac" "$APP/Contents/MacOS/TeraMac"
+# 自動アップデート (Sparkle) の部品を同梱する
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$BINDIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # ライセンス (アイコンの元の Tera Term の BSD ライセンス表示も含む)
 cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
@@ -73,10 +76,24 @@ plist "$APP/Contents/Info.plist" TeraMac "$BUNDLE_ID" "$NAME" AppIcon '    <key>
             <key>CFBundleTypeExtensions</key><array><string>ttl</string></array>
             <key>LSHandlerRank</key><string>Owner</string>
         </dict>
-    </array>'
+    </array>
+    <key>SUFeedURL</key><string>https://raw.githubusercontent.com/satorunet/teraterm_macos/main/macos/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>OZ6nZ4BU5/VBISm4VmPh16mCWj7BNw6+yOfTtAhYDH0=</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUEnableSystemProfiling</key><false/>
+    <key>SUAllowsAutomaticUpdates</key><false/>'
 
 # 署名: 「Developer ID Application」の証明書があればそれで (なければ ad-hoc)
 SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)}"
+# Sparkle の中身は内側から順に署名する (Sparkle の説明どおり)
+SP="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -n "$SIGN_ID" ]; then
+    codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP/Versions/B/XPCServices/Installer.xpc"
+    codesign --force --options runtime --timestamp -s "$SIGN_ID" --preserve-metadata=entitlements "$SP/Versions/B/XPCServices/Downloader.xpc"
+    codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP/Versions/B/Autoupdate"
+    codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP/Versions/B/Updater.app"
+    codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP"
+fi
 for A in "$APP"; do
     if [ -n "$SIGN_ID" ]; then
         codesign --force --options runtime --timestamp -s "$SIGN_ID" "$A"

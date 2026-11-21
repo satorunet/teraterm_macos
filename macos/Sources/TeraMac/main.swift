@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openedByFile = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        AppUpdater.shared.start()
         buildMenu()
         // TERAMAC_INI_DRYRUN=<ini>: 読み込み結果を書き出して終わる (設定は変えない。確認用)
         if TeraTermIniImport.dryRunIfRequested() { exit(0) }
@@ -217,6 +218,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Tera Term Mac について", #selector(showAbout(_:))),
             item("謝辞とライセンス…", #selector(showCredits(_:))),
             item("ホームページ (GitHub)…", #selector(openHomepage(_:))),
+            .separator(),
+        ] + AppUpdater.shared.menuItems() + [
             .separator(),
             item("端末の設定…", #selector(S.showTerminalSetup(_:)), ","),
             .separator(),

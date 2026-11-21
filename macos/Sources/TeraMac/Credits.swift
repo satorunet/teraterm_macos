@@ -34,6 +34,8 @@ final class CreditsWindowController: NSWindowController {
          "BSD 3-Clause License", "Copyright (C) 1994-1998 T. Teranishi\n(C) 2004- TeraTerm Project"),
         ("鬼車 (Oniguruma) 6.9.10", "TTL マクロの正規表現 (waitregex・strmatch・strreplace など)",
          "BSD 2-Clause License", "Copyright (c) 2002-2021 K.Kosako"),
+        ("Sparkle 2.9", "自動アップデート (アップデートの確認・ダウンロード・署名の確認・入れ替え)",
+         "MIT License", "Copyright (c) 2006-2013 Andy Matuschak ほか Sparkle の開発者"),
     ]
 
     private static func text() -> NSAttributedString {
@@ -107,7 +109,7 @@ final class AboutWindowController: NSWindowController {
         let stack = NSStackView(views: [
             icon,
             label("Tera Term Mac", NSFont.boldSystemFont(ofSize: 16)),
-            label("バージョン \(version)" + (build.isEmpty ? "" : " (\(build))"), small),
+            label("バージョン \(version)" + (build.isEmpty || build == version ? "" : " (\(build))"), small),
             label("Tera Term の macOS 版 (非公式)", small),
             label("シリアル・SSH・Telnet・マクロ", small, .secondaryLabelColor),
             links,

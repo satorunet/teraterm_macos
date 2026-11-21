@@ -24,10 +24,12 @@ Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したも�
 **インストール**: `TeraTermMac-<版>.dmg` を開き、「Tera Term Mac」のアイコンを右の「アプリケーション」へドラッグするだけです (Apple の公証済みなので警告は出ません)。
 ディスクイメージやダウンロードフォルダから直接起動した場合は、アプリケーションフォルダへ移動するか聞かれます。
 
+**アップデート**: 0.3.1 からは自動アップデート (Sparkle) に対応しています。1 日 1 回、新しい版があるか GitHub に確認し、あれば「インストールしますか?」と聞きます (勝手には入れ替えません)。メニューの「アップデートを確認…」でいつでも確認できます。「アップデートを自動で確認」のチェックを外すと、自分で確認しない限り通信しません。Mac の情報などは送りません。
+
 **アンインストール**: Tera Term Mac のメニュー →「Tera Term Mac をアンインストール…」で、消すもの (アプリ本体 / 設定と接続リスト / 保存したパスワード) を選んで削除できます。アプリ本体はゴミ箱に入ります。
 この項目はアプリケーションフォルダにインストールされているときだけ表示されます。
 
-接続リストを残したいときは、先にリスト設定の「ttpmenu.ini 書き出し」で保存しておいてください。
+接続リストを残したいときは、先にリスト設定の「ttpmenu.ini」→「書き出し…」で保存しておいてください。
 
 ## TeraTerm Menu (メニューバー常駐ランチャー)
 
@@ -72,6 +74,18 @@ open "build/Tera Term Mac.app"
 swift test                   # 端末エミュレータとマクロのテスト
 ./scripts/bundle.sh --dmg    # 配布用インストーラー build/TeraTermMac-<版>.dmg (署名・公証つき)
 ```
+
+### リリースの手順 (自動アップデートの配信)
+
+1. `scripts/bundle.sh` の `VERSION` を上げる
+2. `./scripts/bundle.sh --dmg` で DMG を作る (公証まで)
+3. GitHub Releases に `v<版>` を作り、`TeraTermMac-<版>.dmg` を上げる
+4. `./scripts/appcast.sh <版> build/TeraTermMac-<版>.dmg` で `appcast.xml` を書き直し、main に push する
+   (アプリはこの appcast.xml を見て新しい版に気づく)
+
+更新の署名に使う秘密鍵は `~/.config/teramac/sparkle_ed25519_private.txt` (キーチェーンは使わない)。
+これをなくすと、今のアプリに更新を届けられなくなるので、安全な場所にバックアップしておくこと。
+`appcast.sh` が使う `tools/sparkle/sign_update` は Sparkle のリリース (`Sparkle-2.x.tar.xz` の `bin/`) から置く。
 
 ## コマンドライン (Tera Term と似た書き方)
 
@@ -122,4 +136,4 @@ swift test                   # 端末エミュレータとマクロのテスト
 
 MIT License ([LICENSE](LICENSE))。ホームページ: https://github.com/satorunet/teraterm_macos
 
-アイコンは Tera Term の `teraterm/common/teraterm.ico` を変換したもので、Tera Term の BSD ライセンス (© T. Teranishi / TeraTerm Project) に従います (LICENSE の Third-party notice を参照)。
+アイコン・マクロの処理系・ファイル転送は Tera Term (BSD 3-Clause, © T. Teranishi / TeraTerm Project) を、正規表現は鬼車 (BSD 2-Clause)、自動アップデートは Sparkle (MIT) を使っています。全文は LICENSE と、アプリのメニューの「謝辞とライセンス…」にあります。
