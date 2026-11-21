@@ -8,12 +8,31 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     var settings: TermSettings
     private(set) var spec: ConnectionSpec?
     private var conn: Connection?
+    var connection: Connection? { conn }
     private var decoder: StreamDecoder
     private var connected = false
     private var remoteTitle: String?
     private var log: FileHandle?
     private(set) var logPath: String?
     private var logAtLineStart = true
+    /// マクロの logopen のオプション
+    private var logOptions = TTLLogOptions()
+    private var logStarted = Date()
+    private var connectedAt = Date()
+    var logPaused = false
+    var logAutoClose = false
+    private var logRotateSize = 0
+    private var logRotateCount = 1
+    // マクロ用
+    var multicastName = ""
+    var macroTitle: String? { didSet { updateTitle() } }
+    var transferDir: String?
+    /// ファイル転送 (XMODEM / ZMODEM など)。動いている間は受信したデータをこちらに渡す
+    private(set) var transfer: FileTransfer?
+    /// Tera Term の TERATERM.INI にあたる転送の設定 (マクロの指定がつぎの転送にも残る)
+    var transferOptions = FileTransferOptions()
+    private var recvFile: FileHandle?
+    private var recvFileLast = Date()
     /// 自動ログイン: プロンプトが出たら順に答える (TeraTerm Menu の自動ログイン)
     struct LoginStep { var prompt: String; var response: String }
     private var loginSteps: [LoginStep] = []
@@ -46,6 +65,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         term.onResponse = { [weak self] s in self?.sendBytes(Array(s.utf8), echo: false) }
         term.onTitle = { [weak self] t in self?.remoteTitle = t; self?.updateTitle() }
         term.onBell = { NSSound.beep() }
+        term.onMacroText = { [weak self] b in self?.macroText(b) }
         termView.onSendText = { [weak self] s in self?.sendText(s) }
         termView.onSendBytes = { [weak self] b in self?.sendBytes(b, echo: true) }
         termView.onResize = { [weak self] c, r in
@@ -88,6 +108,11 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func updateTitle() {
+        if let mt = macroTitle {
+            window?.title = mt
+            window?.tab.title = mt
+            return
+        }
         var t = remoteTitle ?? spec?.title ?? "未接続"
         if spec != nil && !connected { t += " (切断)" }
         window?.title = "\(t) - Tera Term Mac \(term.cols)x\(term.rows)"
@@ -120,6 +145,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             self.notice(msg.map { "切断されました: \($0)" } ?? "切断されました")
             self.updateTitle()
             self.macro?.connectionChanged()
+            if self.logAutoClose { self.stopLog() }
         }
         if let tcp = c as? TCPConnection {
             tcp.onConnected = { [weak self] in self?.notice("\(spec.title) に接続しました") }
@@ -141,12 +167,16 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
         conn = c
         connected = true
+        connectedAt = Date()
+        macro?.connectionChanged()
         if case .serial(let p) = spec { notice("\(p.path) を開きました (\(p.baud) bps, \(p.dataBits)\(p.parity.prefix(1).uppercased())\(p.stopBits), フロー制御: \(p.flow))") }
         updateTitle()
         return true
     }
 
     var isConnected: Bool { connected }
+    /// 接続を始めたが、まだつながっていない (TCP の名前解決中など)
+    var isConnecting: Bool { false }
 
     func disconnect(silent: Bool = false) {
         guard let c = conn else { return }
@@ -155,6 +185,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         c.close()
         if !silent { notice("切断しました") }
         updateTitle()
+        macro?.connectionChanged()
+        if logAutoClose { stopLog() }
     }
 
     /// 端末に案内を出す (相手には送らない)
@@ -167,12 +199,20 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - 受信
 
     private func received(_ bytes: [UInt8]) {
-        writeLog(bytes)
+        if let t = transfer, t.isRunning {
+            t.feed(bytes)
+            return
+        }
+        if let f = recvFile {
+            f.write(Data(bytes))
+            recvFileLast = Date()
+            return
+        }
+        if !logOptions.plainText || logOptions.binary { writeLog(bytes) }
         let s = decoder.decode(bytes)
         guard !s.isEmpty else { return }
         term.feed(s)
         termView.dataArrived()
-        macro?.received(s)
         if let step = loginSteps.first {
             recentOutput = String((recentOutput + s).suffix(300))
             let tail = recentOutput.lowercased().replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
@@ -218,6 +258,16 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - ログ
 
     func startLog(path: String, append: Bool = true) -> Bool {
+        var o = TTLLogOptions()
+        o.append = append
+        o.binary = true
+        o.timestamp = settings.logTimestamp
+        return startLog(path: path, options: o)
+    }
+
+    /// マクロの logopen (Tera Term のオプション付き)
+    func startLog(path: String, options o: TTLLogOptions) -> Bool {
+        let append = o.append
         stopLog()
         let fm = FileManager.default
         if !fm.fileExists(atPath: path) || !append { fm.createFile(atPath: path, contents: nil) }
@@ -226,6 +276,13 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         log = h
         logPath = path
         logAtLineStart = true
+        logOptions = o
+        logPaused = false
+        logStarted = Date()
+        if o.includeScreenBuffer {
+            let text = term.scrollbackText + term.screenText
+            writeLogRaw(Array(text.replacingOccurrences(of: "\n", with: "\r\n").utf8))
+        }
         return true
     }
 
@@ -233,6 +290,42 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         log?.closeFile()
         log = nil
         logPath = nil
+        logOptions = TTLLogOptions()
+        logPaused = false
+    }
+
+    /// logwrite: そのまま書く
+    func writeLogRaw(_ b: [UInt8]) {
+        guard let h = log, !logPaused else { return }
+        h.write(Data(b))
+        rotateLogIfNeeded()
+    }
+
+    /// logrotate size N / rotate N / halt
+    func setLogRotate(_ command: String) {
+        let p = command.split(separator: " ")
+        switch p.first {
+        case "size": logRotateSize = Int(p.last ?? "") ?? 0
+        case "rotate": logRotateCount = max(1, Int(p.last ?? "") ?? 1)
+        default: logRotateSize = 0
+        }
+    }
+
+    private func rotateLogIfNeeded() {
+        guard logRotateSize > 0, let h = log, let path = logPath else { return }
+        guard h.offsetInFile >= UInt64(logRotateSize) else { return }
+        h.closeFile()
+        let fm = FileManager.default
+        try? fm.removeItem(atPath: "\(path).\(logRotateCount)")
+        if logRotateCount > 1 {
+            for i in stride(from: logRotateCount - 1, through: 1, by: -1) {
+                try? fm.moveItem(atPath: "\(path).\(i)", toPath: "\(path).\(i + 1)")
+            }
+        }
+        try? fm.moveItem(atPath: path, toPath: "\(path).1")
+        fm.createFile(atPath: path, contents: nil)
+        log = FileHandle(forWritingAtPath: path)
+        logAtLineStart = true
     }
 
     private static let tsFormat: DateFormatter = {
@@ -241,20 +334,44 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         return f
     }()
 
+    private func logTimestampText() -> [UInt8] {
+        switch logOptions.timestampType {
+        case 1:
+            let f = DateFormatter()
+            f.timeZone = TimeZone(identifier: "UTC")
+            f.dateFormat = "[yyyy-MM-dd HH:mm:ss.SSS UTC] "
+            return Array(f.string(from: Date()).utf8)
+        case 2, 3:
+            let t = Date().timeIntervalSince(logOptions.timestampType == 2 ? logStarted : connectedAt)
+            let ms = Int(t * 1000)
+            return Array(String(format: "[%d %02d:%02d:%02d.%03d] ", ms / 86_400_000, ms / 3_600_000 % 24, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000).utf8)
+        default:
+            return Array(SessionWindowController.tsFormat.string(from: Date()).utf8)
+        }
+    }
+
     private func writeLog(_ bytes: [UInt8]) {
-        guard let h = log else { return }
-        if !settings.logTimestamp {
+        guard let h = log, !logPaused else { return }
+        if !logOptions.timestamp {
             h.write(Data(bytes))
+            rotateLogIfNeeded()
             return
         }
         var out = Data()
-        let ts = Array(SessionWindowController.tsFormat.string(from: Date()).utf8)
+        let ts = logTimestampText()
         for b in bytes {
             if logAtLineStart { out.append(contentsOf: ts); logAtLineStart = false }
             out.append(b)
             if b == 0x0A { logAtLineStart = true }
         }
         h.write(out)
+        rotateLogIfNeeded()
+    }
+
+    /// 端末に表示した文字 (エスケープシーケンスなし)。マクロと、プレーンテキストのログへ
+    private func macroText(_ b: [UInt8]) {
+        macro?.received(b)
+        if log != nil && logOptions.plainText && !logOptions.binary { writeLog(b) }
     }
 
     // MARK: - メニューの操作
@@ -369,24 +486,19 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    func runMacro(url: URL) {
+    func runMacro(url: URL, params: [String] = []) {
         guard macro == nil else { NSSound.beep(); return }
-        guard let data = try? Data(contentsOf: url) else { return }
-        let src = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .shiftJIS) ?? ""
         do {
-            let m = try MacroRunner(source: src, session: self, baseDir: url.deletingLastPathComponent())
+            let m = try MacroRunner(path: url.path, params: params, session: self)
             macro = m
             notice("マクロ開始: \(url.lastPathComponent)")
             m.start { [weak self] err in
                 guard let self = self else { return }
                 self.macro = nil
                 self.setStatus(nil)
+                self.termView.keyboardEnabled = true
                 if let e = err {
-                    self.notice("マクロのエラー: \(e)")
-                    let a = NSAlert()
-                    a.messageText = "マクロのエラー"
-                    a.informativeText = "\(url.lastPathComponent)\n\(e)"
-                    a.beginSheetModal(for: self.window!)
+                    self.notice("マクロのエラーで止めました: \(e)")
                 } else {
                     self.notice("マクロ終了")
                 }
@@ -397,6 +509,157 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             a.informativeText = "\(error)"
             a.beginSheetModal(for: window!)
         }
+    }
+
+
+    // MARK: - マクロから使う
+
+    /// send / sendtext / sendbinary
+    func macroSend(_ b: [UInt8], mode: TTLSendMode) {
+        var binary = mode == .binary
+        if mode == .compat {
+            // Tera Term と同じ判定: CR/LF 以外の制御文字 (最後の 1 バイトは除く) があるか、UTF-8 として読めなければバイナリ
+            if b.dropLast().contains(where: { $0 < 0x20 && $0 != 0x0D && $0 != 0x0A }) { binary = true }
+            if String(bytes: b, encoding: .utf8) == nil { binary = true }
+        }
+        if binary {
+            sendBytes(b, echo: settings.localEcho ? true : false)
+            return
+        }
+        let text = String(decoding: b, as: UTF8.self)
+        var out: [UInt8] = []
+        for (i, part) in text.components(separatedBy: "\r").enumerated() {
+            if i > 0 { out += settings.sendNewlineBytes }
+            out += settings.encoding.encode(part)
+        }
+        sendBytes(out, echo: true)
+    }
+
+    /// sendkcode: よく使うキーだけ (Tera Term の IBM PC キーコード)
+    func macroSendKeyCode(_ code: Int, count: Int) {
+        let map: [Int: [UInt8]] = [
+            328: [0x1B, 0x5B, 0x41], 336: [0x1B, 0x5B, 0x42], 333: [0x1B, 0x5B, 0x43], 331: [0x1B, 0x5B, 0x44],
+            28: [0x0D], 14: [0x08], 15: [0x09], 1: [0x1B], 339: [0x7F],
+            59: [0x1B, 0x4F, 0x50], 60: [0x1B, 0x4F, 0x51], 61: [0x1B, 0x4F, 0x52], 62: [0x1B, 0x4F, 0x53],
+        ]
+        guard let seq = map[code] else { notice("sendkcode \(code) にはまだ対応していません"); return }
+        for _ in 0..<max(1, count) { sendBytes(seq, echo: false) }
+    }
+
+    func macroSendFile(_ path: String, binary: Bool) -> Bool {
+        guard let d = FileManager.default.contents(atPath: path) else { return false }
+        if binary {
+            sendBytes([UInt8](d), echo: false)
+        } else {
+            macroSend(Array(String(decoding: d, as: UTF8.self).replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r").utf8), mode: .text)
+        }
+        return true
+    }
+
+    func beginRecvFile(_ path: String) -> Bool {
+        FileManager.default.createFile(atPath: path, contents: nil)
+        guard let h = FileHandle(forWritingAtPath: path) else { return false }
+        recvFile = h
+        recvFileLast = Date()
+        return true
+    }
+    var isReceivingFile: Bool { recvFile != nil }
+    var recvFileIdleSeconds: Double { Date().timeIntervalSince(recvFileLast) }
+    func endRecvFile() { recvFile?.closeFile(); recvFile = nil }
+
+    /// dispstr: 受信したように画面に出す (相手には送らない)
+    func macroDisplay(_ b: [UInt8]) {
+        let saved = term.onMacroText
+        term.onMacroText = nil
+        term.feed(String(decoding: b, as: UTF8.self))
+        term.onMacroText = saved
+        termView.dataArrived()
+    }
+
+    func macroNotice(_ s: String) { notice(s) }
+
+    /// ファイル転送を始める。終わったら done(成功したか)
+    func startTransfer(_ kind: FileTransferKind, files: [String], binaryFlag: Int, xmodemOption: Int,
+                       done: @escaping (Bool) -> Void) -> Bool {
+        guard connected, transfer == nil else { return false }
+        transferOptions.applyMacroParameters(kind: kind, binaryFlag: binaryFlag, xmodemOption: xmodemOption)
+        if case .serial(let p)? = spec { transferOptions.isTCPIP = false; transferOptions.baudRate = p.baud } else { transferOptions.isTCPIP = true }
+        let dir = transferDir ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()
+        let t = FileTransfer(kind: kind, files: files, receiveDir: dir, options: transferOptions) { [weak self] b in
+            self?.conn?.write(b)
+        }
+        t.onMessage = { [weak self] m in self?.notice(m) }
+        t.onFinish = { [weak self] ok in
+            guard let self = self else { return }
+            self.transfer = nil
+            self.notice("\(kind.title): \(ok ? "完了しました" : "失敗しました")")
+            done(ok)
+        }
+        transfer = t
+        notice("\(kind.title) を始めます\(files.isEmpty ? "" : ": " + files.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))")
+        if !t.start() {
+            transfer = nil
+            notice("\(kind.title) を始められませんでした")
+            return false
+        }
+        return true
+    }
+
+    func cancelTransfer() { transfer?.cancel() }
+
+    var titleForMacro: String { window?.title ?? "" }
+
+    var hostnameForMacro: String {
+        guard connected, let s = spec else { return "" }
+        switch s {
+        case .ssh(let h, _, _, _), .telnet(let h, _), .rawTCP(let h, _): return h
+        case .serial(let p): return (p.path as NSString).lastPathComponent
+        case .shell: return ""
+        }
+    }
+
+    /// scpsend / scprecv の scp コマンドの引数 (SSH 接続のときだけ)
+    func scpArguments(send: Bool, from: String, to: String) -> [String]? {
+        guard connected, case .ssh(let host, let port, let user, let key)? = spec else { return nil }
+        var a = ["-o", "ControlPath=\(sshControlPath(host: host, port: port, user: user))", "-o", "BatchMode=yes"]
+        if port != 22 { a += ["-P", String(port)] }
+        if !key.isEmpty { a += ["-i", (key as NSString).expandingTildeInPath] }
+        let remote = user.isEmpty ? host : "\(user)@\(host)"
+        if send {
+            a += [from, "\(remote):\(to)"]
+        } else {
+            let dest = to.isEmpty ? ((transferDir ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()) as NSString).appendingPathComponent((from as NSString).lastPathComponent) : to
+            a += ["\(remote):\(from)", dest]
+        }
+        return a
+    }
+
+    /// callmenu: Tera Term のメニュー番号
+    func macroCallMenu(_ id: Int) {
+        let actions: [Int: () -> Void] = [
+            50110: { self.newConnection(nil) }, 50003: { self.newConnection(nil) },
+            50111: { self.duplicateSession(nil) }, 50010: { self.duplicateSession(nil) },
+            50120: { self.toggleLog(nil) }, 50125: { self.stopLog() }, 50124: { self.logPaused.toggle() },
+            50130: { self.sendFile(nil) },
+            50190: { self.disconnect() }, 50009: { self.disconnect() },
+            50199: { self.window?.performClose(nil) }, 50005: { self.window?.performClose(nil) },
+            50200: { NSApp.terminate(nil) },
+            50210: { self.termView.copy(nil) }, 50002: { self.termView.copy(nil) },
+            50230: { self.termView.paste(nil) }, 50008: { self.termView.paste(nil) },
+            50250: { self.clearScreen(nil) }, 50260: { self.clearBuffer(nil) },
+            50280: { self.termView.selectAll(nil) }, 50290: { self.termView.selectAll(nil) },
+            50310: { self.showTerminalSetup(nil) }, 50350: { self.serialSetup(nil) },
+            50410: { self.resetTerminal(nil) }, 50430: { self.sendBreak(nil) }, 50001: { self.sendBreak(nil) },
+            50470: { self.runMacroMenu(nil) },
+        ]
+        if let f = actions[id] { f() } else { notice("callmenu \(id) にはまだ対応していません") }
+    }
+
+    /// restoresetup: TERATERM.INI を読み込んでこのウインドウに使う
+    func macroRestoreSetup(_ path: String) {
+        guard let d = FileManager.default.contents(atPath: path), let ini = IniFile(data: d) else { return }
+        let r = TeraTermIniImport.read(ini, base: settings)
+        applySettings(r.settings)
     }
 
     @objc func stopMacro(_ sender: Any?) { macro?.cancel() }

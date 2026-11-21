@@ -193,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showAbout(_ sender: Any?) {
         let credits = NSMutableAttributedString(string: "Tera Term の Mac 版 (非公式)。シリアル / SSH / Telnet / TTL マクロ対応。\nTeraTerm Project とは関係のない個人の移植です。\n")
         credits.append(NSAttributedString(string: AppDelegate.homepage.absoluteString, attributes: [.link: AppDelegate.homepage]))
-        credits.append(NSAttributedString(string: "\n\nMIT License\nアイコンは Tera Term (BSD License, © T. Teranishi / TeraTerm Project) のものです。"))
+        credits.append(NSAttributedString(string: "\n\nMIT License\nアイコン・マクロ処理系・ファイル転送は Tera Term (BSD License, © T. Teranishi / TeraTerm Project) を元にしています。\n正規表現: 鬼車 Oniguruma (BSD License, © K.Kosako)"))
         let p = NSMutableParagraphStyle()
         p.alignment = .center
         credits.addAttributes([.paragraphStyle: p, .font: NSFont.systemFont(ofSize: 11)], range: NSRange(location: 0, length: credits.length))
@@ -325,6 +325,7 @@ enum SelfTest {
               s = '127.0.0.1:'
               strconcat s port
               strconcat s ' /t=0'
+              disconnect 0
               connect s
               sendln 'hello-from-macro'
               wait 'hello-from-macro'
@@ -338,6 +339,7 @@ enum SelfTest {
               s = '/C='
               strconcat s dev
               strconcat s ' /BAUD=115200'
+              disconnect 0
               connect s
               send 'serial-ping'#13
               wait 'serial-pong'

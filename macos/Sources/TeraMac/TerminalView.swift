@@ -10,6 +10,8 @@ final class TerminalView: NSView, NSTextInputClient {
     var onSendText: ((String) -> Void)?
     /// 端末から相手に送るバイト列 (キーのエスケープシーケンスなど)
     var onSendBytes: (([UInt8]) -> Void)?
+    /// マクロの enablekeyb 0 で false (キー入力を送らない)
+    var keyboardEnabled = true
     var onResize: ((Int, Int) -> Void)?
 
     private(set) var cellW: CGFloat = 8
@@ -345,6 +347,7 @@ final class TerminalView: NSView, NSTextInputClient {
     // MARK: - キー入力
 
     override func keyDown(with event: NSEvent) {
+        if !keyboardEnabled { NSSound.beep(); return }
         NSCursor.setHiddenUntilMouseMoves(true)
         if hasMarkedText() {
             inputContext?.handleEvent(event)

@@ -14,7 +14,8 @@ Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したも�
 | 日本語 | UTF-8 / Shift_JIS / EUC-JP、全角文字、日本語入力 (IME)、あいまい幅の切り替え |
 | 操作 | 選択で自動コピー、右クリックで貼り付け、複数行貼り付けの確認、スクロールバック、タブ |
 | ログ | 受信データの保存 (時刻付きも可)、ファイル送信 |
-| マクロ | TTL マクロの主な命令 (`connect` `send` `sendln` `wait` `waitln` `if/elseif/else/endif` `while` `for` `do/loop` `goto` `call` `messagebox` `inputbox` `passwordbox` `logopen` `strconcat` `sprintf2` ほか) |
+| マクロ | Tera Term の TTL マクロ (全命令)。本家 ttpmacro を移植したもので、Windows 版のマクロをそのまま動かせる (下の「マクロ」を参照) |
+| ファイル転送 | マクロから XMODEM / YMODEM / ZMODEM / Kermit / B-Plus / Quick-VAN (本家のプロトコル実装をそのまま使用) |
 | 設定 | 端末サイズ、文字コード、改行コード (送信/受信)、ローカルエコー、BS キー、Option を Meta に、フォント、配色 |
 
 ## インストール / アンインストール
@@ -82,6 +83,16 @@ swift test                   # 端末エミュレータとマクロのテスト
 
 `.ttl` ファイルを Tera Term Mac で開くとマクロが実行されます。
 
+### マクロの互換性
+
+- 字句解析・式・変数・制御構文・各命令は本家 `teraterm/ttpmacro` (ttmparse.cpp / ttl.cpp など) を移したもの。エラー文・`result` の値・細かいくせも本家と同じ
+- 文字列は Tera Term 5 と同じく UTF-8 のバイト列 (`strlen 'あ'` は 3)。マクロファイルは UTF-8 / UTF-16 (BOM 付き) / Shift_JIS を自動判別
+- 正規表現 (`waitregex` `strmatch` `strreplace` `regexoption`) は本家と同じ鬼車 (Oniguruma 6.9.10)
+- `wait` などが見る受信文字は本家と同じ (表示した文字と改行・タブ。エスケープシーケンスは含まない)
+- `getpassword` / `setpassword2` のパスワードファイルは Windows 版と読み書きの互換あり
+- Windows にしかないものは Mac の近いものに置き換え: `exec` は `/bin/sh -c`、`getspecialfolder` は Mac のフォルダ、`scpsend`/`scprecv` は SSH 接続を共有した `scp`、`setdate`/`settime` は何もしない (Mac ではアプリが時計を変えられない)
+- 本家の `tests/*.ttl` はテストで一括実行できる: `TERAMAC_UPSTREAM_REPORT=結果.txt swift test --filter TTLUpstreamTests`
+
 ## 主なショートカット
 
 | キー | 操作 |
@@ -98,7 +109,7 @@ swift test                   # 端末エミュレータとマクロのテスト
 
 ## ソースの構成
 
-- `Sources/TeraCore/` — 端末エミュレータ (`Terminal.swift`)、文字コード、文字幅、TTL マクロ (`TTL.swift`)。AppKit に依存しない
+- `Sources/TeraCore/` — 端末エミュレータ (`Terminal.swift`)、文字コード、文字幅、TTL マクロ (`TTL/`)、ファイル転送 (`FileTransfer/`)。AppKit に依存しない
 - `Sources/TeraMac/` — アプリ本体 (画面描画・キー入力・接続・ダイアログ)
 - `Tests/TeraCoreTests/` — テスト
 

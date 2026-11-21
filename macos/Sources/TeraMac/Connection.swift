@@ -429,7 +429,7 @@ final class SerialConnection: Connection {
     var lineDelayMs = 0
     private let writeQueue = DispatchQueue(label: "serial.write")
 
-    init(params: SerialParams) { self.params = params }
+    init(params: SerialParams) { self.params = params; flow = params.flow }
 
     func start() throws {
         fd = open(params.path, O_RDWR | O_NOCTTY | O_NONBLOCK)
@@ -529,6 +529,59 @@ final class SerialConnection: Connection {
         if fd >= 0 { tcsendbreak(fd, 0) }
     }
 
+    // MARK: - マクロからの操作 (setbaud / setdtr / setrts / setflowctrl / getmodemstatus)
+
+    private(set) var flow = "none"
+
+    @discardableResult
+    func setBaud(_ baud: Int) -> Bool {
+        guard fd >= 0, baud > 0 else { return false }
+        var t = termios()
+        guard tcgetattr(fd, &t) == 0 else { return false }
+        cfsetspeed(&t, speed_t(baud))
+        if tcsetattr(fd, TCSANOW, &t) == 0 { return true }
+        var sp = speed_t(baud)
+        let IOSSIOSPEED: UInt = 0x8008_5402
+        return ioctl(fd, IOSSIOSPEED, &sp) == 0
+    }
+
+    /// 1: XON/XOFF 2: RTS/CTS 3: なし 4: DSR/DTR (Tera Term の番号)
+    @discardableResult
+    func setFlow(_ mode: Int) -> Bool {
+        guard fd >= 0, (1...4).contains(mode) else { return false }
+        var t = termios()
+        guard tcgetattr(fd, &t) == 0 else { return false }
+        t.c_cflag &= ~tcflag_t(CRTSCTS)
+        t.c_iflag &= ~tcflag_t(IXON | IXOFF | IXANY)
+        switch mode {
+        case 1: t.c_iflag |= tcflag_t(IXON | IXOFF); flow = "xon"
+        case 2: t.c_cflag |= tcflag_t(CRTSCTS); flow = "rts"
+        case 4: t.c_cflag |= tcflag_t(CDTR_IFLOW | CDSR_OFLOW); flow = "dsr"
+        default: flow = "none"
+        }
+        return tcsetattr(fd, TCSANOW, &t) == 0
+    }
+
+    /// フロー制御なしのときだけ変えられる (Tera Term と同じ)
+    func setModemLine(_ bit: Int32, _ on: Bool) {
+        guard fd >= 0, flow == "none" else { return }
+        var b = bit
+        _ = ioctl(fd, on ? TIOCMBIS : TIOCMBIC, &b)
+    }
+
+    /// ビット: 1=CTS 2=DSR 4=RI 8=DCD
+    func modemStatus() -> Int? {
+        guard fd >= 0 else { return nil }
+        var bits: Int32 = 0
+        guard ioctl(fd, TIOCMGET, &bits) == 0 else { return nil }
+        var n = 0
+        if bits & TIOCM_CTS != 0 { n |= 1 }
+        if bits & TIOCM_DSR != 0 { n |= 2 }
+        if bits & TIOCM_RI != 0 { n |= 4 }
+        if bits & TIOCM_CD != 0 { n |= 8 }
+        return n
+    }
+
     func close() { shutdown(msg: nil) }
 
     private func shutdown(msg: String?) {
@@ -546,7 +599,8 @@ final class SerialConnection: Connection {
 func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int) -> Connection {
     switch spec {
     case .ssh(let host, let port, let user, let key):
-        var a = ["/usr/bin/ssh"]
+        // マクロの scpsend / scprecv が同じ接続を使えるように ControlMaster を使う
+        var a = ["/usr/bin/ssh", "-o", "ControlMaster=auto", "-o", "ControlPath=\(sshControlPath(host: host, port: port, user: user))", "-o", "ControlPersist=no"]
         if port != 22 { a += ["-p", String(port)] }
         if !key.isEmpty { a += ["-i", (key as NSString).expandingTildeInPath] }
         a.append(user.isEmpty ? host : "\(user)@\(host)")
@@ -562,4 +616,14 @@ func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int) -> Connection 
         // ログインシェルとして起動 (argv[0] を "-zsh" にする代わりに -l を付ける)
         return PTYConnection(argv: [sh, "-l"], cols: cols, rows: rows)
     }
+}
+
+/// ssh の接続を共有するソケットの場所 (scp がログインし直さずに使う)
+func sshControlPath(host: String, port: Int, user: String) -> String {
+    let dir = (NSTemporaryDirectory() as NSString).appendingPathComponent("teramac-ssh")
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    let name = "\(user.isEmpty ? NSUserName() : user)@\(host):\(port)"
+    var h: UInt64 = 1469598103934665603
+    for b in name.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
+    return (dir as NSString).appendingPathComponent(String(h, radix: 36))
 }

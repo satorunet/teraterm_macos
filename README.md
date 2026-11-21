@@ -31,7 +31,7 @@ Tera Term Mac のメニュー →「Tera Term Mac をアンインストール…
 | 端末 | VT100 / xterm 互換、256 色・TrueColor、UTF-8 / Shift_JIS / EUC-JP、日本語入力 |
 | TeraTerm Menu | メニューバーに常駐する接続先ランチャー。自動ログイン、ttpmenu.ini の読み込み・書き出し |
 | 設定 | Windows の TERATERM.INI を読み込み、配色かんたん設定 (Terminal.app のプロファイルも) |
-| マクロ | TTL マクロの主な命令、`/M=` での起動 |
+| マクロ | Tera Term の TTL マクロ (全命令、Windows 版のマクロがそのまま動く)、`/M=` での起動 |
 
 詳しくは [macos/README.md](macos/README.md) を見てください。
 

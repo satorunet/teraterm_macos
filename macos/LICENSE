@@ -23,9 +23,15 @@ SOFTWARE.
 ---------------------------------------------------------------------------
 Third-party notice
 
-The application icon (Resources/AppIcon.icns) is converted from
-teraterm/common/teraterm.ico of Tera Term, which is distributed under the
-BSD 3-Clause License:
+The following parts are derived from Tera Term and are distributed under
+Tera Term's BSD 3-Clause License (below):
+  - the application icon (Resources/AppIcon.icns), converted from
+    teraterm/common/teraterm.ico
+  - the TTL macro interpreter (Sources/TeraCore/TTL), a Swift port of
+    teraterm/ttpmacro (ttmparse.cpp, ttmbuff.c, ttl.cpp, ttl_gui.cpp,
+    ttmdde.c, ttmenc.c, ttmenc2.c)
+  - the file transfer protocols (Sources/CTeraFile), compiled from
+    teraterm/ttpfile
 
 Copyright (C) 1994-1998 T. Teranishi
 (C) 2004-2026 TeraTerm Project
@@ -52,3 +58,33 @@ OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
 WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+---------------------------------------------------------------------------
+Oniguruma (Sources/COniguruma, regular expressions used by TTL macros)
+
+Oniguruma LICENSE
+-----------------
+
+Copyright (c) 2002-2021  K.Kosako  <kkosako0@gmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.

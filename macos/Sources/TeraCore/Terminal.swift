@@ -93,6 +93,11 @@ public final class Terminal {
     public var onResponse: ((String) -> Void)?
     public var onTitle: ((String) -> Void)?
     public var onBell: (() -> Void)?
+    /// マクロ (TTL の wait など) に渡す文字列 (UTF-8)。Tera Term と同じく表示した文字と CR/LF/TAB/BS だけで、
+    /// エスケープシーケンスは含まない。改行はログと同じく CR+LF / LF にそろえ、単独の CR は捨てる
+    public var onMacroText: (([UInt8]) -> Void)?
+    private var macroBuf: [UInt8] = []
+    private var macroCRHold = false
 
     private enum Charset { case ascii, dec, uk }
     private var g: [Charset] = [.ascii, .ascii, .ascii, .ascii]
@@ -141,6 +146,11 @@ public final class Terminal {
     public var screenText: String {
         lines.map { $0.text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
             .joined(separator: "\n")
+    }
+
+    /// スクロールバックの文字 (行末の空白は除く)
+    public var scrollbackText: String {
+        scrollback.map { $0.text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) + "\n" }.joined()
     }
 
     public func clearScrollback() {
@@ -221,6 +231,24 @@ public final class Terminal {
     public func feed(_ s: String) {
         for sc in s.unicodeScalars { process(sc) }
         dirty = true
+        if !macroBuf.isEmpty {
+            let b = macroBuf
+            macroBuf = []
+            onMacroText?(b)
+        }
+    }
+
+    private func macroOut(_ v: UInt32) {
+        guard onMacroText != nil else { return }
+        switch v {
+        case 0x0D:
+            macroCRHold = true
+        case 0x0A:
+            if macroCRHold { macroCRHold = false; macroBuf += [0x0D, 0x0A] } else { macroBuf.append(0x0A) }
+        default:
+            macroCRHold = false
+            if let u = Unicode.Scalar(v) { macroBuf += Array(String(Character(u)).utf8) }
+        }
     }
 
     private func process(_ sc: Unicode.Scalar) {
@@ -294,18 +322,23 @@ public final class Terminal {
         switch v {
         case 0x07: onBell?()
         case 0x08:
+            macroOut(0x08)
             if wrapPending { wrapPending = false } else if cx > 0 { cx -= 1 }
         case 0x09:
+            macroOut(0x09)
             var x = cx + 1
             while x < cols - 1 && !tabs[x] { x += 1 }
             cx = min(x, cols - 1); wrapPending = false
         case 0x0A, 0x0B, 0x0C:
             if recvCRasCRLF && wasCR && v == 0x0A { return }
+            if recvLFasCRLF && v == 0x0A { macroOut(0x0D) }
+            macroOut(0x0A)
             lineFeed()
             if lnm || recvLFasCRLF { cx = 0 }
         case 0x0D:
+            macroOut(0x0D)
             cx = 0; wrapPending = false
-            if recvCRasCRLF { lineFeed(); lastWasCR = true }
+            if recvCRasCRLF { macroOut(0x0A); lineFeed(); lastWasCR = true }
         case 0x0E: gl = 1
         case 0x0F: gl = 0
         case 0x18, 0x1A: state = .ground
@@ -367,6 +400,7 @@ public final class Terminal {
         singleShift = nil
         if cs == .dec, let m = Terminal.decGraphics[sc.value] { sc = m }
         if cs == .uk && sc == "#" { sc = "£" }
+        macroOut(sc.value)
 
         let w = termCharWidth(sc, ambiguousWide: ambiguousWide)
         if w == 0 {
