@@ -6,13 +6,13 @@
     <language>ja</language>
     <item>
       <title>Tera Term Mac 0.3.1</title>
-      <pubDate>Sat, 21 Nov 2026 07:24:03 +0000</pubDate>
+      <pubDate>Sat, 21 Nov 2026 07:30:59 +0000</pubDate>
       <sparkle:version>0.3.1</sparkle:version>
       <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
       <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v0.3.1</sparkle:fullReleaseNotesLink>
       <description><![CDATA[]]></description>
-      <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.3.1/TeraTermMac-0.3.1.dmg" sparkle:edSignature="w1vMXi0LBvelRkPunIXi1NljQs6ElzkzsvuMCujdBI5vIgFvNDn3vYgrMtfdkaEzWTIBNv9DjsYmJLinilNnBA==" length="4101116" type="application/octet-stream"/>
+      <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.3.1/TeraTermMac-0.3.1.dmg" sparkle:edSignature="frkxkAp4vFIOYqM4MYJuTyEMcIZOobN+WmzzWLBFNccDYPf1zmJRTjN5E2HL51EaK/3RXvgQXOc81qarhjEYBA==" length="4102187" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>

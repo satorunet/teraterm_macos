@@ -123,15 +123,20 @@ if [ "$DMG" = 1 ]; then
     OUT="build/TeraTermMac-${VERSION}.dmg"
     RW="build/dmg-rw.dmg"
     rm -f "$OUT" "$RW"
-    [ -d "/Volumes/$VOL" ] && hdiutil detach "/Volumes/$VOL" -force >/dev/null 2>&1 || true
     hdiutil create -volname "$VOL" -srcfolder "$STAGE" -ov -format UDRW -fs HFS+ "$RW" >/dev/null
     rm -rf "$STAGE"
-    DEV=$(hdiutil attach -readwrite -noverify -noautoopen "$RW" | grep -E '^/dev/' | head -1 | awk '{print $1}')
+    ATTACH=$(hdiutil attach -readwrite -noverify -noautoopen "$RW")
+    DEV=$(echo "$ATTACH" | grep -E '^/dev/' | head -1 | awk '{print $1}')
+    # 同じ名前のディスクが開いていると「… 1」のような名前で開くので、実際の名前を使う
+    MNT=$(echo "$ATTACH" | grep -o '/Volumes/.*' | head -1)
+    DISK=$(basename "$MNT")
     sleep 2
-    # Finder に窓の大きさ・背景・アイコンの位置を覚えさせる (.DS_Store に残る)
-    osascript <<APPLESCRIPT
+    # Finder に窓の大きさ・背景・アイコンの位置を覚えさせる (.DS_Store に残る)。
+    # Finder がうまく保存しないことがあるので、保存されたか確かめて、だめならやり直す
+    for TRY in 1 2 3; do
+    osascript <<APPLESCRIPT || true
 tell application "Finder"
-    tell disk "$VOL"
+    tell disk "$DISK"
         open
         set current view of container window to icon view
         set toolbar visible of container window to false
@@ -153,7 +158,15 @@ tell application "Finder"
 end tell
 APPLESCRIPT
     sync
-    rm -rf "/Volumes/$VOL/.fseventsd" 2>/dev/null || true
+    sleep 1
+    # 背景と配置が保存されると .DS_Store は 8KB を超える (保存されないと 6KB ほど)
+    DSSIZE=$(stat -f%z "$MNT/.DS_Store" 2>/dev/null || echo 0)
+    if [ "$DSSIZE" -gt 8000 ]; then break; fi
+    echo "DMG の窓の見た目が保存されませんでした (.DS_Store ${DSSIZE} バイト)。やり直します ($TRY)" >&2
+    if [ "$TRY" = 3 ]; then echo "DMG の窓の見た目を保存できませんでした" >&2; hdiutil detach "$DEV" >/dev/null; exit 1; fi
+    sleep 3
+    done
+    rm -rf "$MNT/.fseventsd" 2>/dev/null || true
     hdiutil detach "$DEV" >/dev/null
     hdiutil convert "$RW" -format UDZO -imagekey zlib-level=9 -o "$OUT" >/dev/null
     rm -f "$RW"
