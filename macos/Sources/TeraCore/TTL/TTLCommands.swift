@@ -20,7 +20,8 @@ extension TTLInterpreter {
         case .bringupBox: return cmdBringupBox()
         case .call: return cmdCall()
         case .callMenu: return commCmdInt { self.host?.ttlCallMenu($0) }
-        case .changeDir: return commCmdStr { self.host?.ttlChangeDir(self.absPath($0)) }
+        // ttdde.c CmdChangeDir: ts.FileDirW にそのまま入る (展開・存在確認は使うとき GetFileDir で)
+        case .changeDir: return commCmdStr { self.host?.ttlChangeDir($0.u8) }
         case .checksum8: return cmdChecksum(.checksum8)
         case .checksum8File: return cmdChecksumFile(.checksum8)
         case .checksum16: return cmdChecksum(.checksum16)
@@ -170,8 +171,9 @@ extension TTLInterpreter {
         case .setFileAttr: return cmdSetFileAttr()
         case .setFlowCtrl: return commCmdInt { _ = self.host?.ttlSetFlowCtrl($0) }
         case .setRts: return commCmdInt { self.host?.ttlSetRTS($0 != 0) }
-        case .setSerialDelayChar: return commCmdIntResult { self.host?.ttlSetSerialDelay(char: $0, line: nil) ?? false }
-        case .setSerialDelayLine: return commCmdIntResult { self.host?.ttlSetSerialDelay(char: nil, line: $0) ?? false }
+        // シリアルでなければ result は変えない (DDE_FNOTPROCESSED)
+        case .setSerialDelayChar: return commCmdBin { if let r = self.host?.ttlSetSerialDelay(char: $0, line: nil) { self.setResult(r ? 1 : 0) } }
+        case .setSerialDelayLine: return commCmdBin { if let r = self.host?.ttlSetSerialDelay(char: nil, line: $0) { self.setResult(r ? 1 : 0) } }
         case .setSync: return cmdSetSync()
         case .setTime: return cmdSetTime()
         case .setTitle: return commCmdStr { self.host?.ttlSetTitle($0.u8) }
@@ -247,7 +249,8 @@ extension TTLInterpreter {
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err == 0 && !linked { err = E.linkFirst }
         if err != 0 { return err }
-        if let r = host?.ttlTransfer(kind, files: [absPath(s)], option: 0) { setResult(r) }
+        // ファイル名はそのまま渡す (相対パスは端末側で FileDir から。filesys_proto.cpp)
+        if let r = host?.ttlTransfer(kind, files: [s.u8], option: 0) { setResult(r) }
         return 0
     }
 
@@ -457,11 +460,12 @@ extension TTLInterpreter {
 
     func cmdInclude() -> Int {
         var err = 0
+        // TTLInclude: GetStrVal のエラーは見ずに読めた分で開く ('sub.ttl のように閉じていなくても読む)。
+        // 開けたあとで GetStrVal のエラーを返す。行末も確かめない
         let s = getStrVal(&err)
-        if err != 0 { return err }
         if s.isEmpty { return E.cantOpen }
         if !buffInclude(absPath(s)) { return E.cantOpen }
-        return 0
+        return err
     }
 
     func cmdExecCmnd() -> Int {
@@ -588,8 +592,9 @@ extension TTLInterpreter {
     }
 
     func cmdWait4all() -> Int {
+        // TTLWait4all: エラーでも IdTTLWait4all にする
         let e = cmdWait(false)
-        if status == .wait { status = .wait4all }
+        beginWait4all()
         return e
     }
 
@@ -619,7 +624,12 @@ extension TTLInterpreter {
         let c = getIntVal(&err)
         endOfLine(&err)
         if err != 0 { return err }
+        // 接続・切断・つながりの切れは、このあと起きた変化だけで起きる (OnDdeComReady / OnDdeEnd)
+        recv.lock()
         wakeupCondition = c & 15
+        comEvents.removeAll()
+        linkEndEvent = false
+        recv.unlock()
         startTimer()
         status = .sleep
         return 0
@@ -656,8 +666,8 @@ extension TTLInterpreter {
     }
 
     func cmdFlushRecv() -> Int {
+        // TTLFlushRecv: つながっているかは見ない
         if getFirstChar() != 0 { return E.syntax }
-        if !linked { return E.linkFirst }
         flushRecv()
         return 0
     }
@@ -739,7 +749,9 @@ extension TTLInterpreter {
         var buf: [UInt8] = []
         let r = getParamStrings(&buf)
         if r != 0 { return r }
-        if ln { buf.append(0x0D) }
+        // ttmdde.c の OutBuf (OutBufSize 512) に入る 511 バイトまで。sendln の CR もその中
+        if buf.count > OutBufSize - 1 { buf = Array(buf[0..<(OutBufSize - 1)]) }
+        if ln && buf.count < OutBufSize - 1 { buf.append(0x0D) }
         host?.ttlSend(buf, mode: mode)
         return 0
     }
@@ -748,7 +760,7 @@ extension TTLInterpreter {
         let r = getParamStrings(&out)
         if r != 0 { return r }
         out = Array(out.prefix(MaxStrLen - 1))
-        if crlf { out += [0x0D, 0x0A] }
+        if crlf { out = Array((out + [0x0D, 0x0A]).prefix(MaxStrLen - 1)) }   // strncat_s(..., _TRUNCATE)
         return 0
     }
 
@@ -765,6 +777,7 @@ extension TTLInterpreter {
         var err = 0
         let s = getStrVal(&err)
         if err != 0 { return err }
+        if !linked { return E.linkFirst }   // SendCmnd
         multicastName = s.u8
         host?.ttlSetMulticastName(multicastName)
         return 0
@@ -787,8 +800,10 @@ extension TTLInterpreter {
         let s = getStrVal(&err)
         let bin = getIntVal(&err)
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
+        if err == 0 && !linked { err = E.linkFirst }   // SendCmnd
         if err != 0 { return err }
-        _ = host?.ttlSendFile(absPath(s), binary: bin != 0)
+        // ttmdde.c SetBinary: BinFlag & 1。送り終わるまで待つ (IdTTLWaitCmndEnd, result は変えない)
+        _ = host?.ttlSendFile(s.u8, binary: (bin & 1) != 0)
         return 0
     }
 
@@ -799,8 +814,10 @@ extension TTLInterpreter {
         var stop = getIntVal(&err)
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err != 0 { return err }
+        if !linked { return E.linkFirst }   // SendCmnd
         if stop < 0 { stop = 0 }
-        setResult((host?.ttlRecvFile(absPath(s), binary: true, autoStopSec: stop) ?? false) ? 1 : 0)
+        // binflag は 1 固定 (ttl.cpp)。始められなかったら result はそのまま (DDE_FNOTPROCESSED)
+        if let r = host?.ttlRecvFileResult(s.u8, autoStopSec: stop) { setResult(r) }
         return 0
     }
 
@@ -810,6 +827,7 @@ extension TTLInterpreter {
         let count = getIntVal(&err)
         endOfLine(&err)
         if err != 0 { return err }
+        if !linked { return E.linkFirst }   // SendCmnd
         host?.ttlSendKCode(code & 0xFFFF, count: count & 0xFFFF)
         return 0
     }
@@ -871,9 +889,9 @@ extension TTLInterpreter {
         // 接続し終わる (または失敗する) まで待つ
         if host.ttlConnect(s.u8, cygwin: w == .cygConnect) {
             // つながるまで待つ (ホストに聞くときは受信のロックを持たない: メインスレッドと取り合わないように)
-            let deadline = Date(timeIntervalSinceNow: 30)
-            func ready() -> Bool { recv.lock(); defer { recv.unlock() }; return comReady || _cancelled }
-            while !ready() && Date() < deadline && host.ttlIsConnecting() { Thread.sleep(forTimeInterval: 0.1) }
+            // Tera Term と同じく時間の上限はない (TCP の失敗・/timeout= で終わる)
+            func ready() -> Bool { recv.lock(); defer { recv.unlock() }; return comReady || _cancelled || !linked }
+            while !ready() && host.ttlIsConnecting() { Thread.sleep(forTimeInterval: 0.05) }
             recv.lock()
             let ok = comReady
             recv.unlock()
@@ -899,9 +917,9 @@ extension TTLInterpreter {
         if getFirstChar() != 0 { return E.syntax }
         if !linked { return E.linkFirst }
         host?.ttlCloseTT()
+        // EndDDE: リンクだけ外す (マクロは続く)
         recv.lock()
         linked = false
-        comReady = false
         recv.unlock()
         return 0
     }
@@ -918,8 +936,10 @@ extension TTLInterpreter {
     func cmdUnlink() -> Int {
         if getFirstChar() != 0 { return E.syntax }
         recv.lock()
+        let was = linked
         linked = false
         recv.unlock()
+        if was { host?.ttlUnlink() }
         return 0
     }
 
@@ -951,12 +971,9 @@ extension TTLInterpreter {
         endOfLine(&err)
         if err == 0 && !linked { err = E.linkFirst }
         if err != 0 { return err }
-        if let v = host?.ttlGetModemStatus() {
-            setIntVal(id, Int32(v))
-            setResult(0)
-        } else {
-            setResult(1)
-        }
+        // GetTTParam は失敗 (シリアルでない・読めない) でも 0 を返すので result はいつも 0
+        setIntVal(id, Int32(host?.ttlGetModemStatus() ?? 0))
+        setResult(0)
         return 0
     }
 
@@ -979,36 +996,34 @@ extension TTLInterpreter {
     // MARK: - ログ
 
     func cmdLogOpen() -> Int {
+        // TTLLogOpen: binary / append が足りなくても、そのあとの引数がなければエラーは捨てて開く (EndLogOptions で Err を見ない)
         var err = 0
         let s = getStrVal(&err)
         var o = TTLLogOptions()
         o.binary = getIntVal(&err) != 0
         o.append = getIntVal(&err) != 0
-        if err != 0 { return err }
-        if checkParameterGiven() {
+        parse: do {
+            if !checkParameterGiven() { break parse }
             o.plainText = getIntVal(&err) != 0
             if err != 0 { return err }
-            if checkParameterGiven() {
-                o.timestamp = getIntVal(&err) != 0
-                if err != 0 { return err }
-                if checkParameterGiven() {
-                    o.hideDialog = getIntVal(&err) != 0
-                    if err != 0 { return err }
-                    if checkParameterGiven() {
-                        o.includeScreenBuffer = getIntVal(&err) != 0
-                        if err != 0 { return err }
-                        if checkParameterGiven() {
-                            let t = getIntVal(&err)
-                            if err != 0 { return err }
-                            if t < 0 || t > 3 { return E.syntax }
-                            o.timestampType = t
-                        }
-                    }
-                }
-            }
+            if !checkParameterGiven() { break parse }
+            o.timestamp = getIntVal(&err) != 0
+            if err != 0 { return err }
+            if !checkParameterGiven() { break parse }
+            o.hideDialog = getIntVal(&err) != 0
+            if err != 0 { return err }
+            if !checkParameterGiven() { break parse }
+            o.includeScreenBuffer = getIntVal(&err) != 0
+            if err != 0 { return err }
+            if !checkParameterGiven() { break parse }
+            let t = getIntVal(&err)
+            if err != 0 { return err }
+            if t < 0 || t > 3 { return E.syntax }
+            o.timestampType = t
         }
         if s.isEmpty || getFirstChar() != 0 { return E.syntax }
-        let ok = host?.ttlLogOpen(absPath(s), options: o) ?? false
+        if !linked { return E.linkFirst }   // GetTTParam
+        let ok = host?.ttlLogOpen(s.u8, options: o) ?? false
         setResult(ok ? 0 : 1)
         return 0
     }
@@ -1019,11 +1034,12 @@ extension TTLInterpreter {
         endOfLine(&err)
         if err == 0 && !linked { err = E.linkFirst }
         if err != 0 { return err }
+        // FLogInfo: オプションの和とファイル名。ログがなければ -1 と空
         if let p = host?.ttlLogInfo() {
-            setResult(1)
-            setStrVal(id, p.ttl)
+            setResult(p.flags)
+            setStrVal(id, ttlTrunc(p.path.ttl))
         } else {
-            setResult(0)
+            setResult(-1)
             setStrVal(id, [])
         }
         return 0
@@ -1076,6 +1092,7 @@ extension TTLInterpreter {
         let bin = getIntVal(&err)
         var opt = getIntVal(&err)
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
+        if err == 0 && !linked { err = E.linkFirst }   // SendCmnd
         if err != 0 { return err }
         // XoptCheck=1 XoptCRC=2 Xopt1kCRC=3 (1kCRC は受信では CRC と同じ)
         switch opt {
@@ -1083,7 +1100,8 @@ extension TTLInterpreter {
         case 3: opt = 2
         default: opt = 1
         }
-        if let r = host?.ttlTransfer(.xmodemRecv, files: [absPath(s)], option: opt | (bin != 0 ? 0x100 : 0)) { setResult(r) }
+        // ttmdde.c SetBinary: BinFlag & 1
+        if let r = host?.ttlTransfer(.xmodemRecv, files: [s.u8], option: opt | ((bin & 1) << 8)) { setResult(r) }
         return 0
     }
 
@@ -1094,7 +1112,8 @@ extension TTLInterpreter {
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err != 0 { return err }
         if opt != 3 { opt = 2 }
-        if let r = host?.ttlTransfer(.xmodemSend, files: [absPath(s)], option: opt) { setResult(r) }
+        if !linked { return E.linkFirst }   // SendCmnd
+        if let r = host?.ttlTransfer(.xmodemSend, files: [s.u8], option: opt) { setResult(r) }
         return 0
     }
 
@@ -1104,7 +1123,8 @@ extension TTLInterpreter {
         let bin = getIntVal(&err)
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err != 0 { return err }
-        if let r = host?.ttlTransfer(.zmodemSend, files: [absPath(s)], option: bin) { setResult(r) }
+        if !linked { return E.linkFirst }   // SendCmnd
+        if let r = host?.ttlTransfer(.zmodemSend, files: [s.u8], option: bin & 1) { setResult(r) }
         return 0
     }
 
@@ -1113,7 +1133,8 @@ extension TTLInterpreter {
         let s = getStrVal(&err)
         if err == 0 && (s.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err != 0 { return err }
-        if let r = host?.ttlTransfer(.ymodemSend, files: [absPath(s)], option: 0) { setResult(r) }
+        if !linked { return E.linkFirst }   // SendCmnd
+        if let r = host?.ttlTransfer(.ymodemSend, files: [s.u8], option: 0) { setResult(r) }
         return 0
     }
 
@@ -1125,6 +1146,8 @@ extension TTLInterpreter {
         var s2 = getStrVal(&err)
         if err != 0 { s2 = []; err = 0 }
         if getFirstChar() != 0 { return E.syntax }
+        if !linked { return E.linkFirst }   // SendCmnd
+        // Tera Term は SCP を始めたらすぐ戻る (終わるのを待たない)
         if send {
             _ = host?.ttlScp(send: true, from: absPath(s), to: s2.u8)
         } else {
@@ -1192,19 +1215,20 @@ extension TTLInterpreter {
                 else if l == "minmaxbutton=on" { opts.minMaxButton = true }
                 else if l == "minimize=on" { opts.minimize = true; opts.maximize = false }
                 else if l == "maximize=on" { opts.minimize = false; opts.maximize = true }
-                else if l.hasPrefix("listboxsize=") {
-                    let parts = l.dropFirst("listboxsize=".count).split(whereSeparator: { $0 == "x" })
-                    if parts.count == 2, let w = Int(parts[0]), let hh = Int(parts[1]), w >= 0, hh >= 0 { opts.size = (w, hh) } else { err = E.syntax; break }
-                } else if let n = Int(t.trimmingCharacters(in: .whitespaces)) {
-                    sel = n
+                else if l.hasPrefix("listb") {
+                    // swscanf "%[^=]=%d%[xX]%d" (幅・高さは文字数)
+                    if let size = TTLInterpreter.scanListBoxSize(t), size.0 >= 0, size.1 >= 0 { opts.size = size } else { err = E.syntax; break }
+                } else if let n = TTCommandLine.scanInt(t) {
+                    sel = n   // sscanf "%d": "2x" は 2
                 } else {
                     err = E.syntax; break
                 }
             }
             endOfLine(&err)
             if err != 0 { return 0 }
+            // 値を入れていない要素は "" (ToWcharU8("") は NULL にならない)
             let items = vars[id].strAry.map { ($0 ?? []).u8 }
-            if items.isEmpty || vars[id].strAry[0] == nil { err = E.syntax; return -1 }
+            if items.isEmpty { err = E.syntax; return -1 }
             if sel < 0 || sel >= items.count { sel = 0 }
             let r = host?.ttlListBox(s1.u8, title: s2.u8, items: items, selected: sel, options: opts) ?? -1
             if r == -2 { status = .end }
@@ -1258,17 +1282,18 @@ extension TTLInterpreter {
             let x = getIntVal(&err)
             let y = getIntVal(&err)
             var position: Int?
+            var ox = 0, oy = 0
             if checkParameterGiven() {
                 let p = getIntVal(&err)
                 if p < 1 || p > 10 { err = E.syntax }
                 position = p
-                if checkParameterGiven() { _ = getIntVal(&err); _ = getIntVal(&err) }
+                if checkParameterGiven() { ox = getIntVal(&err); oy = getIntVal(&err) }
             }
             endOfLine(&err)
             if err != 0 { return err }
-            host?.ttlSetDialogPos(x: x, y: y, position: position)
+            host?.ttlSetDialogPos(x: x, y: y, position: position ?? 0, offsetX: ox, offsetY: oy)
         } else {
-            host?.ttlSetDialogPos(x: Int.min, y: Int.min, position: nil)
+            host?.ttlSetDialogPos(x: Int.min, y: Int.min, position: 0, offsetX: 0, offsetY: 0)
         }
         return 0
     }
@@ -1389,12 +1414,13 @@ extension TTLInterpreter {
 
     func cmdBeep() -> Int {
         var err = 0
+        var v = 0
         if checkParameterGiven() {
-            let v = getIntVal(&err)
+            v = getIntVal(&err)
             if err != 0 { return err }
             if v < 0 || v > 5 { return E.syntax }
         }
-        host?.ttlBeep()
+        host?.ttlBeep(v)
         return 0
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Darwin
+import TeraCore
 
 /// 接続の種類 (Tera Term の「新しい接続」ダイアログに相当)
 enum ConnectionSpec: Equatable {
@@ -22,56 +23,73 @@ enum ConnectionSpec: Equatable {
         }
     }
 
-    /// TTL の connect '...' やコマンドライン引数の書式から作る
-    /// 例: "host:22 /ssh /user=root", "host /telnet", "/C=/dev/cu.usbserial /BAUD=9600"
-    static func parse(_ text: String) -> ConnectionSpec? {
-        var host = ""
-        var port: Int?
-        var kind = "ssh"
-        var user = ""
-        var key = ""
-        var serialPath: String?
-        var baud = 9600
-        for raw in text.split(separator: " ") {
-            let w = String(raw)
-            let l = w.lowercased()
-            if l == "/ssh" || l == "/ssh2" { kind = "ssh" }
-            else if l == "/telnet" || l == "/t=1" { kind = "telnet" }
-            else if l == "/nossh" { kind = "telnet" }
-            else if l == "/t=0" { kind = "raw" }
-            else if l.hasPrefix("/user=") { user = String(w.dropFirst(6)) }
-            else if l.hasPrefix("/keyfile=") { key = String(w.dropFirst(9)) }
-            else if l.hasPrefix("/c=") {
-                let v = String(w.dropFirst(3))
-                serialPath = Int(v).map { _ in SerialPort.list().first ?? "" } ?? v
+    /// TTL の connect '...' やコマンドライン引数の書式から作る (Tera Term + TTSSH のコマンドライン。TTCommandLine)
+    /// 例: "host:22 /ssh /user=root", "host /telnet", "host 23", "telnet://host:23", "ssh://user@host", "/C=1 /BAUD=9600"
+    /// base: いまの接続 (ホストやポートの指定がなければこちらを使う)
+    static func parse(_ text: String, base: ConnectionSpec? = nil) -> ConnectionSpec? {
+        if TTCommandLine.tokens(text).contains(where: { $0.lowercased() == "/shell" }) { return .shell }
+        return from(TTCommandLine.parse(text), base: base)
+    }
+
+    static func from(_ cl: TTCommandLine, base: ConnectionSpec? = nil) -> ConnectionSpec? {
+        switch cl.portType {
+        case .serial?:
+            var s = SerialParams()
+            if case .serial(let b)? = base { s = b }
+            if let d = cl.comDevice {
+                s.path = d
+            } else if let n = cl.comPort {
+                // Mac に COMn はないので、SerialPort.list() の n 番目 (1 から)。範囲外は今のポート (なければ最初のポート)
+                let ports = SerialPort.list()
+                if n >= 1 && n <= ports.count { s.path = ports[n - 1] }
             }
-            else if l.hasPrefix("/baud=") { baud = Int(w.dropFirst(6)) ?? 9600 }
-            else if l.hasPrefix("/p=") { port = Int(w.dropFirst(3)) }
-            else if l == "/shell" { return .shell }
-            else if !w.hasPrefix("/") {
-                if let at = w.lastIndex(of: "@"), !w.hasPrefix("[") {
-                    user = String(w[..<at]); host = String(w[w.index(after: at)...])
-                } else { host = w }
-                if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
-                    // IPv6: [addr] / [addr]:port
-                    let rest = host[host.index(after: close)...]
-                    if rest.hasPrefix(":") { port = Int(rest.dropFirst()) }
-                    host = String(host[host.index(after: host.startIndex)..<close])
-                } else if let c = host.lastIndex(of: ":"), host.filter({ $0 == ":" }).count == 1 {
-                    port = Int(host[host.index(after: c)...]); host = String(host[..<c])
+            if s.path.isEmpty { s.path = SerialPort.list().first ?? "" }
+            if let v = cl.baud { s.baud = v }
+            if let v = cl.dataBit, v == 7 || v == 8 { s.dataBits = v }
+            if let v = cl.parity, ["none", "odd", "even"].contains(v) { s.parity = v }
+            if let v = cl.stopBit { s.stopBits = v == "1" ? 1 : 2 }
+            if let v = cl.flowCtrl {
+                switch v {
+                case "x": s.flow = "xon"
+                case "hard", "rtscts": s.flow = "rts"
+                case "dsrdtr": s.flow = "dsr"
+                default: s.flow = "none"
                 }
             }
+            return s.path.isEmpty ? nil : .serial(s)
+        case .tcpip?:
+            guard let host = cl.host, !host.isEmpty else {
+                // /P= や /T= だけ: 今のホストを使う
+                guard let b = base else { return nil }
+                switch b {
+                case .ssh(let h, _, _, _), .telnet(let h, _), .rawTCP(let h, _):
+                    var c2 = cl; c2.host = h
+                    return from(c2, base: nil)
+                default: return nil
+                }
+            }
+            let (kind, port) = cl.tcpProtocol
+            switch kind {
+            case .ssh: return .ssh(host: host, port: port, user: cl.user ?? "", keyFile: cl.keyFile ?? "")
+            case .telnet: return .telnet(host: host, port: port)
+            case .raw: return .rawTCP(host: host, port: port)
+            }
+        default:
+            return base
         }
-        if let p = serialPath {
-            var s = SerialParams(); s.path = p; s.baud = baud
-            return .serial(s)
+    }
+
+    /// ssh に足す引数 (/auth= /timeout=)。TTSSH の認証方法の指定に近いもの
+    static func sshArguments(_ cl: TTCommandLine) -> [String] {
+        var a: [String] = []
+        switch cl.auth {
+        case "password"?: a += ["-o", "PreferredAuthentications=password,keyboard-interactive"]
+        case "publickey"?, "pageant"?: a += ["-o", "PreferredAuthentications=publickey"]
+        case "challenge"?, "keyboard-interactive"?: a += ["-o", "PreferredAuthentications=keyboard-interactive"]
+        default: break
         }
-        guard !host.isEmpty else { return nil }
-        switch kind {
-        case "telnet": return .telnet(host: host, port: port ?? 23)
-        case "raw": return .rawTCP(host: host, port: port ?? 23)
-        default: return .ssh(host: host, port: port ?? 22, user: user, keyFile: key)
-        }
+        if let t = cl.timeout, t > 0 { a += ["-o", "ConnectTimeout=\(t)"] }
+        return a
     }
 }
 
@@ -87,11 +105,21 @@ struct SerialParams: Equatable {
 protocol Connection: AnyObject {
     var onData: (([UInt8]) -> Void)? { get set }
     var onClose: ((String?) -> Void)? { get set }
+    /// つながった (waitsForConnection のときだけ呼ばれる)
+    var onConnected: (() -> Void)? { get set }
+    /// start() のあと、つながるまで待つもの (TCP・ssh)。false ならすぐ使える
+    var waitsForConnection: Bool { get }
     func start() throws
     func write(_ bytes: [UInt8])
+    /// binary: Telnet の CommBinaryOut (CR はいつも CR NUL)。false は CommTextOut (CR LF はそのまま)
+    func write(_ bytes: [UInt8], binary: Bool)
     func resize(cols: Int, rows: Int)
     func close()
     func sendBreak()
+}
+
+extension Connection {
+    func write(_ bytes: [UInt8], binary: Bool) { write(bytes) }
 }
 
 struct ConnError: LocalizedError {
@@ -104,6 +132,10 @@ struct ConnError: LocalizedError {
 final class PTYConnection: Connection {
     var onData: (([UInt8]) -> Void)?
     var onClose: ((String?) -> Void)?
+    var onConnected: (() -> Void)?
+    /// ssh: 最初に何か出したら「つながった」とする (ssh 自身のエラー "ssh: ..." は除く。失敗なら ssh が終わる)
+    let waitsForConnection: Bool
+    private var reportedReady = false
     private let argv: [String]
     private var env: [String: String]
     private var master: Int32 = -1
@@ -113,8 +145,9 @@ final class PTYConnection: Connection {
     private var initialSize: winsize
     private var closed = false
 
-    init(argv: [String], cols: Int, rows: Int, extraEnv: [String: String] = [:]) {
+    init(argv: [String], cols: Int, rows: Int, extraEnv: [String: String] = [:], waitForOutput: Bool = false) {
         self.argv = argv
+        waitsForConnection = waitForOutput
         var e = ProcessInfo.processInfo.environment
         e["TERM"] = "xterm-256color"
         e["COLORTERM"] = "truecolor"
@@ -163,7 +196,16 @@ final class PTYConnection: Connection {
         let n = read(master, &buf, buf.count)
         if n > 0 {
             let chunk = Array(buf[0..<n])
-            DispatchQueue.main.async { self.onData?(chunk) }
+            DispatchQueue.main.async {
+                if self.waitsForConnection && !self.reportedReady {
+                    let head = String(decoding: chunk.prefix(5), as: UTF8.self)
+                    if head != "ssh: " {
+                        self.reportedReady = true
+                        self.onConnected?()
+                    }
+                }
+                self.onData?(chunk)
+            }
         } else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
             finish()
         }
@@ -223,9 +265,19 @@ final class TCPConnection: Connection {
     private var conn: NWConnection?
     private var cols = 80, rows = 24
     private var nawsEnabled = false
+    /// TelBinRecv / TelBinSend (BINARY オプションが有効)
     private var binaryRecv = false
+    private var binarySend = false
+    /// 受信した CR の直後の NUL を捨てる (CommRead1Byte の TelCRFlag)
+    private var crFlag = false
     private var closed = false
     var onConnected: (() -> Void)?
+    let waitsForConnection = true
+    /// /B (TelBin): BINARY を自分から申し込む
+    var requestBinary = false
+    /// /timeout= (秒)。0 は OS 任せ
+    var timeout = 0
+    private var ready = false
 
     // Telnet 受信の状態
     private enum TState { case data, iac, opt(UInt8), sb, sbIac }
@@ -245,14 +297,25 @@ final class TCPConnection: Connection {
         guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { throw ConnError(msg: "ポート番号がおかしいです") }
         let c = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
         conn = c
+        let q = DispatchQueue(label: "tcp")
+        if timeout > 0 {
+            q.asyncAfter(deadline: .now() + .seconds(timeout)) { [weak self] in
+                guard let self = self, !self.ready else { return }
+                self.finish("接続できませんでした: タイムアウト (\(self.timeout) 秒)")
+                c.cancel()
+            }
+        }
         c.stateUpdateHandler = { [weak self] st in
             guard let self = self else { return }
             switch st {
             case .ready:
-                DispatchQueue.main.async { self.onConnected?() }
+                self.ready = true
+                DispatchQueue.main.async { if !self.closed { self.onConnected?() } }
                 if self.telnet {
-                    self.sendRaw([self.IAC, self.WILL, self.OPT_TTYPE, self.IAC, self.WILL, self.OPT_NAWS,
-                                  self.IAC, self.DO, self.OPT_SGA, self.IAC, self.DO, self.OPT_ECHO])
+                    var opts: [UInt8] = [self.IAC, self.WILL, self.OPT_TTYPE, self.IAC, self.WILL, self.OPT_NAWS,
+                                         self.IAC, self.DO, self.OPT_SGA, self.IAC, self.DO, self.OPT_ECHO]
+                    if self.requestBinary { opts += [self.IAC, self.WILL, self.OPT_BINARY, self.IAC, self.DO, self.OPT_BINARY] }
+                    self.sendRaw(opts)
                 }
                 self.receive()
             case .failed(let e):
@@ -265,7 +328,7 @@ final class TCPConnection: Connection {
             default: break
             }
         }
-        c.start(queue: DispatchQueue(label: "tcp"))
+        c.start(queue: q)
     }
 
     private func finish(_ msg: String?) {
@@ -297,7 +360,15 @@ final class TCPConnection: Connection {
         for b in input {
             switch tstate {
             case .data:
-                if b == IAC { tstate = .iac } else { out.append(b) }
+                if crFlag {
+                    crFlag = false
+                    if b == 0 { continue }   // CR NUL の NUL
+                }
+                if b == IAC { tstate = .iac }
+                else {
+                    out.append(b)
+                    if b == 0x0D && !binaryRecv { crFlag = true }
+                }
             case .iac:
                 switch b {
                 case IAC: out.append(IAC); tstate = .data
@@ -326,6 +397,7 @@ final class TCPConnection: Connection {
         switch verb {
         case DO:
             if opt == OPT_TTYPE || opt == OPT_SGA || opt == OPT_BINARY {
+                if opt == OPT_BINARY { binarySend = true }
                 sendRaw([IAC, WILL, opt])
             } else if opt == OPT_NAWS {
                 sendRaw([IAC, WILL, opt]); nawsEnabled = true; sendNAWS()
@@ -334,6 +406,7 @@ final class TCPConnection: Connection {
             }
         case DONT:
             if opt == OPT_NAWS { nawsEnabled = false }
+            if opt == OPT_BINARY { binarySend = false }
             sendRaw([IAC, WONT, opt])
         case WILL:
             if opt == OPT_ECHO || opt == OPT_SGA || opt == OPT_BINARY {
@@ -343,6 +416,7 @@ final class TCPConnection: Connection {
                 sendRaw([IAC, DONT, opt])
             }
         case WONT:
+            if opt == OPT_BINARY { binaryRecv = false }
             sendRaw([IAC, DONT, opt])
         default: break
         }
@@ -367,24 +441,32 @@ final class TCPConnection: Connection {
         conn?.send(content: Data(b), completion: .contentProcessed { _ in })
     }
 
-    func write(_ bytes: [UInt8]) {
+    func write(_ bytes: [UInt8]) { write(bytes, binary: false) }
+
+    /// ttcmn_buff.c: IAC は二重にする。CR は TelBinSend でなければ CR NUL。
+    /// テキスト (CommTextOut / OutControl) は改行コード CR のときだけ CR NUL で、CR+LF はそのまま。
+    /// バイナリ (CommBinaryOut) はどの CR も CR NUL (CR LF も CR NUL LF)
+    func write(_ bytes: [UInt8], binary: Bool) {
         guard telnet else { sendRaw(bytes); return }
         var out: [UInt8] = []
-        out.reserveCapacity(bytes.count)
-        for b in bytes {
-            if b == IAC { out.append(IAC); out.append(IAC) }
-            else if b == 0x0D { out.append(0x0D); out.append(0x00) }
-            else { out.append(b) }
-        }
-        // CR LF は CR NUL LF にしない
-        var fixed: [UInt8] = []
+        out.reserveCapacity(bytes.count + 8)
         var i = 0
-        while i < out.count {
-            if out[i] == 0x0D && i + 2 < out.count && out[i + 1] == 0 && out[i + 2] == 0x0A {
-                fixed += [0x0D, 0x0A]; i += 3
-            } else { fixed.append(out[i]); i += 1 }
+        while i < bytes.count {
+            let b = bytes[i]
+            out.append(b)
+            if b == IAC { out.append(IAC) }
+            else if b == 0x0D && !binarySend {
+                let lf = i + 1 < bytes.count && bytes[i + 1] == 0x0A
+                if binary || !lf { out.append(0x00) }
+            }
+            i += 1
         }
-        sendRaw(fixed)
+        sendRaw(out)
+    }
+
+    /// Are You There (コントロールメニュー)
+    func sendAreYouThere() {
+        if telnet { sendRaw([IAC, 246]) }
     }
 
     func resize(cols: Int, rows: Int) {
@@ -419,6 +501,8 @@ enum SerialPort {
 final class SerialConnection: Connection {
     var onData: (([UInt8]) -> Void)?
     var onClose: ((String?) -> Void)?
+    var onConnected: (() -> Void)?
+    let waitsForConnection = false
     let params: SerialParams
     private var fd: Int32 = -1
     private var source: DispatchSourceRead?
@@ -458,6 +542,7 @@ final class SerialConnection: Connection {
         t.c_iflag &= ~tcflag_t(IXON | IXOFF | IXANY)
         if params.flow == "rts" { t.c_cflag |= tcflag_t(CRTSCTS) }
         if params.flow == "xon" { t.c_iflag |= tcflag_t(IXON | IXOFF) }
+        if params.flow == "dsr" { t.c_cflag |= tcflag_t(CDTR_IFLOW | CDSR_OFLOW) }
         // VMIN/VTIME: 届いた分だけすぐ返す
         withUnsafeMutablePointer(to: &t.c_cc) {
             $0.withMemoryRebound(to: cc_t.self, capacity: Int(NCCS)) { cc in
@@ -596,19 +681,27 @@ final class SerialConnection: Connection {
     }
 }
 
-func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int) -> Connection {
+func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [String] = [], timeout: Int? = nil,
+                    telnetBinary: Bool = false) -> Connection {
     switch spec {
     case .ssh(let host, let port, let user, let key):
-        // マクロの scpsend / scprecv が同じ接続を使えるように ControlMaster を使う
-        var a = ["/usr/bin/ssh", "-o", "ControlMaster=auto", "-o", "ControlPath=\(sshControlPath(host: host, port: port, user: user))", "-o", "ControlPersist=no"]
+        // マクロの scpsend / scprecv が同じ接続を使えるように ControlMaster を使う。
+        // -e none: TTSSH にはエスケープ文字 (~.) がない
+        var a = ["/usr/bin/ssh", "-e", "none", "-o", "ControlMaster=auto", "-o", "ControlPath=\(sshControlPath(host: host, port: port, user: user))", "-o", "ControlPersist=no"]
+        a += sshArgs
         if port != 22 { a += ["-p", String(port)] }
         if !key.isEmpty { a += ["-i", (key as NSString).expandingTildeInPath] }
         a.append(user.isEmpty ? host : "\(user)@\(host)")
-        return PTYConnection(argv: a, cols: cols, rows: rows)
+        return PTYConnection(argv: a, cols: cols, rows: rows, waitForOutput: true)
     case .telnet(let h, let p):
-        return TCPConnection(host: h, port: p, telnet: true, cols: cols, rows: rows)
+        let c = TCPConnection(host: h, port: p, telnet: true, cols: cols, rows: rows)
+        c.timeout = timeout ?? 0
+        c.requestBinary = telnetBinary
+        return c
     case .rawTCP(let h, let p):
-        return TCPConnection(host: h, port: p, telnet: false, cols: cols, rows: rows)
+        let c = TCPConnection(host: h, port: p, telnet: false, cols: cols, rows: rows)
+        c.timeout = timeout ?? 0
+        return c
     case .serial(let s):
         return SerialConnection(params: s)
     case .shell:

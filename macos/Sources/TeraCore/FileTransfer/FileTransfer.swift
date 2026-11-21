@@ -26,12 +26,14 @@ public enum FileTransferKind: Equatable {
     case zmodemAutoRecv, zmodemAutoSend
     /// B-Plus 自動起動 (IdBPAuto)
     case bplusAutoRecv
+    /// recvfile (ttpfile/raw.c): 受信データをそのままファイルへ。autoStopSec 秒受信がなければ成功で終わる
+    case rawRecv
 
     /// 送信ファイルを必要とするか (Kermit Get はリモートのファイル名)
     public var takesFileName: Bool {
         switch self {
         case .xmodemSend, .xmodemRecv, .ymodemSend, .zmodemSend, .zmodemAutoSend,
-             .kermitSend, .kermitGet, .bplusSend, .quickvanSend:
+             .kermitSend, .kermitGet, .bplusSend, .quickvanSend, .rawRecv:
             return true
         default:
             return false
@@ -55,6 +57,7 @@ public enum FileTransferKind: Equatable {
         case .bplusSend: return "B-Plus Send"
         case .quickvanRecv: return "Quick-VAN Receive"
         case .quickvanSend: return "Quick-VAN Send"
+        case .rawRecv: return "Receiving file"
         }
     }
 }
@@ -108,6 +111,22 @@ public struct FileTransferOptions: Equatable {
     ///  applyMacroParameters がその挙動を再現してここに設定する)
     public var zmodemBinary: Bool?
 
+    /// FileDir= (ts.FileDirW)。changedir で書き換わる。そのままの文字列で持ち、使うときに
+    /// FileTransferPaths.fileDirectory で展開する (GetFileDir と同じ)
+    public var fileDir: String = ""
+    /// ZmodemAuto=off (FT_ZAUTO): 端末が ZRQINIT / ZRINIT を受けたら ZMODEM を自動で始める
+    public var zmodemAuto: Bool = false
+    /// BPAuto=off (FT_BPAUTO): DLE 'B' で B-Plus を自動で始める
+    public var bplusAuto: Bool = false
+    /// ReceivefileAutoStopWaitTime=5 (recvfile の引数で書き換わる)
+    public var receiveFileAutoStopWaitTime: Int = 5
+    /// SendfileDelayType=NoDelay (0=NoDelay 1=PerChar 2=PerLine 3=PerSendSize)
+    public var sendfileDelayType: Int = 0
+    /// SendfileDelayTick=0 (ms)
+    public var sendfileDelayTick: Int = 0
+    /// SendfileSize=4096
+    public var sendfileSize: Int = 4096
+
     public init() {}
 
     /// TERATERM.INI の [Tera Term] セクションから読む (ttset.c と同じキー・既定値)
@@ -140,6 +159,20 @@ public struct FileTransferOptions: Equatable {
         if let v = ini.onOff(s, "BPLog") { bplusLog = v }
         if let v = ini.onOff(s, "QVLog") { quickvanLog = v }
         if let v = ini.int(s, "BaudRate") { baudRate = v }
+        if let v = ini.string(s, "FileDir") { fileDir = v }
+        if let v = ini.onOff(s, "ZmodemAuto") { zmodemAuto = v }
+        if let v = ini.onOff(s, "BPAuto") { bplusAuto = v }
+        if let v = ini.int(s, "ReceivefileAutoStopWaitTime") { receiveFileAutoStopWaitTime = v }
+        if let v = ini.string(s, "SendfileDelayType") {
+            switch v.trimmingCharacters(in: .whitespaces).lowercased() {
+            case "perchar": sendfileDelayType = 1
+            case "perline": sendfileDelayType = 2
+            case "persendsize": sendfileDelayType = 3
+            default: sendfileDelayType = 0
+            }
+        }
+        if let v = ini.int(s, "SendfileDelayTick") { sendfileDelayTick = v }
+        if let v = ini.int(s, "SendfileSize") { sendfileSize = v }
         if let v = ini.string(s, "DataBit") { dataBits7 = v.trimmingCharacters(in: .whitespaces) == "7" }
         func nth(_ key: String, _ i: Int, _ def: Int, min: Int) -> Int? {
             guard let str = ini.string(s, key) else { return nil }
@@ -178,7 +211,9 @@ public struct FileTransferOptions: Equatable {
     ///  - xmodemsend <file> <option>: xmodemOption
     ///  - zmodemsend <file> <binflag>: binaryFlag
     ///  - その他のコマンドは引数による設定変更なし
-    public mutating func applyMacroParameters(kind: FileTransferKind, binaryFlag: Int = 0, xmodemOption: Int = 0) {
+    ///  - recvfile <file> <binflag> <autostop>: autoStopSec (ttdde.c CmdSetRecvFileOpt → ts.ReceivefileAutoStopWaitTime)
+    public mutating func applyMacroParameters(kind: FileTransferKind, binaryFlag: Int = 0, xmodemOption: Int = 0,
+                                              autoStopSec: Int? = nil) {
         // ttmdde.c SetBinary(): '0' + (BinFlag & 1) → ttdde.c: Command[1] & 1
         let paramBinary = binaryFlag & 1
         switch kind {
@@ -212,6 +247,9 @@ public struct FileTransferOptions: Equatable {
             // filesys_proto.cpp ZMODEMStartSend: Opt = ts.XmodemBin を取ってから ts.XmodemBin = ParamBinaryFlag
             zmodemBinary = xmodemBin
             xmodemBin = paramBinary != 0
+        case .rawRecv:
+            // ttmdde.c SetRecvFileOption: 負は 0、Word2HexStr で 16 ビット
+            if let a = autoStopSec { receiveFileAutoStopWaitTime = Swift.max(0, a) & 0xFFFF }
         default:
             break
         }
@@ -238,7 +276,9 @@ public struct FileTransferOptions: Equatable {
     fileprivate var ftFlag: Int32 {
         var f: Int32 = 0
         if zmodemEscCtl { f |= 1 }
+        if zmodemAuto { f |= 2 }
         if bplusEscCtl { f |= 4 }
+        if bplusAuto { f |= 8 }
         if autoFileRename { f |= 16 }
         return f
     }
@@ -274,6 +314,20 @@ public final class FileTransfer {
     public var onFinish: ((Bool) -> Void)?
     /// プロトコルが MessageBox で出すエラー ("Cannot create file" 等)
     public var onMessage: ((String) -> Void)?
+    /// 終了したときプロトコルが読まずに残った受信データ (Windows 版では cv.InBuff に残り、端末が続けて解釈する)。
+    /// feed() の中で終わったときは呼ばれず、feed() の戻り値になる。onFinish の直後に呼ばれる
+    public var onUnconsumedInput: (([UInt8]) -> Void)?
+
+    /// cv.Ready。false の間 (切断後・未接続で開始) は Parse を呼ばず、回線への送信もしない。
+    /// タイマーとキャンセルは動き続け、プロトコルが自分で中断すると (cv->Ready == FALSE → ProtoEnd) 結果 0 で終わる。
+    /// Windows 版と同じく、切断しただけでは転送は終わらない。start() の前に false にすると未接続で始める
+    public var isReady: Bool = true {
+        didSet {
+            guard oldValue != isReady, let ft = ft else { return }
+            TeraFTSetReady(ft, isReady ? 1 : 0)
+            if isReady { pump() }
+        }
+    }
 
     public private(set) var isRunning = false
     public private(set) var progress = FileTransferProgress()
@@ -295,6 +349,8 @@ public final class FileTransfer {
     private var pendingCancel = false
     private var finished = false
     private var settingsStrings: [UnsafeMutablePointer<CChar>] = []
+    private var feeding = false
+    private var unconsumed: [UInt8] = []
 
     /// - Parameters:
     ///   - files: 送信ファイル (XMODEM 受信では保存ファイル名、Kermit Get ではリモートのファイル名)。
@@ -319,9 +375,7 @@ public final class FileTransfer {
     }
 
     static func resolve(_ path: String, dir: String) -> String {
-        if path.hasPrefix("/") { return path }
-        if path.hasPrefix("~") { return (path as NSString).expandingTildeInPath }
-        return (dir as NSString).appendingPathComponent(path)
+        FileTransferPaths.resolve(path, fileDir: dir)
     }
 
     private var protoParams: (proto: Int32, mode: Int32, opt1: Int32, opt2: Int32) {
@@ -338,12 +392,13 @@ public final class FileTransfer {
         case .zmodemRecv: return (Int32(TERAFT_PROTO_ZM), 1, 0, 0)
         case .zmodemSend: return (Int32(TERAFT_PROTO_ZM), 2, (o.zmodemBinary ?? o.xmodemBin) ? 1 : 0, 0)
         case .zmodemAutoRecv: return (Int32(TERAFT_PROTO_ZM), 3, 0, 0)
-        case .zmodemAutoSend: return (Int32(TERAFT_PROTO_ZM), 4, (o.zmodemBinary ?? o.xmodemBin) ? 1 : 0, 0)
+        case .zmodemAutoSend: return (Int32(TERAFT_PROTO_ZM), 4, o.xmodemBin ? 1 : 0, 0)   // Opt = ts.XmodemBin
         case .bplusRecv: return (Int32(TERAFT_PROTO_BP), 1, 0, 0)
         case .bplusSend: return (Int32(TERAFT_PROTO_BP), 2, 0, 0)
         case .bplusAutoRecv: return (Int32(TERAFT_PROTO_BP), 3, 0, 0)
         case .quickvanRecv: return (Int32(TERAFT_PROTO_QV), 1, 0, 0)
         case .quickvanSend: return (Int32(TERAFT_PROTO_QV), 2, 0, 0)
+        case .rawRecv: return (Int32(TERAFT_PROTO_RAW), 0, Int32(Swift.min(o.receiveFileAutoStopWaitTime, 0xFFFF)), 0)
         }
     }
 
@@ -390,6 +445,7 @@ public final class FileTransfer {
         s.YModemRcvCommand = cstr(o.ymodemRcvCommand)
         s.ZModemRcvCommand = cstr(o.zmodemRcvCommand)
         s.LogDir = cstr(o.logDirectory)
+        s.NotReady = isReady ? 0 : 1
 
         var dir = receiveDir
         if !dir.hasSuffix("/") { dir += "/" }
@@ -442,11 +498,26 @@ public final class FileTransfer {
         return true
     }
 
-    /// 回線から受信したデータ
-    public func feed(_ bytes: [UInt8]) {
-        guard let ft = ft, isRunning, !bytes.isEmpty else { return }
+    /// 回線から受信したデータ。この中で転送が終わったとき (または転送中でないとき) は、プロトコルが読まなかった残りを返す
+    /// (呼び出し側が端末へ渡す。onUnconsumedInput は呼ばれない)
+    @discardableResult
+    public func feed(_ bytes: [UInt8]) -> [UInt8] {
+        guard let ft = ft, isRunning else { return bytes }   // 転送していない: そのまま端末へ
+        guard !bytes.isEmpty else { return [] }
+        let nested = feeding
+        feeding = true
         bytes.withUnsafeBufferPointer { TeraFTFeed(ft, $0.baseAddress, $0.count) }
         pump()
+        feeding = nested
+        if !nested && finished { return takeUnconsumedInput() }
+        return []
+    }
+
+    /// 終了後、プロトコルが読まなかった受信データを取り出す (取り出すと空になる)
+    public func takeUnconsumedInput() -> [UInt8] {
+        let r = unconsumed
+        unconsumed = []
+        return r
     }
 
     /// ダイアログの Cancel ボタン相当 (Proto->Cancel)。プロトコルが中断手順を終えると onFinish(false)。
@@ -514,13 +585,23 @@ public final class FileTransfer {
         protoTimer?.cancel(); protoTimer = nil
         idleTimer?.cancel(); idleTimer = nil
         if let ft = ft {
-            // CloseProtoDlg(): Quick-VAN 送信の後は CR を送る
-            if sendQVReturn && kind == .quickvanSend { sendHandler([0x0d]) }
+            // CloseProtoDlg(): Quick-VAN 送信の後は CR を送る (CommBinaryOut なので切断中は送らない)
+            if sendQVReturn && kind == .quickvanSend && isReady { sendHandler([0x0d]) }
+            // ProtoEnd() の後も cv.InBuff に残ったデータは端末が解釈する
+            var rest = [UInt8](repeating: 0, count: TeraFTBufferedBytes(ft))
+            if !rest.isEmpty {
+                let n = rest.withUnsafeMutableBufferPointer { TeraFTTakeBuffered(ft, $0.baseAddress, $0.count) }
+                rest.removeSubrange(n...)
+            }
+            unconsumed += rest
             TeraFTDestroy(ft)   // ファイルを閉じる
             self.ft = nil
         }
         succeeded = success
         onFinish?(success)
+        if !feeding, !unconsumed.isEmpty, let cb = onUnconsumedInput {
+            cb(takeUnconsumedInput())
+        }
     }
 
     // MARK: - timers

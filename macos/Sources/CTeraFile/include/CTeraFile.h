@@ -24,6 +24,7 @@ enum {
 	TERAFT_PROTO_BP  = 4,
 	TERAFT_PROTO_QV  = 5,
 	TERAFT_PROTO_YM  = 6,
+	TERAFT_PROTO_RAW = 7,	/* recvfile (ttpfile/raw.c), opt1 = auto stop seconds */
 };
 
 /* progress items (TInfoOp) */
@@ -56,6 +57,7 @@ typedef struct {
 	const char *YModemRcvCommand;
 	const char *ZModemRcvCommand;
 	const char *LogDir;		/* folder for XMODEM.LOG etc. (UTF-8), may be NULL */
+	int NotReady;		/* 1 = start with cv.Ready == FALSE (not connected) */
 } TeraFTSettings;
 
 typedef struct {
@@ -98,6 +100,13 @@ int TeraFTSuccess(const TeraFT *ft);
 int TeraFTEnded(const TeraFT *ft);
 /* counter that changes whenever bytes are read, sent or the buffers change */
 uint64_t TeraFTActivity(const TeraFT *ft);
+/* cv.Ready: 0 after the session is gone. Parse() is then no longer called and
+   the line I/O does nothing (like OnIdle / commlib); timers and Cancel still work. */
+void TeraFTSetReady(TeraFT *ft, int ready);
+int TeraFTIsReady(const TeraFT *ft);
+/* move up to cap bytes that the protocol has not consumed (InBuff, then the
+   pending queue) into buf; returns the number of bytes */
+size_t TeraFTTakeBuffered(TeraFT *ft, uint8_t *buf, size_t cap);
 /* bytes received but not yet consumed by the protocol */
 size_t TeraFTBufferedBytes(const TeraFT *ft);
 void TeraFTDestroy(TeraFT *ft);

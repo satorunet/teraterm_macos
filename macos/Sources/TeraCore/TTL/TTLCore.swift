@@ -177,6 +177,15 @@ public final class TTLInterpreter {
     var syncMode = false
     var comReady = true
     var linked = true
+    /// waitevent 用: 接続状態の変化 (true = つながった) と、つながりが切れたこと
+    var comEvents: [Bool] = []
+    var linkEndEvent = false
+    // wait4all 用 (snoopBuffers は TTLMacroRegistry.lock で守る。キーはのぞいているマクロ)
+    var snoopBuffers: [ObjectIdentifier: [UInt8]] = [:]
+    var w4aTargets: [TTLInterpreter] = []
+    var w4aFound: [Bool] = []
+    var w4aFoundNum = 0
+    var w4aNum = 0
 
     // wait
     var waitStr: [[UInt8]?] = Array(repeating: nil, count: 10)
@@ -209,17 +218,49 @@ public final class TTLInterpreter {
     /// - Parameters:
     ///   - path: マクロファイルのパス
     ///   - params: コマンドラインの引数 (params[2] 以降)。
+    ///
+    /// param1 / params[1] はファイル名だけ (Tera Term の ShortName。拡張子がなければ ".TTL" を付ける: FitFileNameW)。
+    /// params[0] は Tera Term ではコマンドライン全体 (GetCommandLineW)。Mac では
+    /// 「アプリの実行ファイル マクロのパス 引数…」を Windows のコマンドライン風につないだもの (空白を含むものは "" で囲む)。
+    /// (ファイル名が "." で始まるとき Windows は先頭に "_" を足すが、Mac ではドットファイルが普通なのでそのまま)
     public init(path: String, host: TTLHost, params: [String] = []) throws {
         self.host = host
-        self.macroPath = path
-        let dir = (path as NSString).deletingLastPathComponent
+        // FitFileNameW: 拡張子 (".") がなければ ".TTL" を付けて開く。なければ Mac らしく指定どおりの名前も試す
+        let base = (path as NSString).lastPathComponent
+        var openPath = path
+        if !base.isEmpty && !base.contains(".") {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: path + ".TTL") { openPath = path + ".TTL" }
+            else if fm.fileExists(atPath: path + ".ttl") { openPath = path + ".ttl" }
+            else if !fm.fileExists(atPath: path) { openPath = path + ".TTL" }
+        }
+        self.macroPath = openPath
+        let dir = (openPath as NSString).deletingLastPathComponent
         curDir = dir.isEmpty ? FileManager.default.currentDirectoryPath : dir
         ring = Array(repeating: 0, count: TTLInterpreter.ringBufSize)
-        initVars(params: params)
-        if !loadMacroFile(path, 0) {
-            throw TTLError(line: 0, message: "Can't open file.", file: (path as NSString).lastPathComponent, text: "")
+        let shortName = base.isEmpty || base.contains(".") ? base : base + ".TTL"
+        let app = ProcessInfo.processInfo.arguments.first ?? ""
+        let cmdLine = ([app, openPath] + params).map { $0.contains(" ") || $0.isEmpty ? "\"\($0)\"" : $0 }.joined(separator: " ")
+        initVars(shortName: shortName, commandLine: cmdLine, params: params)
+        if !loadMacroFile(openPath, 0) {
+            throw TTLError(line: 0, message: "Can't open file.", file: TTLInterpreter.fileTitle(openPath), text: "")
         }
-        try registerLabelsOrThrow(0)
+        // ラベル登録のエラーは見せるだけ。InitTTL は最後に必ず IdTTLRun にするので、「止める」を選んでも動く
+        _ = registerLabels(0)
+        status = .run
+        lastError = nil
+    }
+
+    /// エラーダイアログに出すファイル名 (GetFileTitleW を MAXFILENAME-1 = 127 バイトまで)
+    static func fileTitle(_ path: String) -> String {
+        var b = Array((path as NSString).lastPathComponent.utf8)
+        if b.count > 127 {
+            b = Array(b[0..<127])
+            // 途中で切れた UTF-8 の文字は落とす
+            var n = 0
+            while n < 3, !b.isEmpty, String(bytes: b, encoding: .utf8) == nil { b.removeLast(); n += 1 }
+        }
+        return String(decoding: b, as: UTF8.self)
     }
 
     /// テスト用: 文字列からマクロを作る
@@ -231,21 +272,23 @@ public final class TTLInterpreter {
         try self.init(path: p, host: host)
     }
 
-    private func initVars(params: [String]) {
+    private func initVars(shortName: String, commandLine: String, params: [String]) {
         _ = newIntVar("result", 0)
         _ = newIntVar("timeout", 0)
         _ = newIntVar("mtimeout", 0)
         _ = newStrVar("inputstr", [])
         _ = newStrVar("matchstr", [])
         for i in 1...9 { _ = newStrVar("groupmatchstr\(i)", []) }
-        let all = [(macroPath as NSString).lastPathComponent] + params
+        // ParamCnt はファイル名を含む引数の数 (Params[1] = ファイル名, Params[2〜] = 引数)
+        let all = [shortName] + params
         let paramCnt = max(1, all.count)
         _ = newIntVar("paramcnt", Int32(paramCnt))
-        _ = newStrVar("param1", macroPath.ttl)
+        _ = newStrVar("param1", shortName.ttl)
         for i in 2...9 { _ = newStrVar("param\(i)", i - 1 < all.count ? all[i - 1].ttl : []) }
         _ = newStrAryVar("params", paramCnt + 1)
         if let v = vars.last {
-            v.strAry[1] = macroPath.ttl
+            v.strAry[0] = commandLine.ttl
+            if !shortName.isEmpty { v.strAry[1] = shortName.ttl }
             for i in 2..<(paramCnt + 1) where i - 1 < all.count { v.strAry[i] = all[i - 1].ttl }
         }
     }
@@ -522,14 +565,20 @@ public final class TTLInterpreter {
     @discardableResult func newStrVar(_ name: String, _ v: [UInt8]) -> Bool {
         let x = TTLVariable(name, .string); x.str = v; addVar(x); return true
     }
+    /// intdim / strdim (ttmparse.cpp NewIntAryVar)。大きさの上限は見ない (calloc できるかだけ)。
+    /// 負の大きさは calloc が失敗するので ErrFewMemory。変数は先に作られているので残る (大きさ 0 にしておく)
     func newIntAryVar(_ name: String, _ size: Int) -> Int {
-        guard size >= 0 && size <= 65536 else { return E.outOfRange }
-        let x = TTLVariable(name, .intArray); x.intAry = Array(repeating: 0, count: size); addVar(x); return 0
+        let x = TTLVariable(name, .intArray); addVar(x)
+        guard size >= 0 && size <= TTLInterpreter.maxArraySize else { return E.fewMemory }
+        x.intAry = Array(repeating: 0, count: size); return 0
     }
     func newStrAryVar(_ name: String, _ size: Int) -> Int {
-        guard size >= 0 && size <= 65536 else { return E.outOfRange }
-        let x = TTLVariable(name, .strArray); x.strAry = Array(repeating: nil, count: size); addVar(x); return 0
+        let x = TTLVariable(name, .strArray); addVar(x)
+        guard size >= 0 && size <= TTLInterpreter.maxArraySize else { return E.fewMemory }
+        x.strAry = Array(repeating: nil, count: size); return 0
     }
+    /// calloc が失敗する大きさの代わり (メモリを使い切って落ちないように 2^26 要素まで)
+    static let maxArraySize = 1 << 26
     func newLabVar(_ name: String, _ ptr: Int, _ level: Int) {
         let x = TTLVariable(name, .label); x.labPtr = ptr; x.labLevel = level; addVar(x)
     }
@@ -556,22 +605,41 @@ public final class TTLInterpreter {
         return 0
     }
 
-    // 変数 ID: 普通の変数は添字、配列の要素は ((配列の添字 + 1) << 16) | 要素番号
+    // 変数 ID: 普通の変数は添字、配列の要素は ((配列の添字 + 1) << 32) | 要素番号。
+    // Tera Term は << 16 で 65536 以上の要素が別の要素と重なる (不具合) が、ここでは 64 ビットにして重ならないようにする。
+    // 式の値 (Int32) で文字列配列の要素を返すときは strRefs に入れて負の番号 -(添字 + 2) にする (strRef)
+    static let elemShift = 32
+    var strRefs: [Int] = []
+
+    /// 式の値 (Int32) として渡せる文字列変数 ID
+    func strRef(_ id: Int) -> Int32 {
+        if id >= 0 && id <= Int(Int32.max) { return Int32(id) }
+        strRefs.append(id)
+        return Int32(-(strRefs.count + 1))   // -1 はエラーの印に使われるので -2 から
+    }
+    @inline(__always) private func resolveId(_ id: Int) -> Int {
+        if id <= -2, -id - 2 < strRefs.count { return strRefs[-id - 2] }
+        return id
+    }
 
     func setIntVal(_ id: Int, _ val: Int32) {
-        if id >> 16 != 0 { vars[(id >> 16) - 1].intAry[id & 0xFFFF] = val } else { vars[id].int = val }
+        let id = resolveId(id)
+        if id >> TTLInterpreter.elemShift != 0 { vars[(id >> TTLInterpreter.elemShift) - 1].intAry[id & 0xFFFF_FFFF] = val } else { vars[id].int = val }
     }
     func copyIntVal(_ id: Int) -> Int32 {
-        if id >> 16 != 0 { return vars[(id >> 16) - 1].intAry[id & 0xFFFF] }
+        let id = resolveId(id)
+        if id >> TTLInterpreter.elemShift != 0 { return vars[(id >> TTLInterpreter.elemShift) - 1].intAry[id & 0xFFFF_FFFF] }
         return vars[id].int
     }
     func setStrVal(_ id: Int, _ s: [UInt8]) {
+        let id = resolveId(id)
         var s = s
         if let z = s.firstIndex(of: 0) { s.removeSubrange(z...) }
-        if id >> 16 != 0 { vars[(id >> 16) - 1].strAry[id & 0xFFFF] = s } else { vars[id].str = s }
+        if id >> TTLInterpreter.elemShift != 0 { vars[(id >> TTLInterpreter.elemShift) - 1].strAry[id & 0xFFFF_FFFF] = s } else { vars[id].str = s }
     }
     func strVarPtr(_ id: Int) -> [UInt8] {
-        if id >> 16 != 0 { return vars[(id >> 16) - 1].strAry[id & 0xFFFF] ?? [] }
+        let id = resolveId(id)
+        if id >> TTLInterpreter.elemShift != 0 { return vars[(id >> TTLInterpreter.elemShift) - 1].strAry[id & 0xFFFF_FFFF] ?? [] }
         return vars[id].str
     }
 
@@ -579,13 +647,13 @@ public final class TTLInterpreter {
         let n = vars[id].intAry.count
         if index < 0 || index >= n { err = E.outOfRange; return -1 }
         err = 0
-        return ((id + 1) << 16) | index
+        return ((id + 1) << TTLInterpreter.elemShift) | index
     }
     func getStrVarFromArray(_ id: Int, _ index: Int, _ err: inout Int) -> Int {
         let n = vars[id].strAry.count
         if index < 0 || index >= n { err = E.outOfRange; return -1 }
         err = 0
-        return ((id + 1) << 16) | index
+        return ((id + 1) << TTLInterpreter.elemShift) | index
     }
 
     /// [式] があれば添字を返す
@@ -635,7 +703,7 @@ public final class TTLInterpreter {
                 case .strArray:
                     if let index = getIndex(&err) {
                         let vid = getStrVarFromArray(id, index, &err)
-                        if err == 0 { val = Int32(vid); type = .string }
+                        if err == 0 { val = strRef(vid); type = .string }
                     } else if err == 0 { val = Int32(id) }
                 default: break
                 }
@@ -705,6 +773,7 @@ public final class TTLInterpreter {
     }
 
     private func evalMultiplication(_ t: inout VType, _ v: inout Int32, _ e: inout Int) -> Bool {
+        // -2147483648 / -1 (と %) は Tera Term では例外で落ちる。ここでは落とさず -2147483648 (% は 0) にする
         evalBinary(getFactor, ops: TTLInterpreter.opsMul, &t, &v, &e) { w, a, b in
             switch w {
             case .mul: return a &* b
@@ -923,26 +992,45 @@ public final class TTLInterpreter {
 
     // MARK: - マクロファイル (ttmbuff.c)
 
-    /// ファイルを UTF-8 で読む。UTF-8 でなければ Shift_JIS (CP932) とみなす
+    /// マクロファイルを読んで UTF-8 にする (fileread.cpp LoadFileU8C)。
+    /// BOM (UTF-8 / UTF-16LE / UTF-16BE) を先に見る。BOM がなければ UTF-8、だめなら CP932
+    /// (Windows ではシステムのコードページが先だが、Mac では UTF-8 が普通なので順番だけ Mac 流)。
+    /// どれでも読めなければ nil (Can't open file)。中身は C の文字列なので最初の NUL で終わり。
+    /// UTF-16 は壊れた並びがあっても置き換えて読む (WideCharToMultiByte と同じく失敗しない)
     static func loadText(_ path: String) -> [UInt8]? {
         guard let d = FileManager.default.contents(atPath: path) else { return nil }
-        var b = [UInt8](d)
-        if b.starts(with: [0xEF, 0xBB, 0xBF]) { return Array(b[3...]) }
-        if b.starts(with: [0xFF, 0xFE]) || b.starts(with: [0xFE, 0xFF]) {
-            let enc: String.Encoding = b[0] == 0xFF ? .utf16LittleEndian : .utf16BigEndian
-            return String(data: Data(b[2...]), encoding: enc).map { Array($0.utf8) }
+        let b = [UInt8](d)
+        func cutNul(_ x: ArraySlice<UInt8>) -> [UInt8] {
+            if let z = x.firstIndex(of: 0) { return Array(x[x.startIndex..<z]) }
+            return Array(x)
         }
-        if String(data: d, encoding: .utf8) != nil { return b }
+        if b.starts(with: [0xEF, 0xBB, 0xBF]) { return cutNul(b[3...]) }
+        if b.starts(with: [0xFF, 0xFE]) || b.starts(with: [0xFE, 0xFF]) {
+            let le = b[0] == 0xFF
+            var units: [UInt16] = []
+            var i = 2
+            while i < b.count {
+                let x = b[i], y: UInt8 = i + 1 < b.count ? b[i + 1] : 0
+                // 奇数バイトで終わるときは最後の 1 バイトを下位バイトとみなす (後ろに付けた 0 と組になる)
+                let u: UInt16 = i + 1 >= b.count ? UInt16(x) : (le ? UInt16(x) | UInt16(y) << 8 : UInt16(x) << 8 | UInt16(y))
+                if u == 0 { break }
+                units.append(u)
+                i += 2
+            }
+            return Array(String(decoding: units, as: UTF16.self).utf8)
+        }
+        let raw = cutNul(b[...])
+        if String(bytes: raw, encoding: .utf8) != nil { return raw }
         let cp932 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.dosJapanese.rawValue)))
-        if let s = String(data: d, encoding: cp932) { b = Array(s.utf8) }
-        return b
+        if let s = String(bytes: raw, encoding: cp932) { return Array(s.utf8) }
+        return nil
     }
 
     func loadMacroFile(_ path: String, _ level: Int) -> Bool {
         guard !path.isEmpty, level < TTLInterpreter.maxNestLevel else { return false }
         guard let data = TTLInterpreter.loadText(path) else { return false }
         var mb = MacroBuffer()
-        mb.name = (path as NSString).lastPathComponent
+        mb.name = TTLInterpreter.fileTitle(path)
         mb.path = path
         mb.data = data
         mb.lineStarts = [0]
@@ -1021,23 +1109,18 @@ public final class TTLInterpreter {
                 b = getFirstChar()
                 if b == 0x22 || b == 0x27 || b == 0x23 {
                     linePtr -= 1
-                    var e2 = 0
-                    _ = getString(&e2)
+                    // Tera Term と同じく同じ Err を使う (閉じていない文字列もここでエラーになる)
+                    _ = getString(&err)
                 }
             } while b != 0
+            // エラーがあっても最後まで調べる (「止める」を選ぶと status は end になる)
             if err > 0 { errors.append(err); reportError(err) }
-            if status == .end { break }
         }
         if !isCommentClosed() { reportError(E.closeComment) }
         buffs[level]!.ptr = 0
         lineNo = 1
         iNest = saveNest
         return errors
-    }
-
-    private func registerLabelsOrThrow(_ level: Int) throws {
-        _ = registerLabels(level)
-        if status == .end { throw TTLError(line: lineNo, message: "マクロを止めました", file: macroFileName, text: "") }
     }
 
     func closeBuff(_ level: Int) {
@@ -1165,6 +1248,7 @@ public final class TTLInterpreter {
     // MARK: - 実行 (Exec / OnIdle)
 
     public func run() throws {
+        TTLMacroRegistry.add(self)
         host?.ttlMacroStarted(self)
         defer { endTTL() }
         while status != .end {
@@ -1182,6 +1266,8 @@ public final class TTLInterpreter {
     }
 
     private func endTTL() {
+        recv.lock(); endWait4all(); recv.unlock()
+        TTLMacroRegistry.remove(self)
         host?.ttlCloseStatus()
         for i in 0..<fileHandles.count { try? fileHandles[i]?.close(); fileHandles[i] = nil }
         closeBuff(0)
@@ -1193,6 +1279,7 @@ public final class TTLInterpreter {
             return
         }
         parseAgain = false
+        strRefs.removeAll(keepingCapacity: true)
         let err = execCmnd()
         if err > 0 { reportError(err) }
     }
@@ -1284,7 +1371,8 @@ public final class TTLInterpreter {
         var err = 0
         let index = getIndex(&err)
         let withIndex = index != nil
-        if err != 0 || getFirstChar() != 0x3D { return err != 0 ? err : E.notSupported }
+        // Tera Term: GetIndex のエラーも「=」がないのも ErrNotSupported (Unknown command.)
+        if err != 0 || getFirstChar() != 0x3D { return E.notSupported }
         var valType = VType.unknown
         var val: Int32 = 0
         let strConst = getString(&err)
@@ -1329,10 +1417,11 @@ public final class TTLInterpreter {
 
     // MARK: - 待ち (OnIdle / OnTimer)
 
+    /// timeout * 1000 + mtimeout (Tera Term と同じく 32 ビットの int。あふれて負になれば時間切れなし)
     func startTimer() {
-        var t = 0
-        if let v = intVariable("timeout") { t = Int(v) * 1000 }
-        if let v = intVariable("mtimeout") { t += Int(v) }
+        var t: Int32 = 0
+        if let v = intVariable("timeout") { t = v &* 1000 }
+        if let v = intVariable("mtimeout") { t = t &+ v }
         if t > 0 {
             timeLimit = Double(t) / 1000
             timeStart = Date()
@@ -1342,7 +1431,8 @@ public final class TTLInterpreter {
         }
     }
 
-    func checkTimeout() -> Bool { timerOn && Date().timeIntervalSince(timeStart) >= timeLimit }
+    /// CheckTimeout: GetTickCount() > TimeUp (ちょうどでは時間切れにしない)
+    func checkTimeout() -> Bool { timerOn && Date().timeIntervalSince(timeStart) > timeLimit }
 
     /// 受信データ・時間切れ・切断を見て待ちを 1 回進める。進まなければ少し眠る
     private func waitStep() {
@@ -1350,9 +1440,12 @@ public final class TTLInterpreter {
         recv.lock()
         defer { recv.unlock() }
         switch status {
-        case .wait, .wait4all:
+        case .wait:
             let r = waitMatch()
             if r > 0 { timerOn = false; status = .run; setResult(r); clearWait(); progressed = true }
+        case .wait4all:
+            // 全部のウインドウでそろったら result = 1 (番号ではない)
+            if wait4allMatch() { timerOn = false; status = .run; setResult(1); clearWait(); endWait4all(); progressed = true }
         case .waitLn:
             let r = waitMatch()
             if r > 0 {
@@ -1379,7 +1472,16 @@ public final class TTLInterpreter {
         // OnTimer 相当: 時間切れ・切断
         let timeout = checkTimeout()
         switch status {
-        case .wait, .waitLn, .waitNL, .wait4all:
+        case .wait4all:
+            // Tera Term の OnTimer には wait4all の場合がなく、最後の else で IdTTLRun になる (result はそのまま)。
+            // タイマーは timeout があれば最初の 50 ms、ComReady が 0 ならすぐに来る
+            if !comReady || (timerOn && Date().timeIntervalSince(timeStart) >= TTLInterpreter.timerTick) {
+                timerOn = false
+                endWait4all()
+                status = .run
+                return
+            }
+        case .wait, .waitLn, .waitNL:
             if !linked || !comReady || timeout {
                 setResult(0)
                 if status == .waitNL { setInputStr(getRecvLnBuff()) }
@@ -1407,8 +1509,17 @@ public final class TTLInterpreter {
             if timeout && (wakeupCondition & Wakeup.timeout) != 0 {
                 setResult(Wakeup.timeout); status = .run; return
             }
-            if (wakeupCondition & Wakeup.connect) != 0 && comReady { setResult(Wakeup.connect); status = .run; return }
-            if (wakeupCondition & Wakeup.disconn) != 0 && !comReady { setResult(Wakeup.disconn); status = .run; return }
+            // OnDdeComReady: waitevent のあとに接続状態が変わったときだけ起きる
+            while !comEvents.isEmpty {
+                let ready = comEvents.removeFirst()
+                if ready && (wakeupCondition & Wakeup.connect) != 0 { setResult(Wakeup.connect); status = .run; return }
+                if !ready && (wakeupCondition & Wakeup.disconn) != 0 { setResult(Wakeup.disconn); status = .run; return }
+            }
+            // OnDdeEnd: 端末とのつながりが切れた
+            if linkEndEvent {
+                linkEndEvent = false
+                if (wakeupCondition & Wakeup.unlink) != 0 { setResult(Wakeup.unlink); status = .run; return }
+            }
         default:
             status = .run
             return
@@ -1419,9 +1530,19 @@ public final class TTLInterpreter {
     // MARK: - 受信バッファ (ttmdde.c)
 
     /// 端末に表示した文字 (UTF-8) を渡す。どのスレッドからでもよい
+    /// NUL も届ける (Tera Term は DDE で 0x00/0x01 を 0x01 で包んで送り、Read1Byte で元に戻す)
     public func feed(_ bytes: [UInt8]) {
         recv.lock()
-        for b in bytes where b != 0 { put1Byte(b) }
+        for b in bytes { put1Byte(b) }
+        TTLMacroRegistry.lock.lock()
+        if !snoopBuffers.isEmpty {
+            for k in Array(snoopBuffers.keys) {
+                snoopBuffers[k]!.append(contentsOf: bytes)
+                let over = snoopBuffers[k]!.count - TTLInterpreter.ringBufSize
+                if over > 0 { snoopBuffers[k]!.removeFirst(over) }
+            }
+        }
+        TTLMacroRegistry.lock.unlock()
         recv.broadcast()
         recv.unlock()
     }
@@ -1429,9 +1550,108 @@ public final class TTLInterpreter {
     /// 接続状態が変わった
     public func setComReady(_ ready: Bool) {
         recv.lock()
+        if ready != comReady {
+            comEvents.append(ready)
+            if comEvents.count > 64 { comEvents.removeFirst() }
+        }
         comReady = ready
         recv.broadcast()
         recv.unlock()
+    }
+
+    /// 端末ウインドウが閉じるなどして、つながりが切れた (Tera Term の DDE 切断 → OnDdeEnd)。
+    /// マクロは止まらずに続き、waitevent 2 が起きる。wait などは result = 0 で戻る
+    public func endLink() {
+        recv.lock()
+        if linked { linkEndEvent = true }
+        linked = false
+        recv.broadcast()
+        recv.unlock()
+    }
+
+    // MARK: - wait4all (wait4all.c / ttmdde.c Wait4all)
+
+    static let timerTick = 0.05   // TIMEOUT_TIMER_MS
+
+    /// wait4all を始める (TTLWait4all)。いま動いているマクロ全部の受信をのぞき始める。
+    /// Tera Term は共有メモリの各マクロのリングバッファから直接読む (ほかのマクロの分も読み進めてしまう) が、
+    /// ここではほかのマクロの受信は写しを読むだけで、そのマクロの wait などからは消さない。
+    /// どのロックも持たずに呼ぶこと
+    func beginWait4all() {
+        recv.lock(); endWait4all(); recv.unlock()
+        let me = ObjectIdentifier(self)
+        var list = TTLMacroRegistry.snapshot()
+        if !list.contains(where: { $0 === self }) { list.append(self) }
+        for t in list where t !== self {
+            t.recv.lock()
+            let backlog = (0..<t.ringCount).map { t.ring[(t.ringStart + $0) % t.ring.count] }
+            TTLMacroRegistry.lock.lock()
+            t.snoopBuffers[me] = backlog
+            TTLMacroRegistry.lock.unlock()
+            t.recv.unlock()
+        }
+        recv.lock()
+        w4aTargets = list
+        w4aFound = Array(repeating: false, count: list.count)
+        w4aFoundNum = 0
+        w4aNum = list.count
+        status = .wait4all
+        recv.unlock()
+    }
+
+    /// のぞくのをやめる (recv を持って呼んでよい)
+    func endWait4all() {
+        let me = ObjectIdentifier(self)
+        TTLMacroRegistry.lock.lock()
+        for t in w4aTargets where t !== self { t.snoopBuffers[me] = nil }
+        TTLMacroRegistry.lock.unlock()
+        w4aTargets = []
+        w4aFound = []
+        w4aFoundNum = 0
+    }
+
+    /// Wait4allOneBuffer の照合: 合わなければ最初の文字だけ見直す。WaitCount は全部のバッファで共通
+    private func wait4allByte(_ b: UInt8) -> Int {
+        var found = 0
+        for i in stride(from: 9, through: 0, by: -1) {
+            guard let s = waitStr[i] else { continue }
+            if TTLInterpreter.waitAt(s, waitCount[i]) == Int(b) {
+                waitCount[i] += 1
+            } else if waitCount[i] > 0 {
+                waitCount[i] = TTLInterpreter.waitAt(s, 0) == Int(b) ? 1 : 0
+            }
+            if waitCount[i] == s.count { found = i + 1 }
+        }
+        return found
+    }
+
+    /// Wait4all(): 全部そろったら true。recvln のバッファは使わない
+    private func wait4allMatch() -> Bool {
+        let me = ObjectIdentifier(self)
+        for (k, t) in w4aTargets.enumerated() {
+            var found = 0
+            if t === self {
+                while found == 0, let b = read1Byte() { found = wait4allByte(b) }
+            } else {
+                TTLMacroRegistry.lock.lock()
+                if let buf = t.snoopBuffers[me] {
+                    var n = 0
+                    while found == 0 && n < buf.count { found = wait4allByte(buf[n]); n += 1 }
+                    if n > 0 { t.snoopBuffers[me]!.removeFirst(n) }
+                }
+                TTLMacroRegistry.lock.unlock()
+            }
+            if found > 0 && !w4aFound[k] { w4aFound[k] = true; w4aFoundNum += 1 }
+        }
+        // 途中でマクロが減ったら、そろえる数も減らす
+        let cur = TTLMacroRegistry.count()
+        if cur < w4aNum { w4aNum = cur }
+        return w4aFoundNum >= w4aNum
+    }
+
+    /// 待つ文字列の k 文字目 (C の文字列と同じく、終わりの次は 0。その先は何とも合わない)
+    @inline(__always) static func waitAt(_ s: [UInt8], _ k: Int) -> Int {
+        k < s.count ? Int(s[k]) : (k == s.count ? 0 : -1)
     }
 
     private func put1Byte(_ b: UInt8) {
@@ -1519,19 +1739,21 @@ public final class TTLInterpreter {
             if !regexWait {
                 for i in stride(from: 9, through: 0, by: -1) {
                     guard let s = waitStr[i] else { continue }
-                    if waitCount[i] < s.count && s[waitCount[i]] == b {
+                    // C の文字列と同じく s の終わりの次は 0 とみなす。空の文字列は最初の 1 バイトで合う (NUL を除く)
+                    let at = { (k: Int) in TTLInterpreter.waitAt(s, k) }
+                    if at(waitCount[i]) == Int(b) {
                         waitCount[i] += 1
                     } else if waitCount[i] > 0 {
                         var j = waitCount[i] - 1
                         while j >= 0 {
-                            if s[j] == b {
-                                if j == 0 || Array(s[0..<j]) == Array(s[(waitCount[i] - j)..<waitCount[i]]) { break }
+                            if at(j) == Int(b) {
+                                if j == 0 || (0..<j).allSatisfy({ at($0) == at(waitCount[i] - j + $0) }) { break }
                             }
                             j -= 1
                         }
                         waitCount[i] = j >= 0 ? j + 1 : 0
                     }
-                    if waitCount[i] == s.count && !s.isEmpty { found = i + 1 }
+                    if waitCount[i] == s.count { found = i + 1 }
                 }
             }
         }
@@ -1627,6 +1849,16 @@ public final class TTLInterpreter {
         while !_cancelled && Date() < end { _ = recv.wait(until: min(end, Date(timeIntervalSinceNow: 0.1))) }
         recv.unlock()
     }
+}
+
+/// 動いているマクロの一覧 (wait4all.c の共有メモリ WinList の代わり)。ロックの順番は 各マクロの recv → これ
+final class TTLMacroRegistry {
+    static let lock = NSLock()
+    private static var running: [TTLInterpreter] = []
+    static func add(_ m: TTLInterpreter) { lock.lock(); if !running.contains(where: { $0 === m }) { running.append(m) }; lock.unlock() }
+    static func remove(_ m: TTLInterpreter) { lock.lock(); running.removeAll { $0 === m }; lock.unlock() }
+    static func snapshot() -> [TTLInterpreter] { lock.lock(); defer { lock.unlock() }; return running }
+    static func count() -> Int { lock.lock(); defer { lock.unlock() }; return running.count }
 }
 
 /// テストや外部から変数を見るための値

@@ -190,15 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let homepage = URL(string: "https://github.com/satorunet/teraterm_macos")!
 
-    @objc func showAbout(_ sender: Any?) {
-        let credits = NSMutableAttributedString(string: "Tera Term の Mac 版 (非公式)。シリアル / SSH / Telnet / TTL マクロ対応。\nTeraTerm Project とは関係のない個人の移植です。\n")
-        credits.append(NSAttributedString(string: AppDelegate.homepage.absoluteString, attributes: [.link: AppDelegate.homepage]))
-        credits.append(NSAttributedString(string: "\n\nMIT License\nアイコン・マクロ処理系・ファイル転送は Tera Term (BSD License, © T. Teranishi / TeraTerm Project) を元にしています。\n正規表現: 鬼車 Oniguruma (BSD License, © K.Kosako)"))
-        let p = NSMutableParagraphStyle()
-        p.alignment = .center
-        credits.addAttributes([.paragraphStyle: p, .font: NSFont.systemFont(ofSize: 11)], range: NSRange(location: 0, length: credits.length))
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Tera Term Mac", .credits: credits])
-    }
+    @objc func showAbout(_ sender: Any?) { AboutWindowController.shared.show() }
+
+    @objc func showCredits(_ sender: Any?) { CreditsWindowController.shared.show() }
 
     @objc func openHomepage(_ sender: Any?) { NSWorkspace.shared.open(AppDelegate.homepage) }
 
@@ -221,6 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         _ = add("Tera Term Mac", [
             item("Tera Term Mac について", #selector(showAbout(_:))),
+            item("謝辞とライセンス…", #selector(showCredits(_:))),
             item("ホームページ (GitHub)…", #selector(openHomepage(_:))),
             .separator(),
             item("端末の設定…", #selector(S.showTerminalSetup(_:)), ","),
@@ -269,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .separator(),
             item("マクロ実行…", #selector(S.runMacroMenu(_:)), "m", [.command, .shift]),
             item("マクロ停止", #selector(S.stopMacro(_:)), ".", [.command]),
+            item("ファイル転送を中止", #selector(S.cancelTransferMenu(_:))),
         ])
         let win = add("ウインドウ", [
             item("しまう", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -310,6 +306,8 @@ enum SelfTest {
         c.termView.dataArrived()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             snap(c.termView, dir + "/term.png")
+            if let v = CreditsWindowController.shared.window?.contentView { snap(v, dir + "/credits.png") }
+            if let about = AboutWindowController.shared.window, let v = about.contentView { snap(v, dir + "/about.png") }
             // マクロでローカルシェルと TCP 接続を実際に動かす
             c.term.feed("\u{1B}[2J\u{1B}[H")
             let ttl = """
@@ -401,6 +399,7 @@ extension SelfTest {
     static func menuTest(dir: String) {
         let d = UserDefaults.standard
         let saved = d.data(forKey: "menuEntries")
+        let savedTree = d.data(forKey: "menuTree")
         var e1 = MenuEntry(); e1.name = "本番サーバ (SSH)"; e1.host = "prod.example.com"; e1.user = "admin"; e1.useSSH = true; e1.startup = true
         var e2 = MenuEntry(); e2.name = "ルータ (Telnet)"; e2.host = "192.168.1.1"; e2.useSSH = false; e2.user = "cisco"
         var e3 = MenuEntry(); e3.name = "定期バックアップ"; e3.mode = .macro; e3.macroFile = "~/backup.ttl"
@@ -408,6 +407,12 @@ extension SelfTest {
         e4.host = "127.0.0.1:" + (ProcessInfo.processInfo.environment["TERAMAC_LOGINPORT"] ?? "47124")
         e4.option = "/T=0 /passwd=s3cret"
         MenuStore.shared.entries = [e1, e2, e3, e4]
+        // フォルダ分けも見る: 「ネットワーク機器」に e2、その下の「夜間」に e3
+        let net = MenuNode(folder: "ネットワーク機器")
+        let night = MenuNode(folder: "夜間")
+        night.children = [MenuNode(entryID: e3.id)]
+        net.children = [MenuNode(entryID: e2.id), night]
+        MenuStore.shared.tree = [MenuNode(entryID: e1.id), net, MenuNode(entryID: e4.id)]
         let ed = MenuEditorWindowController()
         ed.showWindow(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -418,7 +423,10 @@ extension SelfTest {
                 snap(dd.panel.contentView!, dir + "/menu_details.png")
                 dd.cancel()
                 let m = TeraMenuController.shared.listMenu
-                try? m.items.map { $0.title }.joined(separator: "\n").write(toFile: dir + "/menu_list.txt", atomically: true, encoding: .utf8)
+                func titles(_ menu: NSMenu, _ depth: Int) -> [String] {
+                    menu.items.flatMap { [String(repeating: "  ", count: depth) + $0.title] + ($0.submenu.map { titles($0, depth + 1) } ?? []) }
+                }
+                try? titles(m, 0).joined(separator: "\n").write(toFile: dir + "/menu_list.txt", atomically: true, encoding: .utf8)
                 if ProcessInfo.processInfo.environment["TERAMAC_LOGINPORT"] != nil {
                     TeraMenuLauncher.launch(e4)
                 }
@@ -427,6 +435,7 @@ extension SelfTest {
                         try? c.term.screenText.write(toFile: dir + "/menu_login.txt", atomically: true, encoding: .utf8)
                     }
                     if let s = saved { d.set(s, forKey: "menuEntries") } else { d.removeObject(forKey: "menuEntries") }
+                    if let s = savedTree { d.set(s, forKey: "menuTree") } else { d.removeObject(forKey: "menuTree") }
                     exit(0)
                 }
             }

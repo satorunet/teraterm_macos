@@ -603,3 +603,242 @@ final class BPlusHost {
         }
     }
 }
+
+// MARK: - Windows 版との挙動合わせ (未読データ・切断・recvfile・パス・sendfile・自動起動)
+
+final class FileTransferCompatTests: XCTestCase {
+    private var tmp: URL!
+
+    override func setUpWithError() throws {
+        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ftc-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: tmp)
+    }
+
+    private func wait(_ seconds: TimeInterval) {
+        let e = expectation(description: "wait")
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { e.fulfill() }
+        wait(for: [e], timeout: seconds + 5)
+    }
+
+    func testBytesAfterProtocolEndAreReturnedFromFeed() {
+        // XMODEM 受信: EOT で終わる。同じ塊の後ろのデータはプロトコルが読まないので端末へ戻す
+        let t = FileTransfer(kind: .xmodemRecv, files: ["x.bin"], receiveDir: tmp.path, queue: .main) { _ in }
+        var result: Bool?
+        t.onFinish = { result = $0 }
+        var viaCallback: [UInt8] = []
+        t.onUnconsumedInput = { viaCallback += $0 }
+        XCTAssertTrue(t.start())
+        let rest = t.feed([0x04] + Array("hello\r\n".utf8))
+        XCTAssertEqual(result, true)
+        XCTAssertEqual(rest, Array("hello\r\n".utf8))
+        XCTAssertTrue(viaCallback.isEmpty, "feed の中で終わったときは戻り値だけ")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tmp.appendingPathComponent("x.bin").path))
+        // 終わった後の feed はそのまま返す
+        XCTAssertEqual(t.feed([1, 2, 3]), [1, 2, 3])
+    }
+
+    func testDisconnectStopsParsingAndCancelEndsWithFailure() {
+        // cv.Ready = FALSE: Parse されない。キャンセルするとプロトコルが ProtoEnd → 結果 0
+        var sent: [UInt8] = []
+        let t = FileTransfer(kind: .xmodemRecv, files: ["d.bin"], receiveDir: tmp.path, queue: .main) { sent += $0 }
+        var result: Bool?
+        t.onFinish = { result = $0 }
+        XCTAssertTrue(t.start())
+        XCTAssertFalse(sent.isEmpty, "最初の NAK")
+        t.isReady = false
+        sent = []
+        XCTAssertEqual(t.feed([0x04]), [])   // 切断後に届いても解釈しない (EOT でも終わらない)
+        XCTAssertNil(result)
+        XCTAssertTrue(t.isRunning)
+        t.cancel()
+        XCTAssertEqual(result, false)
+        XCTAssertFalse(t.isRunning)
+        XCTAssertTrue(sent.isEmpty, "切断中は回線に何も送らない (CommBinaryOut)")
+    }
+
+    func testStartWhileNotConnected() {
+        // 未接続でも始まり、XMODEM 受信はファイルを作る。何も送らず、キャンセルで 0
+        var sent: [UInt8] = []
+        let t = FileTransfer(kind: .xmodemRecv, files: ["nc.bin"], receiveDir: tmp.path, queue: .main) { sent += $0 }
+        t.isReady = false
+        var result: Bool?
+        t.onFinish = { result = $0 }
+        XCTAssertTrue(t.start())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tmp.appendingPathComponent("nc.bin").path))
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertNil(result)
+        t.cancel()
+        XCTAssertEqual(result, false)
+    }
+
+    func testAbortEndsImmediately() {
+        let t = FileTransfer(kind: .zmodemRecv, files: [], receiveDir: tmp.path, queue: .main) { _ in }
+        var result: Bool?
+        t.onFinish = { result = $0 }
+        XCTAssertTrue(t.start())
+        t.abort()
+        XCTAssertEqual(result, false)
+    }
+
+    func testRecvFileAutoStopAfterFirstData() {
+        var o = FileTransferOptions()
+        o.applyMacroParameters(kind: .rawRecv, autoStopSec: 1)
+        XCTAssertEqual(o.receiveFileAutoStopWaitTime, 1)
+        let t = FileTransfer(kind: .rawRecv, files: ["raw.bin"], receiveDir: tmp.path, options: o, queue: .main) { _ in }
+        var result: Bool?
+        t.onFinish = { result = $0 }
+        XCTAssertTrue(t.start())
+        // データが来るまでは自動停止のタイマーは動かない
+        wait(1.6)
+        XCTAssertNil(result)
+        let data: [UInt8] = Array(0...255) + [0xFF, 0x0D, 0x00, 0x0A]
+        XCTAssertEqual(t.feed(data), [])
+        wait(2.5)
+        XCTAssertEqual(result, true)
+        XCTAssertEqual(try? Data(contentsOf: tmp.appendingPathComponent("raw.bin")), Data(data))
+    }
+
+    func testRecvFileCancelAndDisconnect() {
+        var o = FileTransferOptions()
+        o.applyMacroParameters(kind: .rawRecv, autoStopSec: 0)
+        let t = FileTransfer(kind: .rawRecv, files: ["c.bin"], receiveDir: tmp.path, options: o, queue: .main) { _ in }
+        var result: Bool?
+        t.onFinish = { result = $0 }
+        XCTAssertTrue(t.start())
+        t.feed([1, 2, 3])
+        t.cancel()
+        XCTAssertEqual(result, false)
+
+        // 切断のあと自動停止の時間がきても成功にはしない
+        o.applyMacroParameters(kind: .rawRecv, autoStopSec: 1)
+        let t2 = FileTransfer(kind: .rawRecv, files: ["d.bin"], receiveDir: tmp.path, options: o, queue: .main) { _ in }
+        var r2: Bool?
+        t2.onFinish = { r2 = $0 }
+        XCTAssertTrue(t2.start())
+        t2.feed([1, 2, 3])
+        t2.isReady = false
+        wait(2.5)
+        XCTAssertEqual(r2, false)
+    }
+
+    func testRecvFileStartFailure() {
+        let t = FileTransfer(kind: .rawRecv, files: ["/nonexistent-dir-xyz/a.bin"], receiveDir: tmp.path, queue: .main) { _ in }
+        XCTAssertFalse(t.start())
+    }
+
+    func testFileDirAndRelativeNames() {
+        let env = ["FOO": tmp.path, "HOME": NSHomeDirectory()]
+        XCTAssertEqual(FileTransferPaths.expandEnvironment("%FOO%/a", env: env), tmp.path + "/a")
+        XCTAssertEqual(FileTransferPaths.expandEnvironment("$FOO/a", env: env), tmp.path + "/a")
+        XCTAssertEqual(FileTransferPaths.expandEnvironment("${FOO}/a", env: env), tmp.path + "/a")
+        XCTAssertEqual(FileTransferPaths.expandEnvironment("%NOPE%", env: env), "%NOPE%")
+        XCTAssertEqual(FileTransferPaths.expandEnvironment("~/x", env: env), NSHomeDirectory() + "/x")
+        XCTAssertEqual(FileTransferPaths.fileDirectory("%FOO%", env: env), tmp.path)
+        XCTAssertEqual(FileTransferPaths.fileDirectory("", env: env), FileTransferPaths.downloadsDirectory)
+        XCTAssertEqual(FileTransferPaths.fileDirectory("/no/such/folder", env: env), FileTransferPaths.downloadsDirectory)
+        XCTAssertEqual(FileTransferPaths.resolve("a.txt", fileDir: "/d"), "/d/a.txt")
+        XCTAssertEqual(FileTransferPaths.resolve("sub\\a.txt", fileDir: "/d"), "/d/sub/a.txt")
+        XCTAssertEqual(FileTransferPaths.resolve("/abs/a.txt", fileDir: "/d"), "/abs/a.txt")
+        XCTAssertEqual(FileTransferPaths.resolve("c:\\abs\\a.txt", fileDir: "/d"), "/abs/a.txt")
+    }
+
+    func testIniTransferSettings() throws {
+        let text = """
+        [Tera Term]
+        FileDir=%USERPROFILE%\\Desktop
+        XmodemOpt=crc
+        XmodemBin=off
+        AutoFileRename=off
+        ZmodemRcvCommand=lrz
+        ZmodemAuto=on
+        BPAuto=on
+        ReceivefileAutoStopWaitTime=9
+        SendfileDelayType=PerLine
+        SendfileDelayTick=20
+        SendfileSize=100
+        """
+        let p = tmp.appendingPathComponent("TERATERM.INI")
+        try text.write(to: p, atomically: true, encoding: .utf8)
+        let (o, used) = FileTransferOptions.loadTeraTermIni(paths: [tmp.appendingPathComponent("none.ini").path, p.path])
+        XCTAssertEqual(used, p.path)
+        XCTAssertEqual(o.fileDir, "%USERPROFILE%\\Desktop")
+        XCTAssertEqual(o.xmodemOpt, XmodemOption.crc)
+        XCTAssertFalse(o.xmodemBin)
+        XCTAssertFalse(o.autoFileRename)
+        XCTAssertEqual(o.zmodemRcvCommand, "lrz")
+        XCTAssertTrue(o.zmodemAuto)
+        XCTAssertTrue(o.bplusAuto)
+        XCTAssertEqual(o.receiveFileAutoStopWaitTime, 9)
+        XCTAssertEqual(o.sendfileDelayType, 2)
+        XCTAssertEqual(o.sendfileDelayTick, 20)
+        XCTAssertEqual(o.sendfileSize, 100)
+        let d = FileTransferOptions()
+        XCTAssertFalse(d.zmodemAuto)
+        XCTAssertEqual(d.receiveFileAutoStopWaitTime, 5)
+        XCTAssertEqual(d.sendfileSize, 4096)
+    }
+
+    func testSendFileTextDecoding() {
+        XCTAssertEqual(SendFilePlan.decodeText(Data([0xEF, 0xBB, 0xBF] + Array("a\r\nb\nc".utf8))), "a\rb\rc")
+        XCTAssertEqual(SendFilePlan.decodeText(Data([0xFF, 0xFE, 0x42, 0x30, 0x0A, 0x00])), "\u{3042}\r")
+        XCTAssertEqual(SendFilePlan.decodeText(Data([0xFE, 0xFF, 0x30, 0x42, 0x00, 0x0D, 0x00, 0x0A])), "\u{3042}\r")
+        XCTAssertEqual(SendFilePlan.decodeText(Data(Array("あ".utf8))), "あ")
+        XCTAssertEqual(SendFilePlan.decodeText(Data([0x82, 0xA0, 0x0D, 0x0A])), "あ\r")   // BOM なし CP932
+        XCTAssertEqual(SendFilePlan.decodeText(Data(Array("ab".utf8) + [0] + Array("cd".utf8))), "ab")  // NUL で終わり
+    }
+
+    func testSendFileChunks() {
+        let d = Data("ab\r\ncd".utf8)
+        XCTAssertEqual(SendFilePlan.make(data: d, binary: false, delayType: 0, delayTick: 0, sendSize: 0).chunks, [.text("ab\rcd")])
+        let line = SendFilePlan.make(data: d, binary: false, delayType: 2, delayTick: 10, sendSize: 0)
+        XCTAssertEqual(line.chunks, [.text("ab\r"), .text("cd")])
+        XCTAssertEqual(line.delayMs, 10)
+        XCTAssertEqual(SendFilePlan.make(data: d, binary: false, delayType: 1, delayTick: 5, sendSize: 0).chunks.count, 5)
+        XCTAssertEqual(SendFilePlan.make(data: d, binary: false, delayType: 1, delayTick: 0, sendSize: 0).chunks.count, 1)
+        XCTAssertEqual(SendFilePlan.make(data: d, binary: true, delayType: 3, delayTick: 1, sendSize: 4).chunks,
+                       [.binary(Array("ab\r\n".utf8)), .binary(Array("cd".utf8))])
+        XCTAssertEqual(SendFilePlan.make(data: d, binary: true, delayType: 2, delayTick: 1, sendSize: 0).chunks,
+                       [.binary(Array("ab\r\n".utf8)), .binary(Array("cd".utf8))])
+        // テキストの PerSendSize は UTF-16 で sendSize/2 文字
+        XCTAssertEqual(SendFilePlan.make(data: Data("abcde".utf8), binary: false, delayType: 3, delayTick: 1, sendSize: 4).chunks,
+                       [.text("ab"), .text("cd"), .text("e")])
+    }
+
+    func testAutoStartScanner() {
+        var s = TransferAutoStartScanner(zmodemAuto: false, bplusAuto: false)
+        var r = s.scan(Array("**\u{18}B00000".utf8))
+        XCTAssertNil(r.trigger)
+        XCTAssertEqual(r.display, Array("**\u{18}B00000".utf8), "既定 (off) では何もしない")
+
+        s = TransferAutoStartScanner(zmodemAuto: true)
+        r = s.scan(Array("rz\r**\u{18}B00000000000000\r\n".utf8))
+        XCTAssertEqual(r.trigger, .zmodemReceive)
+        XCTAssertEqual(r.display, Array("rz\r**".utf8))
+        XCTAssertEqual(r.rest, Array("000000000000\r\n".utf8))
+
+        // 塊をまたいでも
+        s = TransferAutoStartScanner(zmodemAuto: true)
+        r = s.scan([0x2A, 0x18, 0x42])
+        XCTAssertNil(r.trigger)
+        XCTAssertEqual(r.display, [0x2A])
+        r = s.scan(Array("01abc".utf8))
+        XCTAssertEqual(r.trigger, .zmodemSend)
+        XCTAssertEqual(r.rest, Array("abc".utf8))
+
+        // CAN の後が違えば、その文字まで消費して元に戻る (CANSeen)
+        s = TransferAutoStartScanner(zmodemAuto: true)
+        r = s.scan(Array("a\u{18}xyz".utf8))
+        XCTAssertNil(r.trigger)
+        XCTAssertEqual(r.display, Array("ayz".utf8))
+
+        s = TransferAutoStartScanner(bplusAuto: true)
+        r = s.scan([0x41, 0x10, 0x42, 0x43])
+        XCTAssertEqual(r.trigger, .bplusReceive)
+        XCTAssertEqual(r.display, [0x41])
+        XCTAssertEqual(r.rest, [0x43])
+    }
+}

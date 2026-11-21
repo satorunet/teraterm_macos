@@ -466,6 +466,9 @@ final class TTLStringTests: XCTestCase {
         expandenv c 'x%TTLSTRTEST_A%y%NO_SUCH_VAR_Q%z%'
         d = '%TTLSTRTEST_A%'
         expandenv d
+        expandenv f '%NO_SUCH_VAR_Q%TTLSTRTEST_A%'
+        expandenv g '100%% %% $HOME ${HOME} %'
+        expandenv h '%%TTLSTRTEST_A%'
         setenv 'TTLSTRTEST_A' ''
         getenv 'TTLSTRTEST_A' e
         """)
@@ -473,6 +476,10 @@ final class TTLStringTests: XCTestCase {
         XCTAssertEqual(s(i, "b"), "あいう")          // Windows と同じく大文字小文字を区別しない
         XCTAssertEqual(s(i, "c"), "xあいうy%NO_SUCH_VAR_Q%z%")
         XCTAssertEqual(s(i, "d"), "あいう")
+        // 無い名前は開き '%' だけ写してその直後から続ける (RtlExpandEnvironmentStrings_U)
+        XCTAssertEqual(s(i, "f"), "%NO_SUCH_VAR_Qあいう")
+        XCTAssertEqual(s(i, "g"), "100%% %% $HOME ${HOME} %")   // $VAR は展開しない
+        XCTAssertEqual(s(i, "h"), "%あいう")                    // 空の名前も「無い名前」
         XCTAssertEqual(s(i, "e"), "")
         XCTAssertNil(getenv("TTLSTRTEST_A"))
     }
@@ -617,6 +624,96 @@ final class TTLStringTests: XCTestCase {
                        ((dir as NSString).standardizingPath as NSString).resolvingSymlinksInPath)
         XCTAssertThrowsError(try runTTL("exec 'true' 'bogus'"))
         XCTAssertThrowsError(try runTTL("exec ''"))
+    }
+
+    func testExecNotStartedAndWorkingDir() throws {
+        let base = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ttlexec-\(UUID().uuidString)")
+        let sub = base.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let (h, i) = try runTTL("""
+        exec 'ttl_no_such_command_xyz' 'show' 1
+        r1 = result
+        exec 'ttl_no_such_command_xyz'
+        r2 = result
+        exec './sub' 'show' 1
+        r3 = result
+        setdir 'sub'
+        exec 'pwd > out1.txt' 'hide' 1
+        r4 = result
+        exec 'pwd > out2.txt' 'hide' 1 'sub'
+        r5 = result
+        exec 'sleep 1'
+        r6 = result
+        """, host: FakeHost(), baseDirURL: base)
+        XCTAssertEqual(h.errors, [])
+        XCTAssertEqual(n(i, "r1"), -1)      // 起動できない: 待つとき
+        XCTAssertEqual(n(i, "r2"), -1)      // 待たないときも -1
+        XCTAssertEqual(n(i, "r3"), -1)      // フォルダは実行できない
+        XCTAssertEqual(n(i, "r4"), 0)
+        XCTAssertEqual(n(i, "r5"), 0)
+        XCTAssertEqual(n(i, "r6"), 0)
+        func real(_ p: String) -> String { (p as NSString).resolvingSymlinksInPath }
+        // setdir しても既定の作業フォルダはマクロのフォルダのまま
+        let o1 = try String(contentsOf: base.appendingPathComponent("out1.txt"))
+        XCTAssertEqual(real(o1.trimmingCharacters(in: .whitespacesAndNewlines)), real(base.path))
+        // 相対の 4 番目の引数もマクロのフォルダ基準 (setdir 先の sub/sub ではない)
+        let o2 = try String(contentsOf: sub.appendingPathComponent("out2.txt"))
+        XCTAssertEqual(real(o2.trimmingCharacters(in: .whitespacesAndNewlines)), real(sub.path))
+    }
+
+    func testSprintfHexFloatAndSpecials() throws {
+        let (h, i) = try runTTL("""
+        sprintf2 a1 '%a' '1'
+        sprintf2 a2 '%A' '1'
+        sprintf2 a3 '%a' '0'
+        sprintf2 a4 '%a' '-2'
+        sprintf2 a5 '%a' '0.1'
+        sprintf2 a6 '%.2a' '1.5'
+        sprintf2 a7 '%.0a' '1.5'
+        sprintf2 a8 '%#.0a' '1'
+        sprintf2 a9 '[%12.1a][%-12.1a][%012.1a][%+.1a]' '1' '1' '1' '1'
+        sprintf2 a10 '%.15a' '1'
+        sprintf2 a11 '%a' '4.9406564584124654e-324'
+        sprintf2 a12 '%.1a' '1.96875'
+        sprintf2 a13 '%*.*a' 12 1 '1'
+        sprintf2 n1 '%f' 'inf'
+        sprintf2 n2 '%e' '-inf'
+        sprintf2 n3 '%E' 'inf'
+        sprintf2 n4 '%f' 'nan'
+        sprintf2 n5 '%g' '-nan'
+        sprintf2 n6 '%G' '-nan'
+        sprintf2 n7 '[%6.2f][%-6f][%+f]' 'inf' 'inf' 'inf'
+        sprintf2 n8 '%f' 'nan(ind)'
+        sprintf2 n9 '%f' 'nan(snan)'
+        sprintf2 n10 '%a' 'inf'
+        sprintf2 f1 '%.2f|%e' '1.005' '12345'
+        """)
+        XCTAssertEqual(h.errors, [])
+        XCTAssertEqual(s(i, "a1"), "0x1.0000000000000p+0")
+        XCTAssertEqual(s(i, "a2"), "0X1.0000000000000P+0")
+        XCTAssertEqual(s(i, "a3"), "0x0.0000000000000p+0")
+        XCTAssertEqual(s(i, "a4"), "-0x1.0000000000000p+1")
+        XCTAssertEqual(s(i, "a5"), "0x1.999999999999ap-4")
+        XCTAssertEqual(s(i, "a6"), "0x1.80p+0")
+        XCTAssertEqual(s(i, "a7"), "0x2p+0")
+        XCTAssertEqual(s(i, "a8"), "0x1.p+0")
+        XCTAssertEqual(s(i, "a9"), "[    0x1.0p+0][0x1.0p+0    ][0x00001.0p+0][+0x1.0p+0]")
+        XCTAssertEqual(s(i, "a10"), "0x1.000000000000000p+0")
+        XCTAssertEqual(s(i, "a11"), "0x0.0000000000001p-1022")
+        XCTAssertEqual(s(i, "a12"), "0x2.0p+0")
+        XCTAssertEqual(s(i, "a13"), "    0x1.0p+0")
+        XCTAssertEqual(s(i, "n1"), "inf")
+        XCTAssertEqual(s(i, "n2"), "-inf")
+        XCTAssertEqual(s(i, "n3"), "INF")
+        XCTAssertEqual(s(i, "n4"), "nan")
+        XCTAssertEqual(s(i, "n5"), "-nan(ind)")
+        XCTAssertEqual(s(i, "n6"), "-NAN(IND)")
+        XCTAssertEqual(s(i, "n7"), "[   inf][inf   ][+inf]")
+        XCTAssertEqual(s(i, "n8"), "-nan(ind)")
+        XCTAssertEqual(s(i, "n9"), "nan(snan)")
+        XCTAssertEqual(s(i, "n10"), "inf")
+        XCTAssertEqual(s(i, "f1"), "1.00|1.234500e+04")
     }
 
     func testSetExitCode() throws {

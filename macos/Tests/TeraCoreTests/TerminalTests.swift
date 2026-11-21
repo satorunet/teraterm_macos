@@ -82,9 +82,10 @@ final class TerminalTests: XCTestCase {
     func testRecvCR() {
         let t = Terminal(cols: 10, rows: 3)
         t.recvCRasCRLF = true
+        // vtterm.c ProcessCR (CRReceive=CRLF): CR のあとに LF を足し、そのあとに来た LF もそのまま改行する
         t.feed("a\rb\r\nc")
-        XCTAssertEqual(row(t, 0), "a")
-        XCTAssertEqual(row(t, 1), "b")
+        XCTAssertEqual(row(t, 0), "b")
+        XCTAssertEqual(row(t, 1), "")
         XCTAssertEqual(row(t, 2), "c")
     }
 

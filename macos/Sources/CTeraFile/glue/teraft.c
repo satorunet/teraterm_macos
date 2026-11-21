@@ -22,11 +22,11 @@
 #include "zmodem.h"
 #include "bplus.h"
 #include "quickvan.h"
+#include "raw.h"
 
 #include "CTeraFile.h"
 #include "teraft_internal.h"
 
-#define InBuffSize (1024 * 64)	/* tttypes.h */
 
 struct TeraFT {
 	TFileVarProto fv;
@@ -35,10 +35,7 @@ struct TeraFT {
 	TComVar cv;
 	TeraFTCallbacks cb;
 
-	/* TComVar receive buffer */
-	BYTE InBuff[InBuffSize + 16];
-	int InPtr;
-	int InBuffCount;
+	/* the receive buffer is cv.InBuff / cv.InPtr / cv.InBuffCount (raw.c reads it directly) */
 
 	/* bytes received from the line, not yet moved to InBuff */
 	BYTE *pending;
@@ -95,19 +92,19 @@ void TeraFTReportMessage(const char *caption, const char *text)
 static void FTCommReceive(TeraFT *ft)
 {
 	/* CommReceive() (commlib.c) */
-	if (ft->InBuffCount >= InBuffSize) return;
-	if (ft->InBuffCount == 0) {
-		ft->InPtr = 0;
+	if (ft->cv.InBuffCount >= InBuffSize) return;
+	if (ft->cv.InBuffCount == 0) {
+		ft->cv.InPtr = 0;
 	}
-	else if (ft->InPtr > 0 && ft->InPtr + ft->InBuffCount > InBuffSize / 4 * 3) {
-		memmove(ft->InBuff, &ft->InBuff[ft->InPtr], ft->InBuffCount);
-		ft->InPtr = 0;
+	else if (ft->cv.InPtr > 0 && ft->cv.InPtr + ft->cv.InBuffCount > InBuffSize / 4 * 3) {
+		memmove(ft->cv.InBuff, &ft->cv.InBuff[ft->cv.InPtr], ft->cv.InBuffCount);
+		ft->cv.InPtr = 0;
 	}
-	if (ft->InPtr + ft->InBuffCount < InBuffSize && ft->pendingLen > 0) {
-		size_t space = InBuffSize - ft->InPtr - ft->InBuffCount;
+	if (ft->cv.InPtr + ft->cv.InBuffCount < InBuffSize && ft->pendingLen > 0) {
+		size_t space = InBuffSize - ft->cv.InPtr - ft->cv.InBuffCount;
 		size_t n = ft->pendingLen < space ? ft->pendingLen : space;
-		memcpy(&ft->InBuff[ft->InPtr + ft->InBuffCount], ft->pending + ft->pendingHead, n);
-		ft->InBuffCount += (int)n;
+		memcpy(&ft->cv.InBuff[ft->cv.InPtr + ft->cv.InBuffCount], ft->pending + ft->pendingHead, n);
+		ft->cv.InBuffCount += (int)n;
 		ft->pendingHead += n;
 		ft->pendingLen -= n;
 		if (ft->pendingLen == 0) ft->pendingHead = 0;
@@ -118,6 +115,7 @@ static void FTCommReceive(TeraFT *ft)
 static int FTBinaryOut(struct Comm_ *comm, const CHAR *buf, size_t len)
 {
 	TeraFT *ft = (TeraFT *)comm->private_data;
+	if (!ft->cv.Ready) return (int)len;	/* CommBinaryOut(): dropped while the session is gone */
 	if (len > 0) {
 		ft->cb.send(ft->cb.ctx, (const uint8_t *)buf, len);
 		ft->activity++;
@@ -129,15 +127,16 @@ static int FTRead1Byte(struct Comm_ *comm, BYTE *b)
 {
 	/* CommReadRawByte() */
 	TeraFT *ft = (TeraFT *)comm->private_data;
-	if (ft->InBuffCount > 0) {
-		*b = ft->InBuff[ft->InPtr];
-		ft->InPtr++;
-		ft->InBuffCount--;
-		if (ft->InBuffCount == 0) ft->InPtr = 0;
+	if (!ft->cv.Ready) return 0;
+	if (ft->cv.InBuffCount > 0) {
+		*b = ft->cv.InBuff[ft->cv.InPtr];
+		ft->cv.InPtr++;
+		ft->cv.InBuffCount--;
+		if (ft->cv.InBuffCount == 0) ft->cv.InPtr = 0;
 		ft->activity++;
 		return 1;
 	}
-	ft->InPtr = 0;
+	ft->cv.InPtr = 0;
 	return 0;
 }
 
@@ -145,23 +144,24 @@ static void FTInsert1Byte(struct Comm_ *comm, BYTE b)
 {
 	/* CommInsert1Byte() */
 	TeraFT *ft = (TeraFT *)comm->private_data;
-	if (ft->InPtr == 0) {
-		memmove(&ft->InBuff[1], &ft->InBuff[0], ft->InBuffCount);
+	if (!ft->cv.Ready) return;
+	if (ft->cv.InPtr == 0) {
+		memmove(&ft->cv.InBuff[1], &ft->cv.InBuff[0], ft->cv.InBuffCount);
 	}
 	else {
-		ft->InPtr--;
+		ft->cv.InPtr--;
 	}
-	ft->InBuff[ft->InPtr] = b;
-	ft->InBuffCount++;
+	ft->cv.InBuff[ft->cv.InPtr] = b;
+	ft->cv.InBuffCount++;
 	ft->activity++;
 }
 
 static void FTFlashReceiveBuf(struct Comm_ *comm)
 {
 	TeraFT *ft = (TeraFT *)comm->private_data;
-	if (ft->InBuffCount != 0) ft->activity++;
-	ft->InBuffCount = 0;
-	ft->InPtr = 0;
+	if (ft->cv.InBuffCount != 0) ft->activity++;
+	ft->cv.InBuffCount = 0;
+	ft->cv.InPtr = 0;
 }
 
 static const CommOp CommOpList = {
@@ -321,7 +321,7 @@ TeraFT *TeraFTCreate(int proto, int mode, int opt1, int opt2,
 
 	/* cv */
 	ft->cv.PortType = (WORD)s->PortType;
-	ft->cv.Ready = TRUE;
+	ft->cv.Ready = s->NotReady ? FALSE : TRUE;
 	ft->cv.OutBuffCount = 0;	/* everything is handed to send() immediately */
 
 	/* comm */
@@ -389,6 +389,10 @@ TeraFT *TeraFTCreate(int proto, int mode, int opt1, int opt2,
 		p = QVCreate(fv);
 		if (p) p->Op->SetOpt(p, QUICKVAN_MODE, mode);
 		break;
+	case TERAFT_PROTO_RAW:
+		p = RawCreate(fv);
+		if (p) p->Op->SetOpt(p, RAW_AUTOSTOP_SEC, opt1);
+		break;
 	default:
 		break;
 	}
@@ -432,6 +436,8 @@ void TeraFTFeed(TeraFT *ft, const uint8_t *buf, size_t len)
 int TeraFTParse(TeraFT *ft)
 {
 	if (ft->ended) return 0;
+	/* teraterm.cpp OnIdle(): ProtoDlgParse() only runs while cv.Ready */
+	if (!ft->cv.Ready) return 1;
 	TeraFT *saved = CurrentFT;
 	CurrentFT = ft;
 	FTCommReceive(ft);
@@ -476,9 +482,44 @@ uint64_t TeraFTActivity(const TeraFT *ft)
 	return ft->activity;
 }
 
+void TeraFTSetReady(TeraFT *ft, int ready)
+{
+	ft->cv.Ready = ready ? TRUE : FALSE;
+	ft->activity++;
+}
+
+int TeraFTIsReady(const TeraFT *ft)
+{
+	return ft->cv.Ready ? 1 : 0;
+}
+
+size_t TeraFTTakeBuffered(TeraFT *ft, uint8_t *buf, size_t cap)
+{
+	size_t n = 0;
+	if (ft->cv.InBuffCount > 0) {
+		size_t c = (size_t)ft->cv.InBuffCount;
+		if (c > cap) c = cap;
+		memcpy(buf, &ft->cv.InBuff[ft->cv.InPtr], c);
+		n += c;
+		ft->cv.InPtr += (int)c;
+		ft->cv.InBuffCount -= (int)c;
+		if (ft->cv.InBuffCount == 0) ft->cv.InPtr = 0;
+	}
+	if (n < cap && ft->pendingLen > 0) {
+		size_t c = ft->pendingLen;
+		if (c > cap - n) c = cap - n;
+		memcpy(buf + n, ft->pending + ft->pendingHead, c);
+		n += c;
+		ft->pendingHead += c;
+		ft->pendingLen -= c;
+		if (ft->pendingLen == 0) ft->pendingHead = 0;
+	}
+	return n;
+}
+
 size_t TeraFTBufferedBytes(const TeraFT *ft)
 {
-	return ft->pendingLen + (size_t)ft->InBuffCount;
+	return ft->pendingLen + (size_t)ft->cv.InBuffCount;
 }
 
 void TeraFTDestroy(TeraFT *ft)

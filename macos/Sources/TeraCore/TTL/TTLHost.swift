@@ -66,7 +66,10 @@ public protocol TTLHost: AnyObject {
     func ttlIsConnected() -> Bool
     /// connect のあと、まだ接続を試している途中なら true
     func ttlIsConnecting() -> Bool
-    func ttlBeep()
+    /// unlink / closett: マクロが端末から離れた (Tera Term の DDE 切断。logautoclose はここで閉じる)
+    func ttlUnlink()
+    /// beep の種類 (0: 既定 1: 情報 2: 警告 3: エラー 4: 問い合わせ 5: 標準)
+    func ttlBeep(_ type: Int)
 
     // 画面・ウインドウ
     func ttlShowTT(_ mode: Int)
@@ -85,13 +88,15 @@ public protocol TTLHost: AnyObject {
     func ttlSetDebug(_ mode: Int)
 
     // ログ
-    func ttlLogOpen(_ path: String, options: TTLLogOptions) -> Bool
+    /// logopen。name はマクロに書いたままのファイル名 (strftime・&h などの展開と、相対パスの扱いはホストが行う)。
+    /// すでにログを取っていたら false (前のログはそのまま)
+    func ttlLogOpen(_ name: String, options: TTLLogOptions) -> Bool
     func ttlLogClose()
     func ttlLogPause()
     func ttlLogStart()
     func ttlLogWrite(_ s: [UInt8])
-    /// ログを取っていなければ nil
-    func ttlLogInfo() -> String?
+    /// (オプションの和 1 binary 2 append 4 plain 8 timestamp 16 hide dialog, ファイルのパス)。ログを取っていなければ nil
+    func ttlLogInfo() -> (flags: Int, path: String)?
     func ttlLogRotate(_ command: String)
     func ttlLogAutoClose(_ on: Bool)
 
@@ -105,8 +110,9 @@ public protocol TTLHost: AnyObject {
     func ttlSetDTR(_ on: Bool)
     func ttlSetRTS(_ on: Bool)
     func ttlSetFlowCtrl(_ mode: Int) -> Bool
-    func ttlSetSerialDelay(char: Int?, line: Int?) -> Bool
-    /// モデムの状態 (ビット: 1=CTS 2=DSR 4=RI 8=DCD)。取れなければ nil
+    /// シリアル接続なら true (result=1)。シリアルでなければ nil (result は変えない)
+    func ttlSetSerialDelay(char: Int?, line: Int?) -> Bool?
+    /// モデムの状態 (ビット: 1=CTS 2=DSR 4=RI 8=DCD)。取れなければ nil (マクロには 0)
     func ttlGetModemStatus() -> Int?
     /// 接続先のホスト名 (TCP/SSH)
     func ttlGetHostname() -> String?
@@ -121,7 +127,8 @@ public protocol TTLHost: AnyObject {
     func ttlStatusBox(_ text: String, title: String)
     func ttlCloseStatus()
     func ttlBringupBox()
-    func ttlSetDialogPos(x: Int, y: Int, position: Int?)
+    /// setdlgpos。x が Int.min なら既定の位置 (中央) に戻す。position (1〜10) があれば x, y は使わず offset を足す
+    func ttlSetDialogPos(x: Int, y: Int, position: Int, offsetX: Int, offsetY: Int)
     func ttlShowMacroWindow(_ mode: Int)
     /// 選んだ番号 (0〜)、-1: キャンセル、-2: 閉じた (マクロを止める)
     func ttlListBox(_ text: String, title: String, items: [String], selected: Int, options: TTLListBoxOptions) -> Int
@@ -134,6 +141,10 @@ public protocol TTLHost: AnyObject {
 
     /// Tera Term (このアプリ) の場所 (getttdir)
     func ttlAppDirectory() -> String
+
+    /// recvfile (raw.c)。result に入る値 (1: 自動停止で成功 0: キャンセル・切断)。始められなかったら nil (result は変えない)。
+    /// path はマクロが書いたままの文字列 (相対パスは FileDir から)
+    func ttlRecvFileResult(_ path: String, autoStopSec: Int) -> Int?
 }
 
 /// 何もしない既定の動き (テスト用・未実装の機能用)
@@ -152,7 +163,8 @@ public extension TTLHost {
     func ttlCloseTT() { ttlDisconnect(confirm: false) }
     func ttlIsConnected() -> Bool { true }
     func ttlIsConnecting() -> Bool { false }
-    func ttlBeep() {}
+    func ttlUnlink() {}
+    func ttlBeep(_ type: Int) {}
     func ttlShowTT(_ mode: Int) {}
     func ttlSetTitle(_ s: String) {}
     func ttlGetTitle() -> String { "" }
@@ -171,7 +183,7 @@ public extension TTLHost {
     func ttlLogPause() {}
     func ttlLogStart() {}
     func ttlLogWrite(_ s: [UInt8]) {}
-    func ttlLogInfo() -> String? { nil }
+    func ttlLogInfo() -> (flags: Int, path: String)? { nil }
     func ttlLogRotate(_ command: String) {}
     func ttlLogAutoClose(_ on: Bool) {}
     func ttlTransfer(_ kind: TTLTransfer, files: [String], option: Int) -> Int? { 0 }
@@ -180,7 +192,7 @@ public extension TTLHost {
     func ttlSetDTR(_ on: Bool) {}
     func ttlSetRTS(_ on: Bool) {}
     func ttlSetFlowCtrl(_ mode: Int) -> Bool { false }
-    func ttlSetSerialDelay(char: Int?, line: Int?) -> Bool { false }
+    func ttlSetSerialDelay(char: Int?, line: Int?) -> Bool? { nil }
     func ttlGetModemStatus() -> Int? { nil }
     func ttlGetHostname() -> String? { nil }
     func ttlMessageBox(_ text: String, title: String) -> Bool { true }
@@ -189,7 +201,7 @@ public extension TTLHost {
     func ttlStatusBox(_ text: String, title: String) {}
     func ttlCloseStatus() {}
     func ttlBringupBox() {}
-    func ttlSetDialogPos(x: Int, y: Int, position: Int?) {}
+    func ttlSetDialogPos(x: Int, y: Int, position: Int, offsetX: Int, offsetY: Int) {}
     func ttlShowMacroWindow(_ mode: Int) {}
     func ttlListBox(_ text: String, title: String, items: [String], selected: Int, options: TTLListBoxOptions) -> Int { selected }
     func ttlFileNameBox(_ title: String, save: Bool, initialDir: String?) -> String? { nil }
@@ -197,4 +209,43 @@ public extension TTLHost {
     func ttlGetClipboard() -> String? { nil }
     func ttlSetClipboard(_ s: String) -> Bool { false }
     func ttlAppDirectory() -> String { Bundle.main.bundlePath }
+    func ttlRecvFileResult(_ path: String, autoStopSec: Int) -> Int? {
+        ttlRecvFile(path, binary: true, autoStopSec: autoStopSec) ? 1 : 0
+    }
+}
+
+public extension TTLInterpreter {
+    /// testlink と同じ (0: リンクなし 1: リンクのみ 2: 接続中)
+    var linkState: Int {
+        recv.lock(); defer { recv.unlock() }
+        return !linked ? 0 : (comReady ? 2 : 1)
+    }
+}
+
+/// ttmdde.c の送信バッファの大きさ (send / sendln は 511 バイトまで)
+let OutBufSize = 512
+
+extension TTLInterpreter {
+    /// listbox の "listboxsize=WxH" (swscanf "%[^=]=%d%[xX]%d" と同じ読み方)
+    static func scanListBoxSize(_ s: String) -> (Int, Int)? {
+        guard let eq = s.firstIndex(of: "="), eq != s.startIndex else { return nil }
+        let rest = s[s.index(after: eq)...]
+        // %d
+        let digitsEnd: (Substring) -> Substring.Index = { sub in
+            var i = sub.startIndex
+            while i < sub.endIndex, sub[i] == " " || sub[i] == "\t" { i = sub.index(after: i) }
+            if i < sub.endIndex, sub[i] == "+" || sub[i] == "-" { i = sub.index(after: i) }
+            while i < sub.endIndex, sub[i].isASCII, sub[i].isNumber { i = sub.index(after: i) }
+            return i
+        }
+        let e1 = digitsEnd(rest)
+        guard let w = TTCommandLine.scanInt(String(rest[rest.startIndex..<e1])) else { return nil }
+        var i = e1
+        var nx = 0
+        while i < rest.endIndex, rest[i] == "x" || rest[i] == "X" { i = rest.index(after: i); nx += 1 }
+        guard nx > 0 else { return nil }
+        let tail = rest[i...]
+        guard let h = TTCommandLine.scanInt(String(tail)) else { return nil }
+        return (w, h)
+    }
 }

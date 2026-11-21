@@ -46,6 +46,31 @@ final class TerminalView: NSView, NSTextInputClient {
         super.init(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         applyFont()
         startBlink()
+        registerForDraggedTypes([.fileURL])
+    }
+
+    // MARK: - ファイルのドロップ (Tera Term のドラッグ&ドロップ)
+
+    /// ドロップされたファイル (パス, Control/Option を押していたか)
+    var onFilesDropped: (([String], Bool) -> Void)?
+
+    private func droppedPaths(_ info: NSDraggingInfo) -> [String] {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.map { $0.path }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        onFilesDropped != nil && !droppedPaths(sender).isEmpty ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let paths = droppedPaths(sender)
+        guard !paths.isEmpty, let f = onFilesDropped else { return false }
+        let mods = NSEvent.modifierFlags
+        let force = mods.contains(.control) || mods.contains(.option)
+        // ドロップの処理 (ダイアログ) はドラッグが終わってから
+        DispatchQueue.main.async { f(paths, force) }
+        return true
     }
 
     required init?(coder: NSCoder) { fatalError() }

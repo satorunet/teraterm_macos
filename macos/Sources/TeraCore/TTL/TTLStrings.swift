@@ -171,6 +171,157 @@ private func cFormat(_ fmt: [UInt8], _ args: [CVarArg]) -> [UInt8] {
     return cStr(buf.map { UInt8(bitPattern: $0) })
 }
 
+// MARK: UCRT の浮動小数点出力 (%a/%A と inf/nan の綴り)
+
+/// MSVC (UCRT) の atof。"nan(ind)" と "nan(snan)" だけ UCRT の値にして、ほかは atof
+private func ucrtAtof(_ s: [UInt8]) -> Double {
+    var p = 0
+    while p < s.count, cIsSpace(s[p]) { p += 1 }
+    var neg = false
+    if p < s.count, s[p] == 0x2B || s[p] == 0x2D { neg = s[p] == 0x2D; p += 1 }
+    let c = cStr(s)
+    let rest = asciiLower(Array(c[min(p, c.count)...]))
+    if rest.starts(with: Array("nan(ind)".utf8)) {
+        // 不定値 (符号ビット付きの quiet NaN)。"-" が付くと符号が消える
+        let v = Double(bitPattern: 0xFFF8_0000_0000_0000)
+        return neg ? -v : v
+    }
+    if rest.starts(with: Array("nan(snan)".utf8)) {
+        let v = Double(bitPattern: 0x7FF4_0000_0000_0000)
+        return neg ? -v : v
+    }
+    let cs = s.map { CChar(bitPattern: $0) } + [0]
+    return atof(cs)
+}
+
+/// "%..." (変換文字まで) の書式を UCRT と同じに整える。
+/// %a/%A と、inf/nan は自前。それ以外 (有限の e/f/g) は nil を返して vsnprintf に任せる
+private func ucrtFormatDouble(_ spec: [UInt8], _ stars: [Int32], _ v: Double) -> [UInt8]? {
+    guard let conv = spec.last else { return nil }
+    let upper = conv == UInt8(ascii: "A") || conv == UInt8(ascii: "E")
+        || conv == UInt8(ascii: "G") || conv == UInt8(ascii: "F")
+    let isA = conv == UInt8(ascii: "a") || conv == UInt8(ascii: "A")
+    if v.isFinite && !isA { return nil }
+
+    // 書式を読む
+    var minus = false, plus = false, space = false, zero = false, alt = false
+    var width = 0
+    var prec: Int? = nil
+    var i = 1
+    var starIdx = 0
+    while i < spec.count - 1 {
+        switch spec[i] {
+        case 0x2D: minus = true
+        case 0x2B: plus = true
+        case 0x20: space = true
+        case 0x30: zero = true
+        case 0x23: alt = true
+        default: break
+        }
+        if [0x2D, 0x2B, 0x20, 0x30, 0x23].contains(spec[i]) { i += 1 } else { break }
+    }
+    if i < spec.count - 1, spec[i] == 0x2A {
+        let w = starIdx < stars.count ? Int(stars[starIdx]) : 0
+        starIdx += 1; i += 1
+        if w < 0 { minus = true; width = -w } else { width = w }
+    } else {
+        while i < spec.count - 1, cIsDigit(spec[i]) { width = width * 10 + Int(spec[i] - 0x30); i += 1 }
+    }
+    if i < spec.count - 1, spec[i] == 0x2E {
+        i += 1
+        if i < spec.count - 1, spec[i] == 0x2A {
+            let pv = starIdx < stars.count ? Int(stars[starIdx]) : 0
+            starIdx += 1; i += 1
+            prec = pv < 0 ? nil : pv
+        } else {
+            var pv = 0
+            while i < spec.count - 1, cIsDigit(spec[i]) { pv = pv * 10 + Int(spec[i] - 0x30); i += 1 }
+            prec = pv
+        }
+    }
+
+    let bits = v.bitPattern
+    let negative = (bits >> 63) != 0
+    let sign: [UInt8] = negative ? [0x2D] : (plus ? [0x2B] : (space ? [0x20] : []))
+    var prefix: [UInt8] = []   // "0x" (ゼロ埋めはこの後ろ)
+    var body: [UInt8]
+    var zeroPad = zero && !minus
+
+    if !v.isFinite {
+        zeroPad = false
+        if v.isInfinite {
+            body = Array("inf".utf8)
+        } else {
+            let mant = bits & 0x000F_FFFF_FFFF_FFFF
+            let quiet = (mant & 0x0008_0000_0000_0000) != 0
+            if !quiet {
+                body = Array("nan(snan)".utf8)
+            } else if negative && mant == 0x0008_0000_0000_0000 {
+                body = Array("nan(ind)".utf8)
+            } else {
+                body = Array("nan".utf8)
+            }
+        }
+        if upper { body = body.map { ($0 >= 0x61 && $0 <= 0x7A) ? $0 - 0x20 : $0 } }
+    } else {
+        // %a: 0xh.hhhhhhhhhhhhhp±d (既定は 13 桁、末尾の 0 も出す)
+        let expBits = Int((bits >> 52) & 0x7FF)
+        var mant = bits & 0x000F_FFFF_FFFF_FFFF
+        var lead: UInt64
+        var exp: Int
+        if expBits == 0 {
+            lead = 0
+            exp = mant == 0 ? 0 : -1022
+        } else {
+            lead = 1
+            exp = expBits - 1023
+        }
+        let digits = prec ?? 13
+        if digits < 13 {
+            // 落とす桁を四捨五入 (半分以上で切り上げ)
+            let drop = UInt64(4 * (13 - digits))
+            let half: UInt64 = 1 << (drop - 1)
+            let rest = mant & ((1 << drop) - 1)
+            mant >>= drop
+            if rest >= half {
+                mant += 1
+                if mant >> UInt64(4 * digits) != 0 {   // 先頭の桁まで繰り上がった
+                    mant &= (1 << UInt64(4 * digits)) - 1
+                    lead += 1
+                }
+            }
+        }
+        let hexd = Array((upper ? "0123456789ABCDEF" : "0123456789abcdef").utf8)
+        prefix = Array((upper ? "0X" : "0x").utf8)
+        body = [hexd[Int(lead)]]
+        if digits > 0 || alt { body.append(0x2E) }
+        let shown = min(digits, 13)
+        for k in stride(from: shown - 1, through: 0, by: -1) {
+            body.append(hexd[Int((mant >> UInt64(4 * k)) & 0xF)])
+        }
+        if digits > 13 { body += [UInt8](repeating: 0x30, count: digits - 13) }
+        body.append(upper ? UInt8(ascii: "P") : UInt8(ascii: "p"))
+        body.append(exp < 0 ? 0x2D : 0x2B)
+        body += Array(String(abs(exp)).utf8)
+    }
+
+    var out: [UInt8]
+    let len = sign.count + prefix.count + body.count
+    if width > len {
+        let pad = width - len
+        if minus {
+            out = sign + prefix + body + [UInt8](repeating: 0x20, count: pad)
+        } else if zeroPad {
+            out = sign + prefix + [UInt8](repeating: 0x30, count: pad) + body
+        } else {
+            out = [UInt8](repeating: 0x20, count: pad) + sign + prefix + body
+        }
+    } else {
+        out = sign + prefix + body
+    }
+    return ttlTrunc(out)
+}
+
 // MARK: exec で起動したものを終わるまで持っておく
 
 private final class ExecKeeper {
@@ -198,18 +349,17 @@ private func envGet(_ name: String) -> String? {
     return String(cString: v)
 }
 
-/// ExpandEnvironmentStrings: %NAME% を置き換える。無い名前はそのまま残す
+/// ExpandEnvironmentStrings (RtlExpandEnvironmentStrings_U と同じ手順)。
+/// '%' から次の '%' までを名前として引き、あれば値に置き換えて閉じ '%' の後ろから続ける。
+/// 無い名前 (空の名前、閉じ '%' が無いときも) は開き '%' 1 文字だけを写して、その直後から続ける。
+/// よって '%UNDEF%HOME%' は '%UNDEF' + HOME の値。$VAR などは展開しない
 private func expandEnvironmentStrings(_ s: [UInt8]) -> [UInt8] {
     var out: [UInt8] = []
     var i = 0
     while i < s.count {
-        if s[i] == chPercent, let close = s[(i + 1)...].firstIndex(of: chPercent) {
-            let name = Array(s[(i + 1)..<close])
-            if let v = envGet(name.u8) {
-                out += v.ttl
-            } else {
-                out += s[i...close]
-            }
+        if s[i] == chPercent, let close = s[(i + 1)...].firstIndex(of: chPercent),
+           let v = envGet(Array(s[(i + 1)..<close]).u8) {
+            out += v.ttl
             i = close + 1
         } else {
             out.append(s[i])
@@ -934,21 +1084,20 @@ extension TTLInterpreter {
         if err == 0 && (cmd.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err != 0 { return err }
 
+        // コマンド行は Mac らしく /bin/sh -c で動かす。
+        // 作業フォルダの既定は (CreateProcess に NULL を渡すのと同じく) マクロを始めたときのフォルダ。
+        // setdir / changedir では変わらない。4 番目の引数の相対パスも同じフォルダ基準
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", cmd.u8]
         p.standardInput = FileHandle.nullDevice
-        if !dir.isEmpty {
-            let d = absPath(dir)
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: d, isDirectory: &isDir), isDir.boolValue else {
-                setResult(-1)   // 起動できなかった
-                return err
-            }
-            p.currentDirectoryURL = URL(fileURLWithPath: d)
-        } else {
-            p.currentDirectoryURL = URL(fileURLWithPath: curDir)
+        let d = dir.isEmpty ? initialDir : initialDirPath(dir)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: d, isDirectory: &isDir), isDir.boolValue else {
+            setResult(-1)   // CreateProcess が失敗する (フォルダが無い)
+            return err
         }
+        p.currentDirectoryURL = URL(fileURLWithPath: d)
         p.terminationHandler = { execKeeper.drop($0) }
         execKeeper.keep(p)
         do {
@@ -958,14 +1107,25 @@ extension TTLInterpreter {
             setResult(-1)
             return err
         }
+        // sh が 126 (実行できない) / 127 (見つからない) で終わったら、起動できなかったとみなして -1
+        func notStarted() -> Bool {
+            !p.isRunning && p.terminationReason == .exit
+                && (p.terminationStatus == 126 || p.terminationStatus == 127)
+        }
         if wait != 0 {
             while p.isRunning {
                 if cancelled { return err }
                 usleep(10_000)
             }
-            setResult(Int(p.terminationStatus))
+            setResult(notStarted() ? -1 : Int(p.terminationStatus))
         } else {
-            setResult(0)
+            // 待たないときも、見つからないなどはすぐ分かるので少しだけ様子を見る
+            var waited = 0
+            while p.isRunning && waited < 200 && !cancelled {
+                usleep(10_000)
+                waited += 10
+            }
+            setResult(notStarted() ? -1 : 0)
         }
         return err
     }
@@ -1051,7 +1211,11 @@ extension TTLInterpreter {
                         if type == .string {
                             out = cs.withUnsafeBufferPointer { cFormat(sub, stars + [$0.baseAddress!]) }
                         } else {
-                            out = cFormat(sub, stars + [atof(cs)])
+                            let d = ucrtAtof(s)
+                            var starVals: [Int32] = []
+                            if wStar { starVals.append(numWidth) }
+                            if pStar { starVals.append(numPrec) }
+                            out = ucrtFormatDouble(sub, starVals, d) ?? cFormat(sub, stars + [d])
                         }
                     } else {
                         var te = 0

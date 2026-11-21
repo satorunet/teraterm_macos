@@ -107,7 +107,15 @@ struct tttset {
 };
 typedef struct tttset TTTSet, *PTTSet;
 
+#ifndef InBuffSize
+#define InBuffSize (1024 * 64)
+#endif
+
 typedef struct tcomvar {
+	/* receive buffer (TComVar.InBuff), read directly by raw.c */
+	BYTE InBuff[InBuffSize + 16];
+	int InPtr;
+	int InBuffCount;
 	int OutBuffCount;
 	WORD PortType;
 	BOOL Ready;

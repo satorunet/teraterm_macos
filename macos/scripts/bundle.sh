@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 BUILD_NUMBER="1"
 BUNDLE_ID="${BUNDLE_ID:-net.satoru.teramac}"
 NAME="Tera Term Mac"

@@ -336,6 +336,13 @@ final class TTLFileTests: XCTestCase {
         r4 = result
         fileconcat 'a:b:c' '2.txt'
         r5 = result
+        foldercreate 'fold'
+        fileconcat '1.txt' 'fold'
+        r6 = result
+        fileconcat '1.txt' './1.txt'
+        r7 = result
+        fileconcat '1.txt' '\(dir)/1.txt'
+        r8 = result
         """)
         XCTAssertEqual(int(i, "r1"), 0)
         XCTAssertEqual(readText("1.txt"), "abc" + String(repeating: "0123456789", count: 10))
@@ -343,6 +350,12 @@ final class TTLFileTests: XCTestCase {
         XCTAssertEqual(int(i, "r3"), 0); XCTAssertTrue(exists("new.txt"))   // 元のコードと同じく 0
         XCTAssertEqual(int(i, "r4"), 3)
         XCTAssertEqual(int(i, "r5"), -1)
+        // フォルダは開けないので何もしないで 0
+        XCTAssertEqual(int(i, "r6"), 0)
+        // 書き方が違う同じファイル: _stricmp では別物、2 つ目は共有違反で開けない → 0、何も足さない
+        XCTAssertEqual(int(i, "r7"), 0)
+        XCTAssertEqual(int(i, "r8"), 2)     // GetAbsPath の結果が同じ文字列
+        XCTAssertEqual(readText("1.txt"), "abc" + String(repeating: "0123456789", count: 10))
         XCTAssertThrowsError(try run("fileconcat '1.txt' ''"))
     }
 
@@ -365,6 +378,10 @@ final class TTLFileTests: XCTestCase {
         r6 = result
         filecopy 'src.txt' 'x:y:z'
         r7 = result
+        filecopy 'src.txt' './src.txt'
+        r8 = result
+        filecopy 'src.txt' '\(dir)/SRC.txt'
+        r9 = result
         """)
         XCTAssertEqual(int(i, "r1"), 0); XCTAssertEqual(readText("dst.txt"), "data")
         XCTAssertEqual(int(i, "r2"), 0)    // 上書きする
@@ -373,6 +390,9 @@ final class TTLFileTests: XCTestCase {
         XCTAssertEqual(int(i, "r5"), -4); XCTAssertEqual(readText("ro.txt"), "ro")
         XCTAssertEqual(int(i, "r6"), -1)
         XCTAssertEqual(int(i, "r7"), -2)
+        // 書き方が違う同じファイル: CopyFileW が失敗する → -4。中身はそのまま
+        XCTAssertEqual(int(i, "r8"), -4); XCTAssertEqual(readText("src.txt"), "data")
+        XCTAssertEqual(int(i, "r9"), -3)
     }
 
     func testFileRenameDeleteSearch() throws {
@@ -628,7 +648,8 @@ final class TTLFileTests: XCTestCase {
     func testChecksumKnownAnswers() throws {
         try writeText("k.txt", "123456789")
         try writeText("empty.txt", "")
-        let (_, i) = try run("""
+        // crc*file / checksum*file は CreateFile に名前をそのまま渡す: 相対パスはマクロのフォルダ基準
+        let (_, i) = try runTTL("""
         crc32 c32 '123456789'
         crc16 c16 '123456789'
         checksum8 s8 '123456789'
@@ -648,7 +669,13 @@ final class TTLFileTests: XCTestCase {
         r3 = result
         x = 5
         crc32 x ''
-        """)
+        foldercreate 'sub'
+        setdir 'sub'
+        crc32file f32b 'k.txt'
+        r4 = result
+        crc32file f32c '../k.txt'
+        r5 = result
+        """, host: FakeHost(), baseDirURL: URL(fileURLWithPath: dir))
         XCTAssertEqual(int(i, "c32"), Int(Int32(bitPattern: 0xCBF43926)))   // -873187034
         XCTAssertEqual(int(i, "c32"), -873187034)
         XCTAssertEqual(int(i, "c16"), 0x906E)          // CRC-16/X-25
@@ -667,6 +694,9 @@ final class TTLFileTests: XCTestCase {
         XCTAssertEqual(int(i, "r2"), -1)
         XCTAssertEqual(int(i, "r3"), -1); XCTAssertEqual(int(i, "e"), 7)    // 空ファイルは CreateFileMapping が失敗
         XCTAssertEqual(int(i, "x"), 5)                                       // 空文字列は何もしない
+        // setdir しても crc32file の相対パスは最初のフォルダ基準のまま
+        XCTAssertEqual(int(i, "f32b"), -873187034); XCTAssertEqual(int(i, "r4"), 0)
+        XCTAssertEqual(int(i, "r5"), -1)
     }
 
     // MARK: - ttmenc.c

@@ -205,6 +205,8 @@ enum TeraTermIniImport {
         }
         let r = read(ini, base: TermSettings.load())
         apply(r)
+        // ファイル転送の設定 (FileDir など) はここから読む
+        UserDefaults.standard.set(url.path, forKey: "TeraTermIniPath")
         var text = "反映した設定:\n" + r.applied.map { "・" + $0 }.joined(separator: "\n")
         if !r.skipped.isEmpty { text += "\n\n反映しなかった設定:\n" + r.skipped.map { "・" + $0 }.joined(separator: "\n") }
         alert("\(url.lastPathComponent) を読み込みました", text)

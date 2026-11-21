@@ -109,6 +109,26 @@ enum Keychain {
     }
 }
 
+/// 一覧のツリー (フォルダと接続先)。接続先そのものは MenuStore.entries にあり、ここでは id で指す
+final class MenuNode: Codable {
+    var id = UUID().uuidString
+    /// フォルダ名 (フォルダのとき)
+    var folder: String?
+    /// 接続先の id (接続先のとき)
+    var entryID: String?
+    var children: [MenuNode] = []
+
+    var isFolder: Bool { folder != nil }
+    init(folder: String) { self.folder = folder }
+    init(entryID: String) { self.entryID = entryID }
+
+    /// 中にある接続先の id (並び順)
+    var allEntryIDs: [String] {
+        if let e = entryID { return [e] }
+        return children.flatMap { $0.allEntryIDs }
+    }
+}
+
 final class MenuStore {
     static let shared = MenuStore()
     static let changed = Notification.Name("TeraMenuChanged")
@@ -124,6 +144,38 @@ final class MenuStore {
             d.set(try? JSONEncoder().encode(newValue), forKey: "menuEntries")
             NotificationCenter.default.post(name: MenuStore.changed, object: nil)
         }
+    }
+
+    /// フォルダ分けしたツリー。登録だけあってツリーにない接続先は最上位の最後に足す
+    var tree: [MenuNode] {
+        get {
+            let saved = d.data(forKey: "menuTree").flatMap { try? JSONDecoder().decode([MenuNode].self, from: $0) } ?? []
+            return MenuStore.normalize(saved, entries: entries)
+        }
+        set {
+            d.set(try? JSONEncoder().encode(newValue), forKey: "menuTree")
+            NotificationCenter.default.post(name: MenuStore.changed, object: nil)
+        }
+    }
+
+    /// ツリーと接続先の一覧を合わせる (消えた接続先は外し、重なりも外し、ないものは足す)
+    static func normalize(_ nodes: [MenuNode], entries: [MenuEntry]) -> [MenuNode] {
+        let ids = Set(entries.map { $0.id })
+        var seen = Set<String>()
+        func clean(_ list: [MenuNode]) -> [MenuNode] {
+            list.compactMap { n in
+                if let e = n.entryID {
+                    guard ids.contains(e), !seen.contains(e) else { return nil }
+                    seen.insert(e)
+                    return n
+                }
+                n.children = clean(n.children)
+                return n
+            }
+        }
+        var r = clean(nodes)
+        for e in entries where !seen.contains(e.id) { r.append(MenuNode(entryID: e.id)) }
+        return r
     }
 
     var largeIcon: Bool {
@@ -250,20 +302,42 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
             return
         }
         let size: CGFloat = store.largeIcon ? 32 : 16
-        for (n, e) in entries.enumerated() {
-            let i = NSMenuItem(title: e.name.isEmpty ? e.host : e.name, action: #selector(launchItem(_:)), keyEquivalent: "")
-            i.target = self
-            i.tag = n
-            i.representedObject = e.id
-            if let img = NSImage(systemSymbolName: e.symbolName, accessibilityDescription: nil) {
-                let sized = img.withSymbolConfiguration(.init(pointSize: size * 0.8, weight: .regular)) ?? img
-                sized.size = NSSize(width: size, height: size)
-                sized.isTemplate = true
-                i.image = sized
-            }
-            i.toolTip = e.host
-            m.addItem(i)
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        func icon(_ name: String) -> NSImage? {
+            guard let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return nil }
+            let sized = img.withSymbolConfiguration(.init(pointSize: size * 0.8, weight: .regular)) ?? img
+            sized.size = NSSize(width: size, height: size)
+            sized.isTemplate = true
+            return sized
         }
+        // フォルダはサブメニューにする
+        func add(_ nodes: [MenuNode], to menu: NSMenu) {
+            for n in nodes {
+                if let f = n.folder {
+                    let i = NSMenuItem(title: f, action: nil, keyEquivalent: "")
+                    i.image = icon("folder")
+                    let sub = NSMenu()
+                    if let font = store.font { sub.font = font }
+                    if n.children.isEmpty {
+                        let empty = NSMenuItem(title: "(空)", action: nil, keyEquivalent: "")
+                        empty.isEnabled = false
+                        sub.addItem(empty)
+                    } else {
+                        add(n.children, to: sub)
+                    }
+                    i.submenu = sub
+                    menu.addItem(i)
+                } else if let id = n.entryID, let e = byID[id] {
+                    let i = NSMenuItem(title: e.name.isEmpty ? e.host : e.name, action: #selector(launchItem(_:)), keyEquivalent: "")
+                    i.target = self
+                    i.representedObject = e.id
+                    i.image = icon(e.symbolName)
+                    i.toolTip = e.host
+                    menu.addItem(i)
+                }
+            }
+        }
+        add(store.tree, to: m)
     }
 
     var listMenu: NSMenu {
@@ -427,11 +501,15 @@ enum LoginItem {
 
 // MARK: - リスト設定ウインドウ
 
-final class MenuEditorWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
+final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSWindowDelegate, NSMenuDelegate {
     private var entries = MenuStore.shared.entries
+    private var roots = MenuStore.shared.tree
     private var current = MenuEntry()
+    /// 新しく登録する接続先を入れるフォルダ (nil は最上位)
+    private var targetFolder: MenuNode?
 
-    private let table = NSTableView()
+    private let outline = NSOutlineView()
+    private let folderLabel = NSTextField(labelWithString: "")
     private let nameField = NSTextField()
     private let hostField = NSTextField()
     private let loginRadio = NSButton(radioButtonWithTitle: "自動ログイン", target: nil, action: nil)
@@ -447,50 +525,83 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
     private let macroField = NSTextField()
     private let macroButton = NSButton(title: "…", target: nil, action: nil)
     private let startupCheck = NSButton(checkboxWithTitle: "起動時に実行", target: nil, action: nil)
+    private static let dragType = NSPasteboard.PasteboardType("net.satoru.teramac.menunode")
 
     init() {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 520), styleMask: [.titled, .closable, .miniaturizable],
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 520), styleMask: [.titled, .closable, .miniaturizable],
                          backing: .buffered, defer: false)
         w.title = "リスト設定 - Tera Term Mac メニュー"
         super.init(window: w)
         w.delegate = self
         build()
         w.center()
-        if entries.isEmpty { clearForm() } else { table.selectRowIndexes([0], byExtendingSelection: false); loadSelected() }
+        outline.expandItem(nil, expandChildren: true)
+        if let first = firstEntryNode(roots) { select(first) } else { clearForm() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    // MARK: 画面
+
     private func build() {
-        // 左: 登録一覧
+        // 左: 登録一覧 (フォルダ分けしたツリー)
         let col = NSTableColumn(identifier: .init("name"))
         col.title = "登録一覧"
-        col.width = 220
-        table.addTableColumn(col)
-        table.dataSource = self
-        table.delegate = self
-        table.rowHeight = 22
-        table.target = self
-        table.doubleAction = #selector(connectSelected(_:))
-        table.registerForDraggedTypes([.string])
+        col.width = 230
+        outline.addTableColumn(col)
+        outline.outlineTableColumn = col
+        outline.headerView = nil
+        outline.dataSource = self
+        outline.delegate = self
+        outline.rowHeight = 22
+        outline.indentationPerLevel = 14
+        outline.autoresizesOutlineColumn = false
+        outline.target = self
+        outline.doubleAction = #selector(doubleClicked(_:))
+        outline.registerForDraggedTypes([MenuEditorWindowController.dragType])
+        outline.setDraggingSourceOperationMask([.move, .delete], forLocal: true)
+        // 右クリックのメニュー (押した行に合わせて menuNeedsUpdate で作る)
+        let ctx = NSMenu()
+        ctx.delegate = self
+        outline.menu = ctx
         let scroll = NSScrollView()
-        scroll.documentView = table
+        scroll.documentView = outline
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        scroll.widthAnchor.constraint(equalToConstant: 250).isActive = true
 
-        let up = NSButton(title: "▲", target: self, action: #selector(moveEntryUp(_:)))
-        let down = NSButton(title: "▼", target: self, action: #selector(moveEntryDown(_:)))
+        let up = NSButton(title: "▲", target: self, action: #selector(moveNodeUp(_:)))
+        let down = NSButton(title: "▼", target: self, action: #selector(moveNodeDown(_:)))
+        up.toolTip = "上へ"
+        down.toolTip = "下へ"
         let newButton = NSButton(title: "新規", target: self, action: #selector(newEntry(_:)))
-        let left = NSStackView(views: [scroll, hstack([newButton, up, down])])
+        let folderButton = NSButton(title: "フォルダ", target: self, action: #selector(newFolder(_:)))
+        folderButton.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: nil)
+        folderButton.imagePosition = .imageLeading
+        folderButton.toolTip = "新しいフォルダ (一覧の右クリックでも作れます)"
+        let hint = NSTextField(wrappingLabelWithString: "右クリックでフォルダの作成・名前の変更。ドラッグでフォルダに入れられます")
+        hint.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        hint.textColor = .secondaryLabelColor
+        hint.preferredMaxLayoutWidth = 250
+        let left = NSStackView(views: [scroll, hstack([newButton, folderButton, up, down]), hint])
         left.orientation = .vertical
         left.alignment = .leading
 
         // 中: 登録 (←) と削除
         let setButton = NSButton(title: "← 登録", target: self, action: #selector(register(_:)))
         setButton.toolTip = "右の内容を一覧に登録 (同じ名前なら上書き)"
-        let delButton = NSButton(title: "削除", target: self, action: #selector(deleteEntry(_:)))
+        let delButton = DropDeleteButton(title: "削除", target: self, action: #selector(deleteSelected(_:)))
+        delButton.toolTip = "選んでいる項目を削除 (一覧からここにドラッグしても削除できます)"
+        delButton.dragType = MenuEditorWindowController.dragType
+        delButton.onDrop = { [weak self] id in
+            guard let self = self, let n = self.node(withID: id, in: self.roots) else { return }
+            self.select(n)
+            self.loadSelected()
+            self.confirmDelete(n)
+        }
+        delButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "削除")
+        delButton.imagePosition = .imageLeading
         let mid = NSStackView(views: [setButton, delButton])
         mid.orientation = .vertical
 
@@ -509,6 +620,7 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         for r in [loginRadio, macroRadio, directRadio, userCheck, passCheck, sshCheck] { r.target = self; r.action = #selector(formChanged(_:)) }
         keyButton.target = self; keyButton.action = #selector(chooseKey(_:))
         macroButton.target = self; macroButton.action = #selector(chooseMacro(_:))
+        folderLabel.textColor = .secondaryLabelColor
 
         let keyLabel = NSTextField(labelWithString: "鍵ファイル")
         let pattern = NSStackView(views: [
@@ -530,6 +642,7 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
 
         let details = NSButton(title: "詳細…", target: self, action: #selector(showDetails(_:)))
         let grid = NSGridView(views: [
+            [NSTextField(labelWithString: "フォルダ:"), folderLabel],
             [NSTextField(labelWithString: "名前:"), nameField],
             [NSTextField(labelWithString: "ホスト名:"), hostField],
         ])
@@ -552,11 +665,18 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         connectButton.keyEquivalent = "\r"
         let closeButton = NSButton(title: "閉じる", target: self, action: #selector(closeEditor(_:)))
         closeButton.keyEquivalent = "\u{1B}"
-        let importButton = NSButton(title: "ttpmenu.ini 読み込み…", target: self, action: #selector(importTTMenu(_:)))
-        let exportButton = NSButton(title: "ttpmenu.ini 書き出し…", target: self, action: #selector(exportTTMenu(_:)))
-        importButton.toolTip = "Windows 版 TeraTerm Menu の ttpmenu.ini から接続先を読み込む"
-        exportButton.toolTip = "Windows 版 TeraTerm Menu で読める ttpmenu.ini に書き出す"
-        let bottom = hstack([importButton, exportButton, NSView(), closeButton, connectButton])
+        // ttpmenu.ini (TeraTerm Menu の接続先の一覧) の読み書きは 1 つのメニューにまとめる
+        let iniMenu = NSPopUpButton(frame: .zero, pullsDown: true)
+        iniMenu.addItem(withTitle: "ttpmenu.ini")
+        iniMenu.item(at: 0)?.image = NSImage(systemSymbolName: "arrow.left.arrow.right", accessibilityDescription: nil)
+        let imp = NSMenuItem(title: "読み込み…", action: #selector(importTTMenu(_:)), keyEquivalent: "")
+        let exp = NSMenuItem(title: "書き出し…", action: #selector(exportTTMenu(_:)), keyEquivalent: "")
+        imp.target = self
+        exp.target = self
+        iniMenu.menu?.addItem(imp)
+        iniMenu.menu?.addItem(exp)
+        iniMenu.toolTip = "接続先の一覧を ttpmenu.ini (TeraTerm Menu の形式) で読み書きします。ほかの Mac や Windows 版 TeraTerm Menu との受け渡しに"
+        let bottom = hstack([iniMenu, NSView(), closeButton, connectButton])
 
         let root = NSStackView(views: [top, bottom])
         root.orientation = .vertical
@@ -573,7 +693,7 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
             root.topAnchor.constraint(equalTo: container.topAnchor),
             root.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             bottom.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -32),
-            scroll.heightAnchor.constraint(equalTo: configBox.heightAnchor, constant: -30),
+            scroll.heightAnchor.constraint(equalTo: configBox.heightAnchor, constant: -50),
         ])
         window?.contentView = container
         window?.setContentSize(container.fittingSize)
@@ -606,6 +726,76 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         return c
     }
 
+    // MARK: ツリー
+
+    private func entry(_ n: MenuNode) -> MenuEntry? {
+        guard let id = n.entryID else { return nil }
+        return entries.first { $0.id == id }
+    }
+
+    private func firstEntryNode(_ list: [MenuNode]) -> MenuNode? {
+        for n in list {
+            if n.entryID != nil { return n }
+            if let c = firstEntryNode(n.children) { return c }
+        }
+        return nil
+    }
+
+    /// 親のフォルダ (最上位なら nil)。ツリーから探すので、折りたたんでいても分かる
+    private func parent(of node: MenuNode) -> MenuNode? {
+        func find(_ list: [MenuNode], _ p: MenuNode?) -> MenuNode?? {
+            for n in list {
+                if n === node { return .some(p) }
+                if let r = find(n.children, n) { return r }
+            }
+            return nil
+        }
+        return find(roots, nil) ?? nil
+    }
+
+    private func siblings(of node: MenuNode) -> [MenuNode] { parent(of: node)?.children ?? roots }
+
+    private func setSiblings(_ list: [MenuNode], parent p: MenuNode?) {
+        if let p = p { p.children = list } else { roots = list }
+    }
+
+    private func detach(_ node: MenuNode) {
+        let p = parent(of: node)
+        var list = siblings(of: node)
+        list.removeAll { $0 === node }
+        setSiblings(list, parent: p)
+    }
+
+    private func contains(_ a: MenuNode, _ b: MenuNode) -> Bool {
+        if a === b { return true }
+        return a.children.contains { contains($0, b) }
+    }
+
+    private func folderPath(_ f: MenuNode?) -> String {
+        var names: [String] = []
+        var n = f
+        while let x = n { names.insert(x.folder ?? "", at: 0); n = parent(of: x) }
+        return names.isEmpty ? "(最上位)" : names.joined(separator: " / ")
+    }
+
+    private var selectedNode: MenuNode? { outline.item(atRow: outline.selectedRow) as? MenuNode }
+
+    private func select(_ n: MenuNode) {
+        var chain: [MenuNode] = []
+        var p = parent(of: n)
+        while let x = p { chain.insert(x, at: 0); p = parent(of: x) }
+        for x in chain { outline.expandItem(x) }
+        let r = outline.row(forItem: n)
+        if r >= 0 { outline.selectRowIndexes([r], byExtendingSelection: false); outline.scrollRowToVisible(r) }
+    }
+
+    private func save() {
+        roots = MenuStore.normalize(roots, entries: entries)
+        MenuStore.shared.entries = entries
+        MenuStore.shared.tree = roots
+        outline.reloadData()
+    }
+
     // MARK: フォーム ⇔ 項目
 
     private func fillForm(_ e: MenuEntry) {
@@ -623,6 +813,7 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         keyField.stringValue = e.keyFile
         macroField.stringValue = e.macroFile
         startupCheck.state = e.startup ? .on : .off
+        folderLabel.stringValue = folderPath(targetFolder)
         updateEnabled()
     }
 
@@ -643,11 +834,15 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         return (e, passField.stringValue)
     }
 
-    private func clearForm() {
+    /// 新しい接続先の入力にする (folder の中に登録する)
+    private func clearForm(in folder: MenuNode? = nil) {
+        targetFolder = folder
         var e = MenuEntry()
         e.user = NSUserName()
         fillForm(e)
-        table.deselectAll(nil)
+        outline.deselectAll(nil)
+        targetFolder = folder
+        folderLabel.stringValue = folderPath(folder)
         window?.makeFirstResponder(nameField)
     }
 
@@ -667,69 +862,156 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
     @objc private func formChanged(_ sender: Any?) { updateEnabled() }
 
     private func loadSelected() {
-        let r = table.selectedRow
-        guard r >= 0 && r < entries.count else { return }
-        fillForm(entries[r])
+        guard let n = selectedNode else { return }
+        if n.isFolder {
+            // フォルダを選んだら、そのフォルダに新しい接続先を作る入力にする
+            targetFolder = n
+            var e = MenuEntry()
+            e.user = NSUserName()
+            fillForm(e)
+            return
+        }
+        targetFolder = parent(of: n)
+        if let e = entry(n) { fillForm(e) }
     }
 
-    private func save() {
-        MenuStore.shared.entries = entries
-        table.reloadData()
-    }
-
-    // MARK: ボタン
+    // MARK: ボタン・右クリック
 
     @objc private func register(_ sender: Any?) {
         let (e, pw) = readForm()
         guard !e.name.isEmpty else { NSSound.beep(); window?.makeFirstResponder(nameField); return }
         var entry = e
-        // 同じ名前があれば上書き (Windows 版と同じ)
+        var isNew = false
+        // 同じ名前があれば上書き (Windows 版と同じ。ttpmenu.ini では名前が見出しになるので、フォルダが違っても重ねない)
         if let i = entries.firstIndex(where: { $0.name == e.name }) {
             entry.id = entries[i].id
             entries[i] = entry
-            table.selectRowIndexes([i], byExtendingSelection: false)
         } else if let i = entries.firstIndex(where: { $0.id == e.id }) {
             entries[i] = entry
         } else {
             entries.append(entry)
+            isNew = true
         }
         if entry.usePassword { Keychain.set(pw, for: entry.id) } else { Keychain.delete(entry.id) }
         current = entry
-        save()
-        if let i = entries.firstIndex(where: { $0.id == entry.id }) { table.selectRowIndexes([i], byExtendingSelection: false) }
+        if isNew {
+            let node = MenuNode(entryID: entry.id)
+            if let f = targetFolder { f.children.append(node) } else { roots.append(node) }
+            save()
+            select(node)
+        } else {
+            save()
+            if let n = findNode(entryID: entry.id, in: roots) { select(n) }
+        }
     }
 
-    @objc private func deleteEntry(_ sender: Any?) {
-        let r = table.selectedRow
-        guard r >= 0 && r < entries.count else { NSSound.beep(); return }
+    private func findNode(entryID: String, in list: [MenuNode]) -> MenuNode? {
+        for n in list {
+            if n.entryID == entryID { return n }
+            if let c = findNode(entryID: entryID, in: n.children) { return c }
+        }
+        return nil
+    }
+
+    /// 右クリックした行 (メニューから呼ばれたとき)、なければ選んでいる行
+    private func node(for sender: Any?) -> MenuNode? {
+        if sender is NSMenuItem, outline.clickedRow >= 0 { return outline.item(atRow: outline.clickedRow) as? MenuNode }
+        if sender is NSMenuItem && outline.clickedRow < 0 { return nil }
+        return selectedNode
+    }
+
+    /// その行からみた「入れる先のフォルダ」
+    private func folder(for n: MenuNode?) -> MenuNode? {
+        guard let n = n else { return nil }
+        return n.isFolder ? n : parent(of: n)
+    }
+
+    @objc private func deleteSelected(_ sender: Any?) {
+        guard let n = node(for: sender) else { NSSound.beep(); return }
+        confirmDelete(n)
+    }
+
+    /// 削除してよいか聞いてから消す (削除ボタン・右クリック・削除ボタンへのドラッグから)
+    private func confirmDelete(_ n: MenuNode) {
         let a = NSAlert()
-        a.messageText = "「\(entries[r].name)」を削除しますか?"
+        if n.isFolder {
+            let count = n.allEntryIDs.count
+            a.messageText = "フォルダ「\(n.folder ?? "")」を削除しますか?"
+            a.informativeText = count > 0 ? "中の接続先 \(count) 件も削除されます。" : "空のフォルダです。"
+        } else {
+            a.messageText = "「\(entry(n)?.name ?? "")」を削除しますか?"
+        }
         a.addButton(withTitle: "削除")
         a.addButton(withTitle: "やめる")
         a.beginSheetModal(for: window!) { resp in
             guard resp == .alertFirstButtonReturn else { return }
-            Keychain.delete(self.entries[r].id)
-            self.entries.remove(at: r)
+            let ids = Set(n.allEntryIDs)
+            for id in ids { Keychain.delete(id) }
+            self.entries.removeAll { ids.contains($0.id) }
+            let p = self.parent(of: n)
+            self.detach(n)
             self.save()
-            if self.entries.isEmpty { self.clearForm() } else {
-                self.table.selectRowIndexes([min(r, self.entries.count - 1)], byExtendingSelection: false)
-                self.loadSelected()
-            }
+            if let p = p { self.select(p); self.loadSelected() }
+            else if let f = self.firstEntryNode(self.roots) { self.select(f); self.loadSelected() }
+            else { self.clearForm() }
         }
     }
 
-    @objc private func newEntry(_ sender: Any?) { clearForm() }
+    @objc private func newEntry(_ sender: Any?) {
+        clearForm(in: folder(for: node(for: sender)))
+    }
 
-    @objc private func moveEntryUp(_ sender: Any?) { move(-1) }
-    @objc private func moveEntryDown(_ sender: Any?) { move(1) }
+    @objc private func newFolder(_ sender: Any?) {
+        let into = folder(for: node(for: sender))
+        askName(title: "新しいフォルダ", message: into.map { "「\($0.folder ?? "")」の中に作ります" } ?? "", value: "新しいフォルダ") { name in
+            let f = MenuNode(folder: name)
+            if let p = into { p.children.append(f) } else { self.roots.append(f) }
+            self.save()
+            self.select(f)
+            self.loadSelected()
+        }
+    }
+
+    @objc private func renameFolder(_ sender: Any?) {
+        guard let n = node(for: sender), n.isFolder else { return }
+        askName(title: "フォルダの名前を変更", message: "", value: n.folder ?? "") { name in
+            n.folder = name
+            self.save()
+            self.select(n)
+            self.loadSelected()
+        }
+    }
+
+    private func askName(title: String, message: String, value: String, done: @escaping (String) -> Void) {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = message
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        f.stringValue = value
+        a.accessoryView = f
+        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "キャンセル")
+        a.window.initialFirstResponder = f
+        a.beginSheetModal(for: window!) { r in
+            let name = f.stringValue.trimmingCharacters(in: .whitespaces)
+            if r == .alertFirstButtonReturn && !name.isEmpty { done(name) }
+        }
+    }
+
+    @objc private func moveNodeUp(_ sender: Any?) { move(-1) }
+    @objc private func moveNodeDown(_ sender: Any?) { move(1) }
 
     private func move(_ d: Int) {
-        let r = table.selectedRow
-        let t = r + d
-        guard r >= 0, t >= 0, t < entries.count else { return }
-        entries.swapAt(r, t)
+        guard let n = selectedNode else { return }
+        let p = parent(of: n)
+        var list = siblings(of: n)
+        guard let i = list.firstIndex(where: { $0 === n }) else { return }
+        let t = i + d
+        guard t >= 0, t < list.count else { NSSound.beep(); return }
+        list.swapAt(i, t)
+        setSiblings(list, parent: p)
         save()
-        table.selectRowIndexes([t], byExtendingSelection: false)
+        select(n)
     }
 
     @objc private func connectForm(_ sender: Any?) {
@@ -743,29 +1025,157 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         TeraMenuLauncher.launch(e)
     }
 
-    @objc private func connectSelected(_ sender: Any?) {
-        let r = table.clickedRow
-        guard r >= 0 && r < entries.count else { return }
-        TeraMenuLauncher.launch(entries[r])
+    @objc private func connectNode(_ sender: Any?) {
+        guard let n = node(for: sender), let e = entry(n) else { return }
+        TeraMenuLauncher.launch(e)
+    }
+
+    @objc private func doubleClicked(_ sender: Any?) {
+        guard let n = outline.item(atRow: outline.clickedRow) as? MenuNode else { return }
+        if n.isFolder {
+            if outline.isItemExpanded(n) { outline.collapseItem(n) } else { outline.expandItem(n) }
+        } else if let e = entry(n) {
+            TeraMenuLauncher.launch(e)
+        }
     }
 
     @objc private func closeEditor(_ sender: Any?) { window?.performClose(nil) }
 
+    /// 右クリックのメニューを、押した行に合わせて作る
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        func add(_ t: String, _ a: Selector, _ symbol: String) {
+            let i = NSMenuItem(title: t, action: a, keyEquivalent: "")
+            i.target = self
+            i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            menu.addItem(i)
+        }
+        let n = outline.clickedRow >= 0 ? outline.item(atRow: outline.clickedRow) as? MenuNode : nil
+        let place = folder(for: n).map { "「\($0.folder ?? "")」に" } ?? ""
+        add("\(place)新しいフォルダ…", #selector(newFolder(_:)), "folder.badge.plus")
+        add("\(place)新しい接続先", #selector(newEntry(_:)), "plus")
+        if let n = n {
+            menu.addItem(.separator())
+            if n.isFolder {
+                add("名前を変更…", #selector(renameFolder(_:)), "pencil")
+                add("フォルダを削除…", #selector(deleteSelected(_:)), "trash")
+            } else {
+                add("接続", #selector(connectNode(_:)), "play")
+                add("削除…", #selector(deleteSelected(_:)), "trash")
+            }
+        }
+    }
+
+    // MARK: ttpmenu.ini
+
     @objc private func importTTMenu(_ sender: Any?) {
         let p = NSOpenPanel()
-        p.message = "Windows 版 TeraTerm Menu の ttpmenu.ini を選んでください"
+        p.message = "読み込む ttpmenu.ini を選んでください"
         p.allowedFileTypes = ["ini", "INI"]
         p.allowsOtherFileTypes = true
         p.beginSheetModal(for: window!) { r in
             guard r == .OK, let url = p.url else { return }
-            let res = TTMenuIni.importFile(url)
+            guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data) else {
+                self.info("読み込めませんでした", url.path); return
+            }
+            let res = TTMenuIni.read(ini)
+            guard !res.entries.isEmpty else {
+                self.info("接続先が見つかりませんでした", "ttpmenu.ini ではないかもしれません。\n\(url.path)"); return
+            }
+            // 開くパネルのシートが閉じてから出す
+            DispatchQueue.main.async { self.confirmImport(url: url, ini: ini, result: res) }
+        }
+    }
+
+    /// 読み込む前に、何が入るかを見せて確かめる
+    private func confirmImport(url: URL, ini: IniFile, result res: TTMenuIni.ImportResult) {
+        let a = NSAlert()
+        a.messageText = "\(url.lastPathComponent) から \(res.entries.count) 件の接続先を読み込みます"
+        let existing = Set(entries.map { $0.name })
+        let adds = res.entries.filter { !existing.contains($0.name) }.count
+        a.informativeText = "新しく追加 \(adds) 件・同じ名前を上書き \(res.entries.count - adds) 件"
+            + (res.passwords.isEmpty ? "" : "\nパスワード \(res.passwords.count) 件はキーチェーンに保存します")
+
+        // 一覧 (追加/上書き・名前・ホスト) と注意
+        var text = ""
+        for e in res.entries {
+            text += (existing.contains(e.name) ? "上書き　" : "追加　　") + e.name
+            if !e.host.isEmpty && e.host != e.name { text += "　(\(e.host))" }
+            if let f = res.folders[e.id] { text += "　[フォルダ: " + f.joined(separator: " / ") + "]" }
+            text += "\n"
+        }
+        if !res.notes.isEmpty { text += "\n注意:\n" + res.notes.map { "・" + $0 }.joined(separator: "\n") + "\n" }
+        let scroll = NSTextView.scrollableTextView()
+        scroll.frame = NSRect(x: 0, y: 0, width: 440, height: min(220, CGFloat(res.entries.count + res.notes.count + 3) * 16 + 12))
+        scroll.borderType = .bezelBorder
+        if let tv = scroll.documentView as? NSTextView {
+            tv.isEditable = false
+            tv.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+            tv.string = text
+        }
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.widthAnchor.constraint(equalToConstant: 440).isActive = true
+        scroll.heightAnchor.constraint(equalToConstant: scroll.frame.height).isActive = true
+
+        // 入れる先
+        let dest = NSPopUpButton(frame: .zero, pullsDown: false)
+        let base = (url.lastPathComponent as NSString).deletingPathExtension
+        dest.addItem(withTitle: "最上位")
+        dest.addItem(withTitle: "新しいフォルダ「\(base)」")
+        dest.lastItem?.tag = 1
+        func addFolders(_ list: [MenuNode], _ prefix: String) {
+            for n in list where n.isFolder {
+                dest.addItem(withTitle: prefix + (n.folder ?? ""))
+                dest.lastItem?.representedObject = n
+                addFolders(n.children, prefix + (n.folder ?? "") + " / ")
+            }
+        }
+        addFolders(roots, "")
+        let destNote = NSTextField(labelWithString: "(上書きする接続先は、今ある場所のまま)")
+        destNote.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        destNote.textColor = .secondaryLabelColor
+        let settings = NSButton(checkboxWithTitle: "全体の設定 (アイコンの大きさ・クリックの動き・ホットキー) も読み込む", target: nil, action: nil)
+        settings.state = .on
+        let destRow = NSStackView(views: [NSTextField(labelWithString: "入れる先:"), dest, destNote])
+        let stack = NSStackView(views: [scroll, destRow, settings])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.frame = NSRect(x: 0, y: 0, width: 440, height: stack.fittingSize.height)
+        a.accessoryView = stack
+        a.addButton(withTitle: "読み込む")
+        a.addButton(withTitle: "キャンセル")
+        a.beginSheetModal(for: window!) { r in
+            guard r == .alertFirstButtonReturn else { return }
+            var folder = dest.selectedItem?.representedObject as? MenuNode
+            if dest.selectedItem?.tag == 1 {
+                let f = MenuNode(folder: base)
+                self.roots.append(f)
+                folder = f
+            }
+            let (added, replaced) = TTMenuIni.apply(res, ini: ini, includeSettings: settings.state == .on)
             self.entries = MenuStore.shared.entries
-            self.table.reloadData()
-            if !self.entries.isEmpty { self.table.selectRowIndexes([0], byExtendingSelection: false); self.loadSelected() }
-            let a = NSAlert()
-            a.messageText = res.ok ? "\(url.lastPathComponent) を読み込みました" : "読み込めませんでした"
-            a.informativeText = res.message
-            a.beginSheetModal(for: self.window!)
+            // 新しく入った接続先を入れる先へ (上書きしたものは元の場所のまま)
+            // ファイルに書いてあるフォルダ分けを、入れる先の下に作り直す
+            func folderNode(_ path: [String], under base: MenuNode?) -> MenuNode? {
+                var cur = base
+                for name in path {
+                    let list = cur?.children ?? self.roots
+                    if let f = list.first(where: { $0.folder == name }) { cur = f; continue }
+                    let f = MenuNode(folder: name)
+                    if let c = cur { c.children.append(f) } else { self.roots.append(f) }
+                    cur = f
+                }
+                return cur
+            }
+            for id in added {
+                let node = MenuNode(entryID: id)
+                let f = folderNode(res.folders[id] ?? [], under: folder)
+                if let f = f { f.children.append(node) } else { self.roots.append(node) }
+            }
+            self.save()
+            if let first = added.first.flatMap({ self.findNode(entryID: $0, in: self.roots) }) { self.select(first); self.loadSelected() }
+            self.info("読み込みました", "追加 \(added.count) 件・上書き \(replaced) 件")
         }
     }
 
@@ -773,22 +1183,57 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         guard !entries.isEmpty else { NSSound.beep(); return }
         let p = NSSavePanel()
         p.nameFieldStringValue = "ttpmenu.ini"
-        p.message = "Windows 版 TeraTerm Menu で読める形式で書き出します"
-        let check = NSButton(checkboxWithTitle: "パスワードも書き出す (Windows 版と同じ簡易な暗号化なので取り扱い注意)", target: nil, action: nil)
+        p.message = "接続先の一覧を ttpmenu.ini に書き出します"
+        let scope = NSPopUpButton(frame: .zero, pullsDown: false)
+        scope.addItem(withTitle: "すべての接続先 (\(entries.count) 件)")
+        if let f = folder(for: selectedNode) {
+            scope.addItem(withTitle: "フォルダ「\(f.folder ?? "")」の中だけ (\(f.allEntryIDs.count) 件)")
+            scope.lastItem?.representedObject = f
+        }
+        let check = NSButton(checkboxWithTitle: "パスワードも書き出す (簡易な暗号化なので取り扱い注意)", target: nil, action: nil)
         check.state = .off
-        let box = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 32))
-        check.frame = NSRect(x: 12, y: 6, width: 500, height: 20)
-        box.addSubview(check)
-        p.accessoryView = box
+        let note = NSTextField(labelWithString: "フォルダ分けも書き出し、読み込むときに元のフォルダに戻します")
+        note.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        note.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [NSStackView(views: [NSTextField(labelWithString: "書き出す範囲:"), scope]), check, note])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        stack.frame = NSRect(x: 0, y: 0, width: 580, height: stack.fittingSize.height)
+        p.accessoryView = stack
         p.beginSheetModal(for: window!) { r in
             guard r == .OK, let url = p.url else { return }
-            let data = TTMenuIni.write(self.entries, includePasswords: check.state == .on)
+            // ツリーの並び順で書き出す
+            let scopeNode = scope.selectedItem?.representedObject as? MenuNode
+            let ids = scopeNode?.allEntryIDs ?? self.roots.flatMap { $0.allEntryIDs }
+            let byID = Dictionary(self.entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let list = ids.compactMap { byID[$0] }
+            // フォルダの道すじ (書き出す範囲のフォルダから下)
+            var paths: [String: [String]] = [:]
+            func walk(_ nodes: [MenuNode], _ path: [String]) {
+                for n in nodes {
+                    if let id = n.entryID { if !path.isEmpty { paths[id] = path } }
+                    else { walk(n.children, path + [n.folder ?? ""]) }
+                }
+            }
+            walk(scopeNode?.children ?? self.roots, [])
+            let data = TTMenuIni.write(list, includePasswords: check.state == .on, folders: paths)
             do {
                 try data.write(to: url)
+                self.info("書き出しました", "\(list.count) 件の接続先を書き出しました\n\(url.path)")
             } catch {
-                let a = NSAlert(error: error)
-                a.beginSheetModal(for: self.window!)
+                NSAlert(error: error).beginSheetModal(for: self.window!)
             }
+        }
+    }
+
+    private func info(_ title: String, _ text: String) {
+        DispatchQueue.main.async {
+            let a = NSAlert()
+            a.messageText = title
+            a.informativeText = text
+            a.beginSheetModal(for: self.window!)
         }
     }
 
@@ -826,49 +1271,105 @@ final class MenuEditorWindowController: NSWindowController, NSTableViewDataSourc
         }
     }
 
-    // MARK: 一覧
+    // MARK: NSOutlineView
 
-    func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        (item as? MenuNode)?.children.count ?? roots.count
+    }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let e = entries[row]
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        (item as? MenuNode)?.children[index] ?? roots[index]
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        (item as? MenuNode)?.isFolder ?? false
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        guard let n = item as? MenuNode else { return nil }
         let cell = NSTableCellView()
-        let img = NSImageView(image: NSImage(systemSymbolName: e.symbolName, accessibilityDescription: nil) ?? NSImage())
-        let text = NSTextField(labelWithString: e.name + (e.startup ? "  ⏻" : ""))
+        let symbol: String
+        let title: String
+        if let f = n.folder {
+            symbol = "folder"
+            title = f
+            cell.toolTip = "\(n.allEntryIDs.count) 件"
+        } else {
+            let e = entry(n)
+            symbol = e?.symbolName ?? "questionmark"
+            title = (e?.name ?? "") + ((e?.startup ?? false) ? "  ⏻" : "")
+            cell.toolTip = e?.host
+        }
+        let img = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        if n.isFolder { img.contentTintColor = .controlAccentColor }
+        let text = NSTextField(labelWithString: title)
+        text.lineBreakMode = .byTruncatingTail
         let s = NSStackView(views: [img, text])
         s.spacing = 6
         s.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(s)
         NSLayoutConstraint.activate([
-            s.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            s.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            s.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
             s.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
-        cell.toolTip = e.host
         return cell
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) { loadSelected() }
+    func outlineViewSelectionDidChange(_ notification: Notification) { loadSelected() }
 
-    // ドラッグで並べ替え
-    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        let item = NSPasteboardItem()
-        item.setString(String(row), forType: .string)
-        return item
+    // ドラッグで並べ替え・フォルダに入れる
+    func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+        guard let n = item as? MenuNode else { return nil }
+        let p = NSPasteboardItem()
+        p.setString(n.id, forType: MenuEditorWindowController.dragType)
+        return p
     }
 
-    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
-                   proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
-        op == .above ? .move : []
+    private func node(withID id: String, in list: [MenuNode]) -> MenuNode? {
+        for n in list {
+            if n.id == id { return n }
+            if let c = node(withID: id, in: n.children) { return c }
+        }
+        return nil
     }
 
-    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
-                   dropOperation: NSTableView.DropOperation) -> Bool {
-        guard let s = info.draggingPasteboard.pasteboardItems?.first?.string(forType: .string), let from = Int(s) else { return false }
-        let e = entries.remove(at: from)
-        let to = from < row ? row - 1 : row
-        entries.insert(e, at: to)
+    func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?,
+                     proposedChildIndex index: Int) -> NSDragOperation {
+        guard let id = info.draggingPasteboard.string(forType: MenuEditorWindowController.dragType),
+              let dragged = node(withID: id, in: roots) else { return [] }
+        let target = item as? MenuNode
+        // 接続先の上に落としたら、その接続先のすぐ後ろに入れる
+        if let t = target, !t.isFolder {
+            if dragged === t { return [] }
+            let p = parent(of: t)
+            let i = (p?.children ?? roots).firstIndex { $0 === t } ?? 0
+            outlineView.setDropItem(p, dropChildIndex: i + 1)
+            return .move
+        }
+        // フォルダを自分の中に入れることはできない
+        if let t = target, contains(dragged, t) { return [] }
+        return .move
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        guard let id = info.draggingPasteboard.string(forType: MenuEditorWindowController.dragType),
+              let dragged = node(withID: id, in: roots) else { return false }
+        let target = item as? MenuNode
+        if let t = target, contains(dragged, t) { return false }
+        let oldParent = parent(of: dragged)
+        var oldList = siblings(of: dragged)
+        let oldIndex = oldList.firstIndex { $0 === dragged } ?? 0
+        oldList.remove(at: oldIndex)
+        setSiblings(oldList, parent: oldParent)
+        var list = target?.children ?? roots
+        var at = index < 0 ? list.count : index
+        if oldParent === target && index >= 0 && oldIndex < index { at -= 1 }
+        list.insert(dragged, at: max(0, min(at, list.count)))
+        setSiblings(list, parent: target)
         save()
-        tableView.selectRowIndexes([to], byExtendingSelection: false)
+        if let t = target { outlineView.expandItem(t) }
+        select(dragged)
         return true
     }
 
@@ -966,6 +1467,8 @@ enum TTMenuIni {
         var entries: [MenuEntry] = []
         var passwords: [String: String] = [:]   // id → パスワード
         var notes: [String] = []
+        /// id → フォルダの道すじ (Folder= の値を / で分けたもの)
+        var folders: [String: [String]] = [:]
     }
 
     /// Windows 版の簡易暗号: 文字を逆順にして各バイトを 0xFF で XOR (同じ操作で元に戻る)
@@ -1028,13 +1531,16 @@ enum TTMenuIni {
             for (label, path) in [("鍵ファイル", e.keyFile), ("マクロ", e.macroFile), ("ログ", e.logFile)] where path.contains(":\\") {
                 r.notes.append("「\(name)」の\(label)は Windows のパスです: \(path)")
             }
+            // このアプリが書き足すフォルダの情報 (TeraTerm Menu は知らない項目を無視するので害はない)
+            let folder = str("Folder").split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if !folder.isEmpty { r.folders[e.id] = folder }
             r.entries.append(e)
         }
         return r
     }
 
     /// Windows 版と同じ書式 (UTF-16LE, BOM 付き, CRLF) で書き出す
-    static func write(_ entries: [MenuEntry], includePasswords: Bool) -> Data {
+    static func write(_ entries: [MenuEntry], includePasswords: Bool, folders: [String: [String]] = [:]) -> Data {
         let store = MenuStore.shared
         var lines = ["[TTermMenu]",
                      "IconMode=\(store.largeIcon ? 1 : 0)",
@@ -1062,6 +1568,7 @@ enum TTMenuIni {
                 "Startup=\(e.startup ? 1 : 0)",
                 "Log=\(e.logFile)",
                 "PrivateKeyFile=\(e.keyFile)",
+                "Folder=\((folders[e.id] ?? []).map { $0.replacingOccurrences(of: "/", with: "／") }.joined(separator: "/"))",
                 "Challenge=0",
                 "Pageant=0",
                 "",
@@ -1071,15 +1578,11 @@ enum TTMenuIni {
         return Data([0xFF, 0xFE]) + (text.data(using: .utf16LittleEndian) ?? Data())
     }
 
-    /// 読み込んで今の一覧にまとめる (同じ名前は上書き)。結果の説明を返す
-    static func importFile(_ url: URL) -> (ok: Bool, message: String) {
-        guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data) else {
-            return (false, "読み込めませんでした: \(url.path)")
-        }
-        let r = read(ini)
-        guard !r.entries.isEmpty else { return (false, "接続先が見つかりませんでした。ttpmenu.ini ではないかもしれません。") }
+    /// 読み込んだ内容を今の一覧にまとめる (同じ名前は上書き)。追加した接続先の id と上書きした数を返す
+    @discardableResult
+    static func apply(_ r: ImportResult, ini: IniFile, includeSettings: Bool) -> (added: [String], replaced: Int) {
         var list = MenuStore.shared.entries
-        var added = 0, replaced = 0
+        var added: [String] = [], replaced = 0
         for var e in r.entries {
             let pw = r.passwords[e.id]
             if let i = list.firstIndex(where: { $0.name == e.name }) {
@@ -1088,22 +1591,63 @@ enum TTMenuIni {
                 replaced += 1
             } else {
                 list.append(e)
-                added += 1
+                added.append(e.id)
             }
             if let pw = pw { Keychain.set(pw, for: e.id) } else if !e.usePassword { Keychain.delete(e.id) }
         }
         MenuStore.shared.entries = list
-        // 全体の設定
-        let T = "TTermMenu"
-        if let v = num(ini.string(T, "IconMode")) { MenuStore.shared.largeIcon = v != 0 }
-        if let v = num(ini.string(T, "LeftButtonPopup")) { MenuStore.shared.leftClickList = v != 0 }
-        if let v = num(ini.string(T, "Hotkey")) {
-            MenuStore.shared.hotkey = v != 0
-            TeraMenuController.shared.updateHotkey()
+        if includeSettings {
+            let T = "TTermMenu"
+            if let v = num(ini.string(T, "IconMode")) { MenuStore.shared.largeIcon = v != 0 }
+            if let v = num(ini.string(T, "LeftButtonPopup")) { MenuStore.shared.leftClickList = v != 0 }
+            if let v = num(ini.string(T, "Hotkey")) {
+                MenuStore.shared.hotkey = v != 0
+                TeraMenuController.shared.updateHotkey()
+            }
         }
-        var msg = "追加 \(added) 件、上書き \(replaced) 件"
-        if !r.passwords.isEmpty { msg += "\nパスワード \(r.passwords.count) 件はキーチェーンに保存しました" }
-        if !r.notes.isEmpty { msg += "\n\n" + r.notes.map { "・" + $0 }.joined(separator: "\n") }
-        return (true, msg)
+        return (added, replaced)
+    }
+
+    /// ファイルから読み込んで最上位にまとめる (確かめの画面なし。自動テスト用)
+    static func importFile(_ url: URL) -> (ok: Bool, message: String) {
+        guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data) else {
+            return (false, "読み込めませんでした: \(url.path)")
+        }
+        let r = read(ini)
+        guard !r.entries.isEmpty else { return (false, "接続先が見つかりませんでした。ttpmenu.ini ではないかもしれません。") }
+        let (added, replaced) = apply(r, ini: ini, includeSettings: true)
+        return (true, "追加 \(added.count) 件、上書き \(replaced) 件")
+    }
+}
+
+/// 一覧の項目をドラッグして落とせる削除ボタン (落とすと onDrop に項目の id を渡す。確認はその先で出す)
+final class DropDeleteButton: NSButton {
+    var dragType: NSPasteboard.PasteboardType? {
+        didSet { if let t = dragType { registerForDraggedTypes([t]) } }
+    }
+    var onDrop: ((String) -> Void)?
+    private var dropTarget = false { didSet { needsDisplay = true } }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard let t = dragType, sender.draggingPasteboard.string(forType: t) != nil else { return [] }
+        dropTarget = true
+        return .delete
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { dropTarget = false }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        dropTarget = false
+        guard let t = dragType, let id = sender.draggingPasteboard.string(forType: t) else { return false }
+        // 確認のシートはドラッグが終わってから出す
+        DispatchQueue.main.async { self.onDrop?(id) }
+        return true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard dropTarget else { return }
+        NSColor.systemRed.withAlphaComponent(0.25).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5).fill()
     }
 }

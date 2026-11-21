@@ -703,6 +703,39 @@ extension TTLInterpreter {
 
     private func pathOf(_ s: [UInt8]) -> String { s.isEmpty ? curDir : absPath(s) }
 
+    /// GetAbsPath が作る文字列そのもの (CurrentDir + '\\' + 名前。"." や ".." は畳まない)。
+    /// fileconcat / filecopy の「同じファイル」判定 (_stricmp) に使う
+    private func getAbsPathRaw(_ s: [UInt8]) -> String {
+        var p = TTLInterpreter.windowsPath(s.u8)
+        if p.hasPrefix("~") { p = (p as NSString).expandingTildeInPath }
+        if p.hasPrefix("/") { return p }
+        return curDir.hasSuffix("/") ? curDir + p : curDir + "/" + p
+    }
+
+    /// 同じファイルの実体か (別名・"." 入りのパスで同じものを指すとき)
+    private func sameFileObject(_ a: String, _ b: String) -> Bool {
+        var s1 = stat(), s2 = stat()
+        guard stat(a, &s1) == 0, stat(b, &s2) == 0 else { return false }
+        return s1.st_dev == s2.st_dev && s1.st_ino == s2.st_ino
+    }
+
+    /// マクロを始めたときのフォルダ (移植元ではプロセスのカレントフォルダ)。
+    /// setdir / changedir では変わらない。CreateFile に相対パスをそのまま渡すコマンドや exec の既定のフォルダ
+    var initialDir: String {
+        var d = (macroPath as NSString).deletingLastPathComponent
+        let cwd = FileManager.default.currentDirectoryPath
+        if d.isEmpty { d = cwd } else if !d.hasPrefix("/") { d = (cwd as NSString).appendingPathComponent(d) }
+        return (d as NSString).standardizingPath
+    }
+
+    /// 相対パスを initialDir 基準にする (GetAbsPath を通さずに Win32 API に渡す名前)
+    func initialDirPath(_ s: [UInt8]) -> String {
+        var p = TTLInterpreter.windowsPath(s.u8)
+        if p.hasPrefix("~") { p = (p as NSString).expandingTildeInPath }
+        if !p.hasPrefix("/") { p = (initialDir as NSString).appendingPathComponent(p) }
+        return (p as NSString).standardizingPath
+    }
+
     private func isWritable(_ st: stat) -> Bool { (st.st_mode & S_IWUSR) != 0 }
 
     // MARK: fileclose / fileopen / filecreate
@@ -1003,14 +1036,19 @@ extension TTLInterpreter {
         if err != 0 { setResult(1); return err }
         guard let p1 = getAbsPathC(f1) else { setResult(-1); return 0 }
         guard let p2 = getAbsPathC(f2) else { setResult(-2); return 0 }
-        if asciiCaseEqual(Array(p1.utf8), Array(p2.utf8)) { setResult(2); return 0 }
+        // _stricmp(FName1, FName2): GetAbsPath の文字列どうし (畳まない) を比べる
+        if asciiCaseEqual(Array(getAbsPathRaw(f1).utf8), Array(getAbsPathRaw(f2).utf8)) { setResult(2); return 0 }
         var st = stat()
         if stat(p1, &st) == 0 && ((st.st_mode & S_IFMT) == S_IFDIR || !isWritable(st)) { setResult(3); return 0 }
         let fd1 = open(p1, O_WRONLY | O_CREAT, 0o666)
         if fd1 < 0 { setResult(3); return 0 }
         lseek(fd1, 0, SEEK_END)
         var result = 0
-        let fd2 = open(p2, O_RDONLY)
+        // 移植元では FH1 を共有なしで開いているので、同じファイルを指す 2 つ目は開けない。
+        // フォルダも CreateFile では開けない。どちらも何もせず result = 0
+        var st2 = stat()
+        let srcIsDir = stat(p2, &st2) == 0 && (st2.st_mode & S_IFMT) == S_IFDIR
+        let fd2 = (srcIsDir || sameFileObject(p1, p2)) ? -1 : open(p2, O_RDONLY)
         if fd2 >= 0 {
             var buf = [UInt8](repeating: 0, count: 65536)
             while true {
@@ -1034,7 +1072,9 @@ extension TTLInterpreter {
         if err != 0 { setResult(1); return err }
         guard let p1 = getAbsPathC(f1) else { setResult(-1); return 0 }
         guard let p2 = getAbsPathC(f2) else { setResult(-2); return 0 }
-        if asciiCaseEqual(Array(p1.utf8), Array(p2.utf8)) { setResult(-3); return 0 }
+        if asciiCaseEqual(Array(getAbsPathRaw(f1).utf8), Array(getAbsPathRaw(f2).utf8)) { setResult(-3); return 0 }
+        // 別の書き方で同じファイルを指すとき CopyFileW は失敗する
+        if sameFileObject(p1, p2) { setResult(-4); return 0 }
         // CopyFileW(src, dst, FALSE): 上書きする。コピー元はファイルのみ、読み取り専用の先は失敗
         var s1 = stat(), s2 = stat()
         guard stat(p1, &s1) == 0, (s1.st_mode & S_IFMT) != S_IFDIR else { setResult(-4); return 0 }
@@ -1445,7 +1485,8 @@ extension TTLInterpreter {
         if err != 0 { return err }
         if s.isEmpty { return 0 }
         var result = -1
-        let p = absPath(s)
+        // CreateFile(Str) に GetAbsPath を通さずに渡すので、相対パスは最初のフォルダ基準 (setdir は効かない)
+        let p = initialDirPath(s)
         var st = stat()
         // 開けない・フォルダ・空のファイル (CreateFileMapping が失敗する) は -1
         if stat(p, &st) == 0, (st.st_mode & S_IFMT) != S_IFDIR, st.st_size > 0,

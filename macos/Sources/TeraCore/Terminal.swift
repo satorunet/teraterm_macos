@@ -96,6 +96,8 @@ public final class Terminal {
     /// マクロ (TTL の wait など) に渡す文字列 (UTF-8)。Tera Term と同じく表示した文字と CR/LF/TAB/BS だけで、
     /// エスケープシーケンスは含まない。改行はログと同じく CR+LF / LF にそろえ、単独の CR は捨てる
     public var onMacroText: (([UInt8]) -> Void)?
+    /// Tera Term の LogTypePlainText。on のとき BS をマクロ・ログに出さない (配布の TERATERM.INI は on)
+    public var logTypePlainText = true
     private var macroBuf: [UInt8] = []
     private var macroCRHold = false
 
@@ -322,7 +324,8 @@ public final class Terminal {
         switch v {
         case 0x07: onBell?()
         case 0x08:
-            macroOut(0x08)
+            // vtterm.c BackSpace: カーソルが動いたときだけ (LogTypePlainText なら出さない)
+            if wrapPending || cx > 0, !logTypePlainText { macroOut(0x08) }
             if wrapPending { wrapPending = false } else if cx > 0 { cx -= 1 }
         case 0x09:
             macroOut(0x09)
@@ -330,15 +333,15 @@ public final class Terminal {
             while x < cols - 1 && !tabs[x] { x += 1 }
             cx = min(x, cols - 1); wrapPending = false
         case 0x0A, 0x0B, 0x0C:
-            if recvCRasCRLF && wasCR && v == 0x0A { return }
-            if recvLFasCRLF && v == 0x0A { macroOut(0x0D) }
-            macroOut(0x0A)
-            lineFeed()
-            if lnm || recvLFasCRLF { cx = 0 }
+            // ProcessLF / LineFeed: 受信の改行が LF なら CR+LF。CR+LF モードで CR のあとに来た LF もそのまま改行する
+            _ = wasCR
+            if recvLFasCRLF && v == 0x0A { macroOut(0x0D); cx = 0; wrapPending = false }
+            indexLF()
         case 0x0D:
+            // ProcessCR: 受信の改行が CR+LF なら CR のあとに LF を足す (CommInsert1Byte)
             macroOut(0x0D)
             cx = 0; wrapPending = false
-            if recvCRasCRLF { macroOut(0x0A); lineFeed(); lastWasCR = true }
+            if recvCRasCRLF { indexLF(); lastWasCR = true }
         case 0x0E: gl = 1
         case 0x0F: gl = 0
         case 0x18, 0x1A: state = .ground
@@ -347,6 +350,13 @@ public final class Terminal {
             params = []; curParam = nil; priv = nil; inter = ""
         default: break
         }
+    }
+
+    /// vtterm.c LineFeed(logFlag=TRUE): マクロ・ログに LF を出して 1 行下へ。LNM なら続けて CR
+    private func indexLF() {
+        macroOut(0x0A)
+        lineFeed()
+        if lnm { macroOut(0x0D); cx = 0; wrapPending = false }
     }
 
     private func escape(_ sc: Unicode.Scalar) {
@@ -366,8 +376,8 @@ public final class Terminal {
             escInter = Character(sc); state = .escInter
         case "7": saveCursor()
         case "8": restoreCursor()
-        case "D": lineFeed()
-        case "E": cx = 0; lineFeed()
+        case "D": indexLF()                    // IND: LineFeed(0, TRUE)
+        case "E": cx = 0; wrapPending = false; indexLF()   // NEL
         case "M": reverseIndex()
         case "H": if cx < cols { tabs[cx] = true }
         case "c": fullReset()

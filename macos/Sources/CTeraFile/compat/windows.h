@@ -71,6 +71,7 @@ typedef intptr_t LONG_PTR;
 #define MB_ICONSTOP        MB_ICONHAND
 #define MB_ICONEXCLAMATION 0x00000030
 #define MB_ICONWARNING     MB_ICONEXCLAMATION
+#define MB_TASKMODAL       0x00002000
 
 /* MSVC CRT names */
 #define _stati64 stat
