@@ -103,7 +103,9 @@ final class AboutWindowController: NSWindowController {
 
         let homepage = AboutWindowController.link("ホームページ (GitHub)", #selector(openHomepage(_:)), self)
         let credits = AboutWindowController.link("謝辞とライセンス", #selector(openCredits(_:)), self)
-        let links = NSStackView(views: [homepage, label("・", small, .tertiaryLabelColor), credits])
+        let changes = AboutWindowController.link("更新情報", #selector(openChanges(_:)), self)
+        let links = NSStackView(views: [homepage, label("・", small, .tertiaryLabelColor), changes,
+                                        label("・", small, .tertiaryLabelColor), credits])
         links.spacing = 4
 
         let stack = NSStackView(views: [
@@ -152,4 +154,9 @@ final class AboutWindowController: NSWindowController {
 
     @objc private func openHomepage(_ sender: Any?) { NSWorkspace.shared.open(AppDelegate.homepage) }
     @objc private func openCredits(_ sender: Any?) { CreditsWindowController.shared.show() }
+    /// GitHub のリリースの一覧 (各版の更新情報)
+    @objc private func openChanges(_ sender: Any?) {
+        NSWorkspace.shared.open(URL(string: "https://github.com/satorunet/teraterm_macos/releases")!)
+    }
 }
+
