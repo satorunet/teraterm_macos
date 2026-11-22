@@ -7,16 +7,16 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     let termView: TerminalView
     var settings: TermSettings
     private(set) var spec: ConnectionSpec?
-    private var conn: Connection?
+    var conn: Connection?
     var connection: Connection? { conn }
     /// ファイルのドラッグ&ドロップ (FileDrop.swift)
     lazy var dropSettings = DropSettings.load()
     lazy var dropState = DropState(confirm: dropSettings.confirmFileDragAndDrop)
     private var decoder: StreamDecoder
-    private var connected = false
+    private(set) var connected = false
     /// connect したが、まだつながっていない (TCP の接続中・ssh がまだ何も出していない)
-    private var connecting = false
-    private var remoteTitle: String?
+    private(set) var connecting = false
+    var remoteTitle: String?
     /// ログ (filesys_log.cpp の LogVar)
     private(set) var teraLog: TeraLog?
     var logPath: String? { teraLog?.path }
@@ -41,19 +41,19 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     /// ファイル転送 (XMODEM / ZMODEM / recvfile など)。動いている間は受信したデータをこちらに渡す
     private(set) var transfer: FileTransfer?
     /// Tera Term の ts にあたる転送の設定。TERATERM.INI があれば読む (マクロの指定がつぎの転送にも残る)
-    var transferOptions = FileTransferOptions.loadTeraTermIni().options
+    var transferOptions = TermSettings.initialTransferOptions()
     /// ZMODEM / B-Plus の自動起動 (ZmodemAuto / BPAuto)
     private var autoStartScanner = TransferAutoStartScanner()
     private var autoStartBypass = false
     /// ZMODEM 自動送信でファイルを選んでいる間に受けたデータ
     private var autoSendBuffer: [UInt8]?
     /// sendfile の送信中 (SendMem)
-    private(set) var sendFileJob: SendFileJob?
+    var sendFileJob: SendFileJob?
     /// TalkStatus != IdTalkKeyb の間、キーボード・貼り付けを止めるために退避したハンドラ
     private var savedKeyHandlers: (text: ((String) -> Void)?, bytes: (([UInt8]) -> Void)?)?
     /// cv.DelayFlag = FALSE の間退避したシリアルの送信遅延
     private var savedSerialDelay: (char: Int, line: Int)?
-    private var transferPanel: TransferProgressPanel?
+    var transferPanel: TransferProgressPanel?
     private var scpPanels: [TransferProgressPanel] = []
     private var scpJobs: [ScpJob] = []
     /// 自動ログイン: プロンプトが出たら順に答える (TeraTerm Menu の自動ログイン)
@@ -67,6 +67,17 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     private var recentOutput = ""
     var macro: MacroRunner?
     private var statusLabel: NSTextField?
+    /// ログの再生のウインドウ (cv.PortType == IdFile): 送信・転送・切断・複製はできない
+    var isReplay = false
+    var replayTimer: Timer?
+    /// 貼り付け・ブロードキャストの送信中 (SendMem)
+    var pasteJob: SendFileJob?
+    /// メニューの「接続断」で切った (onClose で AutoWinClose を二重に行わない)
+    var closedByMenu = false
+    /// 全終了・自動で閉じるときは「切断しますか？」を出さない
+    var skipCloseConfirm = false
+    var replayTitle: String?
+    var replayFinished = false
 
     static var all: [SessionWindowController] = []
 
@@ -97,6 +108,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         termView.onSendText = { [weak self] s in self?.sendText(s) }
         termView.onSendBytes = { [weak self] b in self?.sendBytes(b, echo: true) }
         termView.onFilesDropped = { [weak self] paths, force in self?.filesDropped(paths, forceDialog: force) }
+        termView.onPaste = { [weak self] s in self?.sendPasteText(s, echo: true) }
+        termView.canPaste = { [weak self] in self?.canPaste ?? false }
         termView.onResize = { [weak self] c, r in
             self?.conn?.resize(cols: c, rows: r)
             self?.updateTitle()
@@ -142,8 +155,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             window?.tab.title = mt
             return
         }
-        var t = remoteTitle ?? spec?.title ?? "未接続"
-        if spec != nil && !connected && !connecting { t += " (切断)" }
+        var t = remoteTitle ?? replayTitle ?? spec?.title ?? "未接続"
+        if (spec != nil && !connected && !connecting) || replayFinished { t += " [未接続]" }
         window?.title = "\(t) - Tera Term Mac \(term.cols)x\(term.rows)"
         window?.tab.title = remoteTitle ?? spec?.title ?? "未接続"
     }
@@ -169,8 +182,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         self.spec = spec
         remoteTitle = nil
         sshExtraArgs = sshArgs
-        let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs, timeout: timeout, telnetBinary: telnetBinary)
-        if let sc = c as? SerialConnection { sc.charDelayMs = settings.charDelayMs; sc.lineDelayMs = settings.lineDelayMs }
+        let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs + SSHSetupArgs.forConnection(spec), timeout: timeout, telnetBinary: telnetBinary)
+        if let sc = c as? SerialConnection { sc.charDelayMs = settings.charDelayMs; sc.lineDelayMs = settings.lineDelayMs; sc.breakMs = settings.sendBreakTime }
         c.onData = { [weak self] b in self?.received(b) }
         c.onClose = { [weak self, weak c] msg in
             guard let self = self, c === self.conn else { return }
@@ -189,6 +202,9 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             }
             self.updateTitle()
             self.macro?.connectionChanged()
+            // 相手から切られた: TCP/IP で AutoWinClose ならウインドウを閉じる (接続できなかったときは閉じない)
+            if !wasConnecting && !self.closedByMenu { self.afterConnectionClosed() }
+            self.closedByMenu = false
         }
         c.onConnected = { [weak self, weak c] in
             guard let self = self, c === self.conn, self.connecting else { return }
@@ -256,7 +272,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// 端末に案内を出す (相手には送らない)。Tera Term にはない Mac 版の表示なので、
     /// マクロの受信 (wait など) にもログにも入れない (端末の CR/LF の状態も変えない)
-    private func notice(_ s: String) {
+    func notice(_ s: String) {
         let saved = term.onMacroText
         term.onMacroText = nil
         defer { term.onMacroText = saved }
@@ -266,6 +282,9 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: - 受信
+
+    /// ログの再生: 受信したデータとして端末に流す
+    func feedReplay(_ bytes: [UInt8]) { received(bytes) }
 
     private func received(_ bytes: [UInt8]) {
         var bytes = bytes
@@ -309,7 +328,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             if hit {
                 loginSteps.removeFirst()
                 recentOutput = ""
-                sendBytes(settings.encoding.encode(step.response) + settings.sendNewlineBytes, echo: false)
+                sendBytes(settings.encodingSend.encode(step.response) + settings.sendNewlineBytes, echo: false)
             }
         }
     }
@@ -317,7 +336,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - 送信
 
     func sendText(_ s: String) {
-        sendBytes(settings.encoding.encode(s), echo: true)
+        sendBytes(settings.encodingSend.encode(s), echo: true)
     }
 
     /// binary: Telnet の CR を CR NUL にするか (CommBinaryOut は CR LF も CR NUL LF。テキストは改行コードの設定どおり)。
@@ -333,7 +352,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
         c.write(b, binary: binary)
         if echo && settings.localEcho {
-            var d = StreamDecoder(encoding: settings.encoding)
+            var d = StreamDecoder(encoding: settings.encodingSend)
             var shown = d.decode(b)
             if b == settings.sendNewlineBytes { shown = "\r\n" }
             term.feed(shown)
@@ -352,16 +371,18 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// FLogOpen。すでにログを取っていたら false (前のログはそのまま)
-    func startLog(path: String, options o: TTLLogOptions) -> Bool {
+    func startLog(path: String, options o: TTLLogOptions, code: TeraLog.Code = .utf8, bom: Bool = false) -> Bool {
         guard teraLog == nil else { return false }
-        guard let l = TeraLog(path: path, options: o, connectedTime: connectedAt) else { return false }
+        guard let l = TeraLog(path: path, options: o, code: code, bom: bom, connectedTime: connectedAt) else { return false }
         teraLog = l
         // CmdSetLogOpt で ts.LogTypePlainText が変わり、FixLogOption でバイナリなら off になる (BS をマクロに渡すかも変わる)
         term.logTypePlainText = l.options.plainText
+        showLogProgressWindow(hidden: o.hideDialog)   // FLogOpen が「ログ記録中」を作る
         return true
     }
 
     func stopLog() {
+        closeLogProgressWindow()
         teraLog?.close()
         teraLog = nil
     }
@@ -421,35 +442,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         if let s = spec { connect(s) }
     }
 
+    /// 古い「ログ開始/停止」(マクロの callmenu からも呼ばれる): ログを取っていなければ ログ... 、取っていれば ログを終了
     @objc func toggleLog(_ sender: Any?) {
-        if teraLog != nil {
-            let p = logPath ?? ""
-            stopLog()
-            notice("ログを止めました: \(p)")
-            return
-        }
-        let panel = NSSavePanel()
-        let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd_HHmmss"
-        panel.nameFieldStringValue = "teramac_\(f.string(from: Date())).log"
-        panel.directoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        panel.beginSheetModal(for: window!) { [weak self] r in
-            guard r == .OK, let url = panel.url, let self = self else { return }
-            if self.startLog(path: url.path, append: true) {
-                self.notice("ログを開始しました: \(url.path)")
-            }
-        }
+        if teraLog != nil { stopLogMenu(sender) } else { openLogDialog(sender) }
     }
 
-    @objc func sendFile(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.beginSheetModal(for: window!) { [weak self] r in
-            guard r == .OK, let url = panel.url, let data = try? Data(contentsOf: url), let self = self else { return }
-            self.sendBytes([UInt8](data), echo: false)
-            self.notice("\(url.lastPathComponent) を送信しました (\(data.count) バイト)")
-        }
-    }
+    @objc func sendFile(_ sender: Any?) { sendFileMenu(sender) }
 
     @objc func sendBreak(_ sender: Any?) { conn?.sendBreak() }
 
@@ -458,34 +456,24 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         termView.dataArrived()
     }
 
+    /// 画面クリア: 画面をバッファへ押し出す (見えている位置は一番下へ)
     @objc func clearScreen(_ sender: Any?) {
         term.clearScreen()
-        termView.needsDisplay = true
-    }
-
-    @objc func clearBuffer(_ sender: Any?) {
-        term.clearScrollback()
         termView.scrollToBottom()
         termView.needsDisplay = true
     }
 
-    @objc func showTerminalSetup(_ sender: Any?) {
-        let dlg = SetupDialog(settings: settings)
-        dlg.begin(on: window!) { [weak self] s in
-            guard let s = s else { return }
-            self?.applySettings(s)
-            s.save()
-        }
+    /// バッファのクリア: スクロールバックも画面も捨てる。選択も消す
+    @objc func clearBuffer(_ sender: Any?) {
+        term.clearBuffer()
+        termView.clearSelection()
+        termView.scrollToBottom()
+        termView.needsDisplay = true
     }
 
-    @objc func serialSetup(_ sender: Any?) {
-        let dlg = ConnectDialog()
-        dlg.serialOnly = true
-        dlg.begin(on: window!) { [weak self] spec, _ in
-            guard let self = self, let spec = spec else { return }
-            self.connect(spec)
-        }
-    }
+    @objc func showTerminalSetup(_ sender: Any?) { setupTerminal(sender) }
+
+    @objc func serialSetup(_ sender: Any?) { setupSerialPort(sender) }
 
     @objc func biggerFont(_ sender: Any?) { changeFont(by: 1) }
     @objc func smallerFont(_ sender: Any?) { changeFont(by: -1) }
@@ -545,7 +533,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         var out: [UInt8] = []
         for (i, part) in text.components(separatedBy: "\r").enumerated() {
             if i > 0 { out += settings.sendNewlineBytes }
-            out += settings.encoding.encode(part)
+            out += settings.encodingSend.encode(part)
         }
         sendBytes(out, echo: echo, reconnect: false)
     }
@@ -790,7 +778,28 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         let panel = transferPanel ?? TransferProgressPanel()
         transferPanel = panel
         panel.onCancel = { [weak self] in self?.cancelTransfer() }
-        panel.show(title: t.kind.title, over: window)
+        panel.show(title: SessionWindowController.japaneseTitle(t.kind), over: window)
+    }
+
+    /// 転送ダイアログの題 (ja_JP.lng FILEDLG_TRANS_TITLE_*)
+    static func japaneseTitle(_ k: FileTransferKind) -> String {
+        switch k {
+        case .kermitRecv: return "Kermit受信"
+        case .kermitGet: return "Kermit取得"
+        case .kermitSend: return "Kermit送信"
+        case .kermitFinish: return "Kermit終了"
+        case .xmodemRecv: return "XMODEM受信"
+        case .xmodemSend: return "XMODEM送信"
+        case .ymodemRecv: return "YMODEM受信"
+        case .ymodemSend: return "YMODEM送信"
+        case .zmodemRecv, .zmodemAutoRecv: return "ZMODEM受信"
+        case .zmodemSend, .zmodemAutoSend: return "ZMODEM送信"
+        case .bplusRecv, .bplusAutoRecv: return "B-Plus受信"
+        case .bplusSend: return "B-Plus送信"
+        case .quickvanRecv: return "Quick-VAN受信"
+        case .quickvanSend: return "Quick-VAN送信"
+        case .rawRecv: return "ファイル受信中"
+        }
     }
 
     /// ProtoEnd(): cv.DelayFlag = TRUE / TalkStatus = IdTalkKeyb
@@ -804,7 +813,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// キーボード・貼り付けを止める / 戻す (TalkStatus)
-    private func setTalkQuiet(_ quiet: Bool) {
+    func setTalkQuiet(_ quiet: Bool) {
         if quiet {
             guard savedKeyHandlers == nil else { return }
             savedKeyHandlers = (termView.onSendText, termView.onSendBytes)
@@ -1015,32 +1024,27 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             return macro != nil || !MacroRunner.unlinked.isEmpty
         case #selector(runMacroMenu(_:)):
             return macro == nil
-        case #selector(toggleLog(_:)):
-            item.title = teraLog == nil ? "ログ開始…" : "ログ停止"
-            return true
         default:
+            if let r = validateMainMenuItem(item) { return r }
+            if let r = validateLogMenuItem(item) { return r }
+            if let r = validateTransferMenuItem(item) { return r }
+            if let r = validateSetupMenuItem(item) { return r }
             return true
         }
     }
 
     // MARK: - ウインドウ
 
+    /// OnClose: 接続中の TCP/IP で ConfirmDisconnect なら「切断しますか？」(キャンセルが既定)。シリアル・未接続は聞かない
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard connected, spec != nil else { return true }
-        let a = NSAlert()
-        a.messageText = "接続中です。切断して閉じますか?"
-        a.addButton(withTitle: "閉じる")
-        a.addButton(withTitle: "やめる")
-        a.beginSheetModal(for: sender) { r in
-            if r == .alertFirstButtonReturn {
-                self.disconnect(silent: true)
-                sender.close()
-            }
-        }
-        return false
+        if skipCloseConfirm { return true }
+        guard connected, isTCPIP, confirmDisconnectSetting else { return true }
+        return SessionWindowController.confirmDisconnect(sender)
     }
 
     func windowWillClose(_ notification: Notification) {
+        replayTimer?.invalidate()
+        pasteJob?.finish()
         // OnClose(): FileSendEnd(); ProtoEnd() → 転送中のマクロの result は 0
         transfer?.abort()
         sendFileJob?.finish()

@@ -27,16 +27,22 @@ enum TeraTermIniImport {
         if let k = ini.string(T, "KanjiReceive") ?? ini.string(T, "KanjiSend") {
             if let e = encoding(k) {
                 r.settings.encoding = e
+                r.settings.encodingSend = e
                 note("文字コード \(e.rawValue)")
             } else if !k.isEmpty {
-                r.skipped.append("文字コード \(k) (UTF-8 / SJIS / EUC のみ対応)")
+                r.skipped.append("文字コード \(k) (UTF-8 / SJIS / EUC / JIS のみ対応)")
             }
+        }
+        if let k = ini.string(T, "KanjiSend"), let e = encoding(k) {
+            r.settings.encodingSend = e
+            if e != r.settings.encoding { note("送信の文字コード \(e.rawValue)") }
         }
         if let v = ini.string(T, "CRReceive")?.uppercased(), !v.isEmpty {
             // Tera Term の CR = そのまま → TeraMac の AUTO。CRLF = CR を改行扱い → TeraMac の CR
             switch v {
             case "CRLF": r.settings.recvNewline = "CR"
             case "LF": r.settings.recvNewline = "LF"
+            case "AUTO": r.settings.recvNewline = "AUTODETECT"
             default: r.settings.recvNewline = "AUTO"
             }
             note("改行コード 受信 \(v)")
@@ -52,6 +58,7 @@ enum TeraTermIniImport {
         }
         if let v = ini.string(T, "MetaKey")?.lowercased(), !v.isEmpty {
             r.settings.optionAsMeta = v != "off"
+            r.settings.metaKey = ["off", "on", "left", "right"].contains(v) ? v : "on"
             note("Meta キー \(v) (Option キー)")
         }
         if let v = ini.int(T, "ScrollBuffSize"), v >= 0 {
@@ -67,9 +74,20 @@ enum TeraTermIniImport {
             note("カーソル形 \(v)")
         }
         if let v = ini.onOff(T, "NonblinkingCursor") { r.settings.cursorBlink = !v; note("カーソル点滅 \(v ? "off" : "on")") }
-        if let v = ini.onOff(T, "ConfirmChangePaste") { r.settings.confirmMultilinePaste = v; note("貼り付け確認 \(v ? "on" : "off")") }
+        if let v = ini.onOff(T, "ConfirmChangePaste") { r.settings.confirmChangePaste = v; note("貼り付け確認 \(v ? "on" : "off")") }
         if let v = ini.onOff(T, "DisablePasteMouseRButton") { r.settings.rightClickPaste = !v; note("右クリック貼り付け \(v ? "off" : "on")") }
         if let v = ini.onOff(T, "LogTimestamp") { r.settings.logTimestamp = v; note("ログの時刻 \(v ? "on" : "off")") }
+        if let v = ini.onOff(T, "ConfirmChangePasteCR") { r.settings.confirmChangePasteCR = v }
+        if let v = ini.string(T, "ConfirmChangePasteStringFile") { r.settings.confirmChangePasteStringFile = v }
+        if let v = ini.onOff(T, "TrimTrailingNLonPaste") { r.settings.trimTrailingNLOnPaste = v }
+        if let v = ini.onOff(T, "BracketedControlOnly") { r.settings.bracketedControlOnly = v }
+        if let v = ini.int(T, "PasteDelayPerLine") { r.settings.pasteDelayPerLine = max(0, min(5000, v)) }
+        if let v = ini.onOff(T, "EnableContinuedLineCopy") { r.settings.continuedLineCopy = v }
+        if let v = ini.onOff(T, "AutoTextCopy") { r.settings.copyOnSelect = v }
+        var extra = r.settings
+        let n = readExtra(ini, into: &extra)
+        r.settings = extra
+        if n > 0 { note("その他の設定 \(n) 項目") }
         if let v = ini.int(T, "DelayPerChar") { r.settings.charDelayMs = max(0, v) }
         if let v = ini.int(T, "DelayPerLine") { r.settings.lineDelayMs = max(0, v) }
         if r.settings.charDelayMs > 0 || r.settings.lineDelayMs > 0 {
@@ -135,6 +153,7 @@ enum TeraTermIniImport {
             switch v {
             case "x": sp.flow = "xon"
             case "hard", "rtscts": sp.flow = "rts"
+            case "dsrdtr": sp.flow = "dsr"
             case "none": sp.flow = "none"
             default: r.skipped.append("フロー制御 \(v)")
             }
@@ -237,6 +256,29 @@ enum TeraTermIniImport {
         return true
     }
 
+    /// その他の設定の項目 (キー名は UserDefaults と同じ)
+    @discardableResult
+    static func readExtra(_ ini: IniFile, into s: inout TermSettings) -> Int {
+        let T = "Tera Term"
+        var n = 0
+        for (k, p) in TermSettings.boolFields { if let v = ini.onOff(T, k) { s[keyPath: p] = v; n += 1 } }
+        for (k, p) in TermSettings.intFields { if let v = ini.int(T, k) { s[keyPath: p] = v; n += 1 } }
+        for (k, p) in TermSettings.stringFields where k != "MetaKey" && k != "TeraMacThemeName" {
+            if let v = ini.string(T, k) { s[keyPath: p] = v; n += 1 }
+        }
+        for (k, p) in TermSettings.colorPairFields { if let v = ini.string(T, k), let c = ColorPair(iniString: v) { s[keyPath: p] = c; n += 1 } }
+        if ini.string(T, "AlphaBlendActive") == nil, let v = ini.int(T, "AlphaBlend") { s.alphaBlendActive = v }
+        if let v = ini.string(T, "Answerback") { s.answerback = v }
+        if let v = ini.ints(T, "VTFontSpace"), v.count >= 4 { (s.fontDX, s.fontDW, s.fontDY, s.fontDH) = (v[0], v[1], v[2], v[3]) }
+        if let v = ini.string(T, "KatakanaReceive") { s.katakanaReceive7 = v.trimmingCharacters(in: .whitespaces) == "7" }
+        if let v = ini.string(T, "KatakanaSend") { s.katakanaSend7 = v.trimmingCharacters(in: .whitespaces) == "7" }
+        if let v = ini.string(T, "Port") { s.portType = v.lowercased() == "serial" ? "serial" : "tcpip" }
+        if let v = ini.string(T, "LogTimestampType"), v.isEmpty { s.logTimestampType = "Local" }
+        // Windows の notepad.exe は Mac ではテキストエディット
+        if s.viewlogEditor.lowercased() == "notepad.exe" { s.viewlogEditor = "" }
+        return n
+    }
+
     // MARK: - 変換
 
     static func encoding(_ s: String) -> TermEncoding? {
@@ -244,6 +286,7 @@ enum TeraTermIniImport {
         if l.hasPrefix("utf8") { return .utf8 }
         if l.hasPrefix("sjis") || l.hasPrefix("shiftjis") || l == "cp932" { return .sjis }
         if l.hasPrefix("euc") { return .eucjp }
+        if l == "jis" || l.hasPrefix("iso2022jp") { return .jis }
         return nil
     }
 
@@ -286,5 +329,85 @@ enum TeraTermIniImport {
         a.messageText = title
         a.informativeText = text
         a.runModal()
+    }
+}
+
+/// 設定の保存: TERATERM.INI の形で書く (ttset.c WriteIniFile のうち Tera Term Mac が持つもの)
+enum TeraTermIniExport {
+    static func kanjiName(_ e: TermEncoding) -> String {
+        switch e {
+        case .utf8: return "UTF-8"
+        case .sjis: return "SJIS"
+        case .eucjp: return "EUC"
+        case .jis: return "JIS"
+        }
+    }
+
+    static func onOff(_ b: Bool) -> String { b ? "on" : "off" }
+
+    static func document(settings s: TermSettings, transfer t: FileTransferOptions, base: IniDocument = IniDocument()) -> IniDocument {
+        let doc = base
+        let T = "Tera Term"
+        func set(_ k: String, _ v: String?) { doc.set(T, k, v) }
+        set("TerminalSize", "\(s.cols),\(s.rows)")
+        set("KanjiReceive", kanjiName(s.encoding))
+        set("KanjiSend", kanjiName(s.encodingSend))
+        set("CRReceive", ["AUTO": "CR", "CR": "CRLF", "LF": "LF", "AUTODETECT": "AUTO"][s.recvNewline] ?? "CR")
+        set("CRSend", s.sendNewline)
+        set("LocalEcho", onOff(s.localEcho))
+        set("BSKey", s.bsSendsDel ? "DEL" : "BS")
+        set("ScrollBuffSize", String(s.scrollback))
+        set("UnicodeAmbiguousWidth", s.ambiguousWide ? "2" : "1")
+        set("CursorShape", s.cursorShape)
+        set("NonblinkingCursor", onOff(!s.cursorBlink))
+        set("AutoTextCopy", onOff(s.copyOnSelect))
+        set("DisablePasteMouseRButton", onOff(!s.rightClickPaste))
+        set("ConfirmChangePaste", onOff(s.confirmChangePaste))
+        set("ConfirmChangePasteCR", onOff(s.confirmChangePasteCR))
+        set("ConfirmChangePasteStringFile", s.confirmChangePasteStringFile)
+        set("TrimTrailingNLonPaste", onOff(s.trimTrailingNLOnPaste))
+        set("BracketedControlOnly", onOff(s.bracketedControlOnly))
+        set("PasteDelayPerLine", String(s.pasteDelayPerLine))
+        set("EnableContinuedLineCopy", onOff(s.continuedLineCopy))
+        set("LogTimestamp", onOff(s.logTimestamp))
+        set("DelayPerChar", String(s.charDelayMs))
+        set("DelayPerLine", String(s.lineDelayMs))
+        set("VTColor", TermSettings.rgbString(s.fg) + "," + TermSettings.rgbString(s.bg))
+        // ANSIColor: Tera Term の番号は 0-7 が明るい色、8-15 が通常の色
+        let ansi = s.ansi16 ?? Array(Palette.colors.prefix(16))
+        let tt = Array(ansi[8..<16]) + Array(ansi[0..<8])
+        set("ANSIColor", tt.enumerated().map { "\($0.offset)," + TermSettings.rgbString($0.element) }.joined(separator: ", "))
+        // フォントの高さはピクセル (負 = 文字の高さ)。読み込み (pt = |h| * 72/96) の逆
+        set("VTFont", "\(s.fontName),0,-\(Int((s.fontSize * 96 / 72).rounded())),1")
+        set("VTFontSpace", "\(s.fontDX),\(s.fontDW),\(s.fontDY),\(s.fontDH)")
+        for (k, p) in TermSettings.boolFields { set(k, onOff(s[keyPath: p])) }
+        for (k, p) in TermSettings.intFields { set(k, String(s[keyPath: p])) }
+        for (k, p) in TermSettings.stringFields where k != "TeraMacThemeName" { set(k, s[keyPath: p]) }
+        for (k, p) in TermSettings.colorPairFields { set(k, s[keyPath: p].iniString) }
+        set("Answerback", s.answerback)
+        set("KatakanaReceive", s.katakanaReceive7 ? "7" : "8")
+        set("KatakanaSend", s.katakanaSend7 ? "7" : "8")
+        set("FileDir", t.fileDir)
+        // シリアル
+        let sp = ConnHistory.serial
+        set("BaudRate", String(sp.baud))
+        set("DataBit", String(sp.dataBits))
+        set("Parity", sp.parity)
+        set("StopBit", String(sp.stopBits))
+        set("FlowCtrl", ["xon": "x", "rts": "hard", "dsr": "dsrdtr"][sp.flow] ?? "none")
+        // TTSSH / TTProxy
+        let ssh = SSHSettings.load()
+        ssh.write(doc)
+        ProxySettings.load().write(doc)
+        // [Hosts] (CopyHostList)
+        doc.removeSection("Hosts")
+        for (i, h) in ConnHistory.hosts.enumerated() { doc.set("Hosts", "Host\(i + 1)", h) }
+        return doc
+    }
+
+    /// path に書く。すでにあるファイルなら、知らないキー・セクションはそのまま残す
+    static func write(settings: TermSettings, transfer: FileTransferOptions, to path: String) throws {
+        let base = FileManager.default.fileExists(atPath: path) ? IniDocument(contentsOf: path) : IniDocument()
+        try document(settings: settings, transfer: transfer, base: base).write(to: path)
     }
 }

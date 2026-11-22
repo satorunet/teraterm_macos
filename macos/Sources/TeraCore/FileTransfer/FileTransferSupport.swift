@@ -112,6 +112,23 @@ public struct SendFilePlan: Equatable {
     /// 各チャンクの後に待つ時間 (ms)。最後のチャンクの後は待たない
     public var delayMs: Int
 
+    public init(chunks: [Chunk], delayMs: Int) {
+        self.chunks = chunks
+        self.delayMs = delayMs
+    }
+
+    /// 貼り付け (clipboar.c CBSendStart → SendMem): 改行 (CR) ごとに区切り、各行のあと PasteDelayPerLine だけ待つ
+    public static func paste(_ text: String, delayPerLine: Int) -> SendFilePlan {
+        var chunks: [Chunk] = []
+        var cur = ""
+        for ch in text {
+            cur.append(ch)
+            if ch == "\r" { chunks.append(.text(cur)); cur = "" }
+        }
+        if !cur.isEmpty { chunks.append(.text(cur)) }
+        return SendFilePlan(chunks: chunks, delayMs: max(0, delayPerLine))
+    }
+
     /// LoadFileWW (LoadFileU8C): UTF-8 BOM は取る、UTF-16 LE/BE の BOM があれば UTF-16、BOM がなければ
     /// Windows はシステムのコードページ。Mac では UTF-8 として読めれば UTF-8、だめなら CP932。
     /// 文字列は最初の NUL で終わる (strlen / wcslen)。その後 NormalizeLineBreakCR (CR LF / LF → CR)

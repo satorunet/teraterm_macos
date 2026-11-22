@@ -115,6 +115,20 @@ public final class TTLInterpreter {
         set { recv.lock(); _cancelled = newValue; recv.broadcast(); recv.unlock() }
     }
     var _cancelled = false
+    /// マクロウインドウの「中断」(ttmmain.cpp Pause): 止めている間はコマンドを進めない
+    public var paused: Bool {
+        get { recv.lock(); defer { recv.unlock() }; return _paused }
+        set { recv.lock(); _paused = newValue; recv.broadcast(); recv.unlock() }
+    }
+    var _paused = false
+    /// マクロウインドウに出す「ファイル名と行番号」(別スレッドから読むのでロックして写す)
+    public var progress: (file: String, line: Int) {
+        recv.lock(); defer { recv.unlock() }
+        return (progressFile, progressLine)
+    }
+    var progressFile = ""
+    var progressLine = 0
+    var progressNest = -1
     var clipboardCache: [UInt8]?
 
     var vars: [TTLVariable] = []
@@ -1063,6 +1077,9 @@ public final class TTLInterpreter {
         linePtr = 0
         lineParsePtr = 0
         lineNo = currentLineNumber(p, buffs[iNest]!.lineStarts)
+        recv.lock(); progressLine = lineNo
+        if progressFile.isEmpty || iNest != progressNest { progressFile = macroFileName; progressNest = iNest }
+        recv.unlock()
         while p < data.count && data[p] < 0x20 && data[p] != 0x09 { p += 1 }
         buffs[iNest]!.ptr = p
         return !line.isEmpty || p < data.count
@@ -1253,6 +1270,12 @@ public final class TTLInterpreter {
         defer { endTTL() }
         while status != .end {
             if cancelled { status = .end; break }
+            if _paused {
+                recv.lock()
+                while _paused && !_cancelled { _ = recv.wait(until: Date(timeIntervalSinceNow: 0.2)) }
+                recv.unlock()
+                continue
+            }
             switch status {
             case .run:
                 exec()

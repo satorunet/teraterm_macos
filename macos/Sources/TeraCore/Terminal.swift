@@ -160,10 +160,46 @@ public final class Terminal {
         dirty = true
     }
 
-    /// Tera Term の「画面クリア」
+    /// Tera Term の「画面クリア」(buffer.c BuffClearScreen): 画面全体をスクロールしてバッファへ押し出し
+    /// (消さずに履歴に残す)、今の属性の空白で埋めてカーソルを左上へ。モード・マージン・属性はそのまま
     public func clearScreen() {
-        for y in 0..<rows { lines[y] = Line(cols: cols) }
+        for y in 0..<rows {
+            if !usingAlt { pushScrollback(lines[y]) }
+            lines[y] = Line(cols: cols, attr: attr)
+        }
         cx = 0; cy = 0; wrapPending = false
+        dirty = true
+    }
+
+    /// 「バッファのクリア」(buffer.c ClearBuffer): スクロールバックと画面をすべて捨て、今の属性の空白で埋める。
+    /// カーソルは左上、スクロール範囲は画面全体に戻す。モード・タブ・属性は変えない
+    public func clearBuffer() {
+        scrollback.removeAll()
+        for y in 0..<rows { lines[y] = Line(cols: cols, attr: attr) }
+        cx = 0; cy = 0; wrapPending = false
+        scrollTop = 0; scrollBottom = rows - 1
+        dirty = true
+    }
+
+    /// メニューの「端末リセット」(vtterm.c ResetTerminal)。画面の文字は消さない (RIS の ESC c とは違う)。
+    /// lfMode: 送信改行が CR+LF なら LNM をオン (LFMode = ts.CRSend == IdCRLF)
+    public func menuReset(lfMode: Bool) {
+        // BuffReset: 代替画面の退避は捨てる (表示中の内容はそのまま)
+        if usingAlt { savedMainLines = nil; usingAlt = false }
+        cx = 0; cy = 0; wrapPending = false
+        scrollTop = 0; scrollBottom = rows - 1
+        resetTabs()
+        attr = CellAttr()
+        insertMode = false; lnm = lfMode; autowrap = true
+        appCursor = false; appKeypad = false; originMode = false
+        reverseScreen = false
+        mouseMode = 0; mouseSGR = false
+        bracketedPaste = false
+        cursorVisible = true; cursorStyle = defaultCursorStyle
+        g = [.ascii, .ascii, .ascii, .ascii]; gl = 0; singleShift = nil
+        saved = Saved(); savedAlt = Saved()
+        state = .ground; params = []; curParam = nil; priv = nil; inter = ""; oscBuf = ""
+        lastChar = nil
         dirty = true
     }
 

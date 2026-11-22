@@ -198,87 +198,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openHomepage(_ sender: Any?) { NSWorkspace.shared.open(AppDelegate.homepage) }
 
     private func buildMenu() {
-        let main = NSMenu()
-        func add(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
-            let top = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            let m = NSMenu(title: title)
-            items.forEach { m.addItem($0) }
-            top.submenu = m
-            main.addItem(top)
-            return m
-        }
-        func item(_ t: String, _ a: Selector?, _ k: String = "", _ mods: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
-            let i = NSMenuItem(title: t, action: a, keyEquivalent: k)
-            i.keyEquivalentModifierMask = mods
-            return i
-        }
-        let S = SessionWindowController.self
+        NSApp.mainMenu = MenuBar.build(app: self)
+    }
 
-        _ = add("Tera Term Mac", [
-            item("Tera Term Mac について", #selector(showAbout(_:))),
-            item("謝辞とライセンス…", #selector(showCredits(_:))),
-            item("ホームページ (GitHub)…", #selector(openHomepage(_:))),
-            .separator(),
-        ] + AppUpdater.shared.menuItems() + [
-            .separator(),
-            item("端末の設定…", #selector(S.showTerminalSetup(_:)), ","),
-            .separator(),
-            item("Tera Term Mac を隠す", #selector(NSApplication.hide(_:)), "h"),
-            item("ほかを隠す", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
-            item("すべてを表示", #selector(NSApplication.unhideAllApplications(_:))),
-            .separator(),
-            uninstallItem(item("Tera Term Mac をアンインストール…", #selector(uninstall(_:)))),
-            item("Tera Term Mac を終了", #selector(NSApplication.terminate(_:)), "q"),
-        ])
-        _ = add("接続", [
-            item("新しい接続…", #selector(S.newConnection(_:)), "n", [.command, .shift]),
-            item("新しいウインドウ…", #selector(newWindow(_:)), "n"),
-            item("新しいローカルシェル", #selector(newShellWindow(_:)), "t"),
-            item("接続を複製", #selector(S.duplicateSession(_:)), "d"),
-            .separator(),
-            item("ログ開始…", #selector(S.toggleLog(_:)), "l"),
-            item("ファイル送信…", #selector(S.sendFile(_:))),
-            .separator(),
-            item("再接続", #selector(S.reconnect(_:)), "r"),
-            item("切断", #selector(S.disconnectSession(_:)), "w", [.command, .shift]),
-            item("閉じる", #selector(NSWindow.performClose(_:)), "w"),
-        ])
-        _ = add("編集", [
-            item("コピー", #selector(TerminalView.copy(_:)), "c"),
-            item("貼り付け", #selector(TerminalView.paste(_:)), "v"),
-            item("すべてを選択", #selector(TerminalView.selectAll(_:)), "a"),
-            .separator(),
-            item("画面クリア", #selector(S.clearScreen(_:)), "k"),
-            item("バッファクリア", #selector(S.clearBuffer(_:)), "k", [.command, .shift]),
-        ])
-        _ = add("設定", [
-            item("端末…", #selector(S.showTerminalSetup(_:))),
-            item("シリアルポート…", #selector(S.serialSetup(_:))),
-            .separator(),
-            item("文字を大きく", #selector(S.biggerFont(_:)), "+"),
-            item("文字を小さく", #selector(S.smallerFont(_:)), "-"),
-        ])
-        // TeraTerm Menu の一覧 (開くたびに作り直す)
-        let hosts = add("接続リスト", [])
-        hosts.delegate = TeraMenuController.shared
-        _ = add("コントロール", [
-            item("ブレーク信号を送る", #selector(S.sendBreak(_:)), "b"),
-            item("端末をリセット", #selector(S.resetTerminal(_:))),
-            .separator(),
-            item("マクロ実行…", #selector(S.runMacroMenu(_:)), "m", [.command, .shift]),
-            item("マクロ停止", #selector(S.stopMacro(_:)), ".", [.command]),
-            item("ファイル転送を中止", #selector(S.cancelTransferMenu(_:))),
-        ])
-        let win = add("ウインドウ", [
-            item("しまう", #selector(NSWindow.performMiniaturize(_:)), "m"),
-            item("拡大/縮小", #selector(NSWindow.performZoom(_:))),
-            .separator(),
-            item("前のタブ", #selector(NSWindow.selectPreviousTab(_:)), "{"),
-            item("次のタブ", #selector(NSWindow.selectNextTab(_:)), "}"),
-            item("すべてのウインドウを前面へ", #selector(NSApplication.arrangeInFront(_:))),
-        ])
-        NSApp.windowsMenu = win
-        NSApp.mainMenu = main
+    func uninstallMenuItem() -> NSMenuItem {
+        uninstallItem(NSMenuItem(title: "Tera Term Mac をアンインストール…", action: #selector(uninstall(_:)), keyEquivalent: ""))
+    }
+
+    /// ヘルプの目次 (Tera Term のヘルプ: マクロのコマンドなどの説明)
+    @objc func openHelpIndex(_ sender: Any?) {
+        NSWorkspace.shared.open(URL(string: "https://teratermproject.github.io/manual/5/ja/")!)
+    }
+
+    // 端末のウインドウがないときのメニュー
+    @objc func newConnectionMenu(_ sender: Any?) { newWindow(sender) }
+    @objc func localShellConnection(_ sender: Any?) { newShellWindow(sender) }
+    @objc func replayLog(_ sender: Any?) {
+        let c = SessionWindowController()
+        c.replayLog(sender)
     }
 }
 

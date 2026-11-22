@@ -2,7 +2,7 @@ import AppKit
 import TeraCore
 
 /// TTL マクロを別スレッドで動かし、端末ウインドウとのやりとりをつなぐ (Tera Term の ttpmacro と DDE の代わり)
-final class MacroRunner: TTLHost {
+final class MacroRunner: NSObject, TTLHost {
     private weak var session: SessionWindowController?
     private(set) var interp: TTLInterpreter!
     let path: String
@@ -12,6 +12,7 @@ final class MacroRunner: TTLHost {
     init(path: String, params: [String] = [], session: SessionWindowController) throws {
         self.session = session
         self.path = path
+        super.init()
         interp = try TTLInterpreter(path: path, host: self, params: params)
         interp.setComReady(session.isConnected)
     }
@@ -25,6 +26,7 @@ final class MacroRunner: TTLHost {
             do { try interp.run() } catch { err = "\(error)" }
             DispatchQueue.main.async {
                 self.closeStatusPanel()
+                self.closeMacroWindow()
                 MacroRunner.unlinked.removeAll { $0 === self }
                 // いまつながっているウインドウ (connect でつなぎ直したものを含む) から外す。logautoclose もここ
                 self.session?.macroFinished(self, error: err)
@@ -36,6 +38,75 @@ final class MacroRunner: TTLHost {
     }
 
     func cancel() { interp.cancelled = true }
+
+    // MARK: - マクロウインドウ (ttpmacro の CCtrlWindow)
+
+    private var macroWindow: NSPanel?
+    private var macroWindowTimer: Timer?
+    private var fileLabel: NSTextField?
+    private var lineLabel: NSTextField?
+    private var pauseButton: NSButton?
+    private lazy var sourceLines: [String: [String]] = [:]
+
+    /// 「マクロウインドウの表示」: ファイル名と実行中の行、「中断/開始」「終了」ボタン
+    func showWindow() {
+        if macroWindow == nil {
+            let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 90),
+                            styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            p.title = "MACRO - " + (path as NSString).lastPathComponent
+            p.isReleasedWhenClosed = false
+            p.hidesOnDeactivate = false
+            let file = NSTextField(labelWithString: "")
+            file.lineBreakMode = .byTruncatingTail
+            let line = NSTextField(labelWithString: "")
+            line.lineBreakMode = .byTruncatingTail
+            line.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            let pause = NSButton(title: "中断", target: self, action: #selector(togglePause(_:)))
+            let end = NSButton(title: "終了", target: self, action: #selector(endMacro(_:)))
+            let buttons = NSStackView(views: [pause, end])
+            let stack = NSStackView(views: [file, line, buttons])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14)
+            for v in [file, line] { v.widthAnchor.constraint(equalToConstant: 350).isActive = true }
+            p.contentView = stack
+            p.setContentSize(stack.fittingSize)
+            if let w = session?.window { p.setFrameTopLeftPoint(NSPoint(x: w.frame.minX + 20, y: w.frame.maxY - 20)) } else { p.center() }
+            macroWindow = p; fileLabel = file; lineLabel = line; pauseButton = pause
+            macroWindowTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.refreshWindow() }
+        }
+        refreshWindow()
+        macroWindow?.deminiaturize(nil)
+        macroWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func refreshWindow() {
+        let pr = interp.progress
+        let file = pr.file.isEmpty ? path : pr.file
+        fileLabel?.stringValue = file
+        if sourceLines[file] == nil {
+            sourceLines[file] = (try? String(contentsOfFile: file, encoding: .utf8))?.components(separatedBy: .newlines) ?? []
+        }
+        let lines = sourceLines[file] ?? []
+        let text = pr.line >= 1 && pr.line <= lines.count ? lines[pr.line - 1] : ""
+        lineLabel?.stringValue = ":\(pr.line):\(text)"
+    }
+
+    @objc private func togglePause(_ sender: NSButton) {
+        interp.paused.toggle()
+        sender.title = interp.paused ? "開始" : "中断"
+    }
+
+    @objc private func endMacro(_ sender: Any?) {
+        interp.paused = false
+        cancel()
+    }
+
+    func closeMacroWindow() {
+        macroWindowTimer?.invalidate(); macroWindowTimer = nil
+        macroWindow?.close(); macroWindow = nil
+    }
 
     /// 端末に表示した文字 (メインスレッドから)
     func received(_ utf8: [UInt8]) { interp.feed(utf8) }

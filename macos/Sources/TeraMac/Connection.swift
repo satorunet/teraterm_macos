@@ -116,10 +116,13 @@ protocol Connection: AnyObject {
     func resize(cols: Int, rows: Int)
     func close()
     func sendBreak()
+    /// 端末リセットのとき (commlib.c CommLock(FALSE)): 止めていた相手に送信を再開させる
+    func unlock()
 }
 
 extension Connection {
     func write(_ bytes: [UInt8], binary: Bool) { write(bytes) }
+    func unlock() {}
 }
 
 struct ConnError: LocalizedError {
@@ -478,9 +481,16 @@ final class TCPConnection: Connection {
         conn?.cancel()
     }
 
+    /// TelSendBreak: Telnet でなくても IAC BREAK を送る (Tera Term と同じ)
     func sendBreak() {
-        if telnet { sendRaw([IAC, 243]) }
+        sendRaw([IAC, 243])
     }
+
+    /// CommLock(FALSE): TCP では XON を送る
+    func unlock() { sendRaw([0x11]) }
+
+    /// Telnet のネゴシエーションをしている (cv.TelFlag)
+    var isTelnet: Bool { telnet }
 }
 
 // MARK: - シリアルポート
@@ -523,6 +533,23 @@ final class SerialConnection: Connection {
                             (e == EBUSY ? "\n(ほかのアプリが使っています)" : ""))
         }
         _ = ioctl(fd, TIOCEXCL)
+        try configure()
+        // DTR / RTS を上げる
+        var bits: Int32 = TIOCM_DTR | TIOCM_RTS
+        _ = ioctl(fd, TIOCMBIS, &bits)
+        tcflush(fd, TCIOFLUSH)
+
+        let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        src.setEventHandler { [weak self] in self?.readAvailable() }
+        source = src
+        src.resume()
+    }
+
+    /// いまの速度 (setbaud で変わる)
+    private lazy var currentBaud = params.baud
+
+    /// ポートの設定 (速度・データ・パリティ・ストップ・フロー制御) をかける。開いたときとポートのリセットで使う
+    private func configure() throws {
         var t = termios()
         if tcgetattr(fd, &t) != 0 { throw ConnError(msg: "ポートの設定を読めませんでした") }
         cfmakeraw(&t)
@@ -538,38 +565,28 @@ final class SerialConnection: Connection {
         if params.parity == "even" { t.c_cflag |= tcflag_t(PARENB) }
         if params.parity == "odd" { t.c_cflag |= tcflag_t(PARENB | PARODD) }
         if params.stopBits == 2 { t.c_cflag |= tcflag_t(CSTOPB) } else { t.c_cflag &= ~tcflag_t(CSTOPB) }
-        t.c_cflag &= ~tcflag_t(CRTSCTS)
+        t.c_cflag &= ~tcflag_t(CRTSCTS | CDTR_IFLOW | CDSR_OFLOW)
         t.c_iflag &= ~tcflag_t(IXON | IXOFF | IXANY)
-        if params.flow == "rts" { t.c_cflag |= tcflag_t(CRTSCTS) }
-        if params.flow == "xon" { t.c_iflag |= tcflag_t(IXON | IXOFF) }
-        if params.flow == "dsr" { t.c_cflag |= tcflag_t(CDTR_IFLOW | CDSR_OFLOW) }
+        if flow == "rts" { t.c_cflag |= tcflag_t(CRTSCTS) }
+        if flow == "xon" { t.c_iflag |= tcflag_t(IXON | IXOFF) }
+        if flow == "dsr" { t.c_cflag |= tcflag_t(CDTR_IFLOW | CDSR_OFLOW) }
         // VMIN/VTIME: 届いた分だけすぐ返す
         withUnsafeMutablePointer(to: &t.c_cc) {
             $0.withMemoryRebound(to: cc_t.self, capacity: Int(NCCS)) { cc in
                 cc[Int(VMIN)] = 1; cc[Int(VTIME)] = 0
             }
         }
-        let std = speed_t(params.baud)
-        cfsetspeed(&t, std)
+        cfsetspeed(&t, speed_t(currentBaud))
         if tcsetattr(fd, TCSANOW, &t) != 0 {
             // 標準外の速度は IOSSIOSPEED で設定する
             cfsetspeed(&t, speed_t(B9600))
             _ = tcsetattr(fd, TCSANOW, &t)
         }
-        var sp = speed_t(params.baud)
+        var sp = speed_t(currentBaud)
         let IOSSIOSPEED: UInt = 0x8008_5402
         if ioctl(fd, IOSSIOSPEED, &sp) != 0 && tcsetattr(fd, TCSANOW, &t) != 0 {
-            throw ConnError(msg: "通信速度 \(params.baud) に設定できませんでした")
+            throw ConnError(msg: "通信速度 \(currentBaud) に設定できませんでした")
         }
-        // DTR / RTS を上げる
-        var bits: Int32 = TIOCM_DTR | TIOCM_RTS
-        _ = ioctl(fd, TIOCMBIS, &bits)
-        tcflush(fd, TCIOFLUSH)
-
-        let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        src.setEventHandler { [weak self] in self?.readAvailable() }
-        source = src
-        src.resume()
     }
 
     private func readAvailable() {
@@ -610,8 +627,36 @@ final class SerialConnection: Connection {
 
     func resize(cols: Int, rows: Int) {}
 
+    /// ブレークの長さ (SendBreakTime、ミリ秒)
+    var breakMs = 1000
+
+    /// CommSendBreak: ブレークを SendBreakTime ミリ秒出す。送信の順番を守るため送信のキューで行う
     func sendBreak() {
-        if fd >= 0 { tcsendbreak(fd, 0) }
+        let f = fd, ms = breakMs
+        writeQueue.async {
+            guard f >= 0 else { return }
+            _ = ioctl(f, TIOCSBRK)
+            usleep(useconds_t(max(0, ms) * 1000))
+            _ = ioctl(f, TIOCCBRK)
+        }
+    }
+
+    /// ポートのリセット (CommResetSerial): 送受信のバッファを捨てて、ポートの設定をかけ直す
+    func resetPort() {
+        guard fd >= 0 else { return }
+        tcflush(fd, TCIOFLUSH)
+        try? configure()
+        tcflush(fd, TCIOFLUSH)
+    }
+
+    /// CommLock(FALSE): ハードウェアのフロー制御なら RTS (DSR/DTR なら DTR) を上げ、それ以外は XON を送る
+    func unlock() {
+        guard fd >= 0 else { return }
+        switch flow {
+        case "rts": var b: Int32 = TIOCM_RTS; _ = ioctl(fd, TIOCMBIS, &b)
+        case "dsr": var b: Int32 = TIOCM_DTR; _ = ioctl(fd, TIOCMBIS, &b)
+        default: write([0x11])
+        }
     }
 
     // MARK: - マクロからの操作 (setbaud / setdtr / setrts / setflowctrl / getmodemstatus)
@@ -621,6 +666,7 @@ final class SerialConnection: Connection {
     @discardableResult
     func setBaud(_ baud: Int) -> Bool {
         guard fd >= 0, baud > 0 else { return false }
+        currentBaud = baud
         var t = termios()
         guard tcgetattr(fd, &t) == 0 else { return false }
         cfsetspeed(&t, speed_t(baud))

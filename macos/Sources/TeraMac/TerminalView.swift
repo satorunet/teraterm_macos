@@ -635,7 +635,7 @@ final class TerminalView: NSView, NSTextInputClient {
 
     override func rightMouseDown(with event: NSEvent) {
         if settings.rightClickPaste {
-            paste(nil)
+            if canPaste?() ?? true { startPaste(addCR: false) }
         } else {
             super.rightMouseDown(with: event)
         }
@@ -646,6 +646,7 @@ final class TerminalView: NSView, NSTextInputClient {
         let m = NSMenu()
         m.addItem(withTitle: "コピー", action: #selector(copy(_:)), keyEquivalent: "")
         m.addItem(withTitle: "貼り付け", action: #selector(paste(_:)), keyEquivalent: "")
+        m.addItem(withTitle: "貼り付け<CR>", action: #selector(pasteCR(_:)), keyEquivalent: "")
         return m
     }
 
@@ -669,6 +670,8 @@ final class TerminalView: NSView, NSTextInputClient {
         if selAnchor != nil { selAnchor = nil; selHead = nil; needsDisplay = true }
     }
 
+    /// 選択範囲の文字 (buffer.c BuffGetStringForCB)。行ごとに末尾の空白を除き、行の間は改行 (Mac なので LF)。
+    /// 終わりは含まない。折り返して続く行は「継続行をコピー」(EnableContinuedLineCopy) のときだけつなげる
     var selectedText: String? {
         guard let (s, e) = selectionRange() else { return nil }
         var out = ""
@@ -683,56 +686,135 @@ final class TerminalView: NSView, NSTextInputClient {
             if from < to {
                 for x in from..<to where line.cells[x].width != 0 { t.append(line.cells[x].ch) }
             }
-            if !(line.wrapped && g != e.line) {
+            let continued = settings.continuedLineCopy && line.wrapped && g != e.line
+            if !continued {
                 while t.hasSuffix(" ") { t.removeLast() }
             }
             out += t
-            if g != e.line && !line.wrapped { out += "\n" }
+            if g != e.line && !continued { out += "\n" }
         }
         return out
     }
 
-    // MARK: - コピー・貼り付け
+    var hasSelection: Bool { selectionRange() != nil }
 
+    /// いま見えている画面の文字 (印刷用。行末の空白は除く)
+    var visibleText: String {
+        var rowsText: [String] = []
+        for r in 0..<term.rows {
+            let idx = firstLineIndex + r
+            guard idx >= 0 && idx < term.totalLines else { continue }
+            var t = term.line(at: idx).text
+            while t.hasSuffix(" ") { t.removeLast() }
+            rowsText.append(t)
+        }
+        return rowsText.joined(separator: "\n")
+    }
+
+    // MARK: - コピー・貼り付け (vtwin.cpp OnEditCopy など)
+
+    /// コピー: 選択がなければクリップボードを空にする (CBSetTextW に空文字)
     @objc func copy(_ sender: Any?) {
-        guard let t = selectedText, !t.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(t, forType: .string)
+        if let t = selectedText, !t.isEmpty { pb.setString(t, forType: .string) }
     }
 
-    @objc func paste(_ sender: Any?) {
-        guard var s = NSPasteboard.general.string(forType: .string), !s.isEmpty else { return }
+    /// テーブルをコピー (buffer.c ConvertTable): U+0020 以下の文字の連続を 1 つの TAB に。改行はそのまま
+    @objc func copyTable(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        guard let t = selectedText, !t.isEmpty else { return }
+        pb.setString(TerminalView.convertTable(t), forType: .string)
+    }
+
+    static func convertTable(_ s: String) -> String {
+        var out = ""
+        var blank = false
+        for u in s.unicodeScalars {
+            if u == "\r" || u == "\n" {
+                out.unicodeScalars.append(u); blank = false
+            } else if u.value <= 0x20 {
+                if !blank { out += "\t"; blank = true }
+            } else {
+                out.unicodeScalars.append(u); blank = false
+            }
+        }
+        return out
+    }
+
+    /// 貼り付けた文字の送り先 (session が 1 行ごとに PasteDelayPerLine ずつ遅らせて送る)
+    var onPaste: ((String) -> Void)?
+
+    @objc func paste(_ sender: Any?) { startPaste(addCR: false) }
+    @objc func pasteCR(_ sender: Any?) { startPaste(addCR: true) }
+
+    /// clipboar.c CBPreparePaste
+    func startPaste(addCR: Bool) {
+        guard var s = NSPasteboard.general.string(forType: .string) else { return }
+        if settings.trimTrailingNLOnPaste {
+            while let c = s.last, c == "\r" || c == "\n" || c == "\r\n" { s.removeLast() }
+        }
+        // 確認 (CheckClipboardContentW)
+        if settings.confirmChangePaste {
+            var confirm = addCR ? settings.confirmChangePasteCR : s.contains(where: { $0 == "\r" || $0 == "\n" || $0 == "\r\n" })
+            if !confirm, let words = settings.confirmChangePasteWords() {
+                confirm = words.contains { s.contains($0) }
+            }
+            if confirm {
+                guard let edited = PasteConfirmDialog.run(text: s, over: window, near: cursorScreenPoint()) else { return }
+                s = edited
+            }
+        }
+        if s.isEmpty && !addCR { return }
+        let addBracket = !settings.bracketedControlOnly || s.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        if addCR { s += "\r" }
         s = s.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r")
-        if settings.confirmMultilinePaste && s.dropLast().contains("\r") && !term.bracketedPaste {
-            let a = NSAlert()
-            a.messageText = "複数行を貼り付けますか?"
-            let preview = s.count > 400 ? String(s.prefix(400)) + "…" : s
-            a.informativeText = preview.replacingOccurrences(of: "\r", with: "\n")
-            a.addButton(withTitle: "貼り付け")
-            a.addButton(withTitle: "やめる")
-            if a.runModal() != .alertFirstButtonReturn { return }
-        }
+        if term.bracketedPaste && addBracket { s = "\u{1B}[200~" + s + "\u{1B}[201~" }
         scrollToBottom()
-        if term.bracketedPaste {
-            onSendBytes?(Array("\u{1B}[200~".utf8))
-            onSendText?(s)
-            onSendBytes?(Array("\u{1B}[201~".utf8))
-        } else {
-            onSendText?(s)
-        }
+        onPaste?(s)
     }
 
+    /// 文字カーソルの画面上の位置 (確認ダイアログを出す場所)
+    private func cursorScreenPoint() -> NSPoint? {
+        guard let w = window else { return nil }
+        let r = convert(cursorRect(), to: nil)
+        return w.convertPoint(toScreen: NSPoint(x: r.minX, y: r.minY))
+    }
+
+    /// 全て選択 (BuffSelectAll): バッファの先頭から最後の行の次の行の頭まで。AutoTextCopy ならすぐコピー
     @objc override func selectAll(_ sender: Any?) {
         selMode = 1
         selAnchor = Pos(line: lineBase, col: 0)
-        selHead = Pos(line: lineBase + term.totalLines - 1, col: term.cols)
+        selHead = Pos(line: lineBase + term.totalLines, col: 0)
         needsDisplay = true
+        if settings.copyOnSelect { copy(nil) }
     }
 
+    /// 表示画面を選択 (BuffSelectScreen): いま見えている画面の行すべて
+    @objc func selectScreen(_ sender: Any?) {
+        selMode = 1
+        let top = lineBase + firstLineIndex
+        selAnchor = Pos(line: top, col: 0)
+        selHead = Pos(line: top + term.rows, col: 0)
+        needsDisplay = true
+        if settings.copyOnSelect { copy(nil) }
+    }
+
+    /// 選択を解除 (クリップボードはそのまま)
+    @objc func cancelSelection(_ sender: Any?) { clearSelection() }
+
+    /// 貼り付けてよいか (接続中・転送やファイル送信をしていない・ログの再生でない)。session が決める
+    var canPaste: (() -> Bool)?
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(copy(_:)) { return selectionRange() != nil }
-        if item.action == #selector(paste(_:)) { return NSPasteboard.general.string(forType: .string) != nil }
-        return true
+        switch item.action {
+        case #selector(copy(_:)), #selector(copyTable(_:)):
+            return hasSelection
+        case #selector(paste(_:)), #selector(pasteCR(_:)):
+            return (canPaste?() ?? true) && NSPasteboard.general.string(forType: .string) != nil
+        default:
+            return true
+        }
     }
 }
