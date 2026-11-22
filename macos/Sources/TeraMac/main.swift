@@ -207,7 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// ヘルプの目次 (Tera Term のヘルプ: マクロのコマンドなどの説明)
     @objc func openHelpIndex(_ sender: Any?) {
-        NSWorkspace.shared.open(URL(string: "https://teratermproject.github.io/manual/5/ja/")!)
+        HelpViewer.openIndex()
     }
 
     // 端末のウインドウがないときのメニュー
@@ -245,7 +245,7 @@ enum SelfTest {
         c.term.feed(demo)
         c.termView.dataArrived()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            snap(c.termView, dir + "/term.png")
+            snap(c.window?.contentView ?? c.termView, dir + "/term.png")  // ウィンドウ内のメニューバーも写す
             if let v = CreditsWindowController.shared.window?.contentView { snap(v, dir + "/credits.png") }
             if let about = AboutWindowController.shared.window, let v = about.contentView { snap(v, dir + "/about.png") }
             // マクロでローカルシェルと TCP 接続を実際に動かす
@@ -388,6 +388,8 @@ if CommandLine.arguments.contains("--purge-keychain") {
     exit(TeraUninstall.deleteKeychain() ? 0 : 1)
 }
 
+// ssh の ProxyCommand として動くとき (ProxyRelay.swift)。ここで終わる
+ProxyRelay.runIfRequested()
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

@@ -289,12 +289,23 @@ final class MacroRunner: NSObject, TTLHost {
 
     func ttlShowTT(_ mode: Int) {
         onMain {
-            guard let w = session?.window else { return }
+            guard let sess = session, let w = sess.window else { return }
+            let tek = sess.tekWindow?.window
+            let log = sess.logProgressWindow?.window
             switch mode {
             case -1: w.orderOut(nil)
             case 0: w.miniaturize(nil)
             case 1: w.deminiaturize(nil); w.makeKeyAndOrderFront(nil)
-            default: break   // TEK / ログウインドウはない
+            // TEK ウインドウ: 2 隠す 3 最小化 4 開く・元に戻す 5 閉じる
+            case 2: tek?.orderOut(nil)
+            case 3: tek?.miniaturize(nil)
+            case 4: let t = sess.openTEKWindow().window; t?.deminiaturize(nil); t?.makeKeyAndOrderFront(nil)
+            case 5: sess.closeTEKWindow()
+            // ログ記録中ウインドウ: 6 隠す 7 最小化 8 元に戻す
+            case 6: log?.orderOut(nil)
+            case 7: log?.miniaturize(nil)
+            case 8: log?.deminiaturize(nil); log?.orderFront(nil)
+            default: break
             }
         }
     }

@@ -171,6 +171,13 @@ extension SessionWindowController {
     @objc func printMenu(_ sender: Any?) {
         let screen = termView.visibleText
         let selection = termView.hasSelection ? termView.selectedText : nil
+        printText(selection ?? screen, selectionOnly: selection != nil)
+    }
+
+    /// 文字を印刷する (メニューの印刷・端末の印刷の制御シーケンス)
+    func printText(_ text: String, selectionOnly: Bool) {
+        let selection: String? = selectionOnly ? text : nil
+        let screen = text
         let info = NSPrintInfo.shared.copy() as! NSPrintInfo
         info.jobDisposition = .spool
         let margin: CGFloat = 36   // PrnMargin 50 (1/100 インチ) = 0.5 インチ
@@ -228,9 +235,9 @@ extension SessionWindowController {
         (conn as? SerialConnection)?.resetPort()
     }
 
-    /// TEK ウインドウ (Tektronix 4010) は Mac 版にはない
-    @objc func openTEK(_ sender: Any?) {}
-    @objc func closeTEK(_ sender: Any?) { NSSound.beep() }
+    /// TEK ウインドウ (Tektronix 4010/4014。SessionWindowController+TEK.swift): OnControlOpenTEK / OnControlCloseTEK
+    @objc func openTEK(_ sender: Any?) { openTEKWindow() }
+    @objc func closeTEK(_ sender: Any?) { closeTEKWindow() }
 
     /// マクロ (RunMacroW): マクロが動いていればマクロウインドウを出す。なければファイルを選んで実行
     @objc func macroMenu(_ sender: Any?) {
@@ -243,6 +250,12 @@ extension SessionWindowController {
             guard r == .OK, let url = panel.url else { return }
             self?.runMacro(url: url)
         }
+    }
+
+    /// 常に最前面に表示 (TTXAlwaysOnTop): このウインドウだけ。保存はしない
+    @objc func toggleAlwaysOnTop(_ sender: Any?) {
+        guard let w = window else { return }
+        w.level = w.level == .floating ? .normal : .floating
     }
 
     @objc func showMacroWindow(_ sender: Any?) {
@@ -269,8 +282,13 @@ extension SessionWindowController {
             return false
         case #selector(areYouThere(_:)):
             return ready && (conn as? TCPConnection)?.isTelnet == true && transfer == nil
-        case #selector(openTEK(_:)), #selector(closeTEK(_:)):
-            return false
+        case #selector(toggleAlwaysOnTop(_:)):
+            item.state = window?.level == .floating ? .on : .off
+            return true
+        case #selector(openTEK(_:)):
+            return true
+        case #selector(closeTEK(_:)):
+            return tekWindow != nil
         case #selector(macroMenu(_:)):
             return macro == nil && transfer == nil
         case #selector(showMacroWindow(_:)):

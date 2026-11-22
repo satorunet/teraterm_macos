@@ -287,24 +287,28 @@ struct ProxySettings: Equatable {
         return s
     }
 
-    /// ssh の ProxyCommand (macOS の nc -X)。TELNET プロキシは nc にないので nil
+    /// 接続に使う形 (TeraCore の ProxyHandshake へ渡す)。プロキシを使わなければ nil
+    var config: ProxyConfig? {
+        let c = ProxyConfig(type: type, host: host, port: port, user: user, pass: pass, timeout: timeout, resolve: resolve,
+                            telnetPrompts: [telnetHostnamePrompt, telnetUsernamePrompt, telnetPasswordPrompt,
+                                            telnetConnectedMessage, telnetErrorMessage])
+        return c.isEnabled ? c : nil
+    }
+
+    /// ssh の ProxyCommand。nc では TELNET プロキシと SOCKS5 / HTTP のパスワード認証ができないので、
+    /// このアプリ自身を --proxy-connect で動かし、TTProxy と同じやりとり (ProxyHandshake) で中継する。
+    /// 設定 (パスワードを含む) はコマンドラインに出さず、環境変数 (sshEnvironment) で渡す
     func sshArgs() -> [String] {
-        guard type != "none", !host.isEmpty else { return [] }
-        let x: String
-        switch type {
-        case "http": x = "connect"
-        case "socks4": x = "4"
-        case "socks5": x = "5"
-        default: return []
-        }
-        let p = port != 0 ? port : (type == "http" ? 8080 : 1080)
-        var cmd = "/usr/bin/nc -X \(x) -x \(host):\(p)"
-        if type == "http" && !user.isEmpty { cmd += " -P \(user)" }
-        cmd += " %h %p"
-        var a = ["-o", "ProxyCommand=" + cmd]
+        guard config != nil, let exe = ProxyRelay.executablePath else { return [] }
+        let q = "\"" + exe.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$").replacingOccurrences(of: "`", with: "\\`") + "\""
+        var a = ["-o", "ProxyCommand=\(q) \(ProxyRelay.argument) %h %p"]
         if timeout > 0 { a += ["-o", "ConnectTimeout=\(timeout)"] }
         return a
     }
+
+    /// ProxyCommand に渡す環境変数
+    var sshEnvironment: [String: String] { config?.environment ?? [:] }
 }
 
 /// 新しい SSH 接続に足す引数 (SessionWindowController.connect から呼ぶ)
@@ -312,6 +316,12 @@ enum SSHSetupArgs {
     static func forConnection(_ spec: ConnectionSpec) -> [String] {
         guard case .ssh = spec else { return [] }
         return ProxySettings.load().sshArgs() + SSHSettings.load().sshArgs()
+    }
+
+    /// ssh を動かすときの環境変数 (プロキシの設定)
+    static func environment(_ spec: ConnectionSpec) -> [String: String] {
+        guard case .ssh = spec else { return [:] }
+        return ProxySettings.load().sshEnvironment
     }
 }
 
@@ -862,9 +872,6 @@ final class ProxySetupDialog: SheetDialog, NSTextFieldDelegate {
         passField.stringValue = s.pass
         for f in [hostField, portField, userField, passField] { f.delegate = self }
         let other = SetupUI.button("その他の設定(&O)...", target: self, action: #selector(otherSettings))
-        let note = NSTextField(wrappingLabelWithString: "Mac 版では SSH の接続だけがプロキシを通ります (ssh の ProxyCommand で nc を使用)。TELNET プロキシとパスワード認証は使えません。")
-        note.preferredMaxLayoutWidth = 400
-        note.font = .systemFont(ofSize: 11)
         layout(SetupUI.column([
             SetupUI.grid([
                 [SetupUI.label("URL表現"), urlField],
@@ -874,7 +881,7 @@ final class ProxySetupDialog: SheetDialog, NSTextFieldDelegate {
                 [SetupUI.label("ユーザ名(&U)"), userField],
                 [SetupUI.label("パスワード(&P)"), passField],
             ]),
-            other, note,
+            other,
         ], spacing: 10))
         changed()
         present(on: w)

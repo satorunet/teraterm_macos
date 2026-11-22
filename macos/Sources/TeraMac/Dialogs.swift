@@ -80,6 +80,11 @@ class SheetDialog: NSObject {
 
 final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     var serialOnly = false
+    /// ts (Telnet / TCPPort / HistoryList の初期値)
+    var settings = TermSettings.load()
+    /// OK で決まった ts.HistoryList (IDC_HISTORY)
+    private(set) var historyList = false
+    private let historyCheck = NSButton(checkboxWithTitle: "ホストリストへ追加", target: nil, action: nil)
     private var completion: ((ConnectionSpec?, String?) -> Void)?
 
     private let tcpRadio = NSButton(radioButtonWithTitle: "TCP/IP", target: nil, action: nil)
@@ -104,7 +109,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     private let portPopup = NSPopUpButton()
     private let baudPopup = popup(SerialPort.baudRates.map(String.init), "9600")
     private let dataPopup = popup(["8", "7"], "8")
-    private let parityPopup = popup(["none", "odd", "even"], "none")
+    private let parityPopup = popup(["none", "odd", "even", "mark", "space"], "none")
     private let stopPopup = popup(["1", "2"], "1")
     private let flowPopup = popup(["none", "xon/xoff", "rts/cts"], "none")
 
@@ -130,11 +135,14 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         hostBox.placeholderString = "ホスト名か IP アドレス"
         hostBox.delegate = self
 
-        let svc = ConnHistory.lastService
-        sshRadio.state = svc == "ssh" ? .on : .off
-        telnetRadio.state = svc == "telnet" ? .on : .off
-        otherRadio.state = svc == "raw" ? .on : .off
-        portField.stringValue = svc == "ssh" ? "22" : "23"
+        // CheckRadioButton: TTSSH が有効 (前回 SSH) なら SSH、でなければ ts.Telnet で Telnet / その他。
+        // TCPポート# は ts.TCPPort (SSH のときは 22)
+        let ssh = ConnHistory.lastService == "ssh"
+        sshRadio.state = ssh ? .on : .off
+        telnetRadio.state = !ssh && settings.telnet ? .on : .off
+        otherRadio.state = !ssh && !settings.telnet ? .on : .off
+        portField.stringValue = ssh ? "22" : String(settings.tcpPort)
+        historyCheck.state = settings.historyList ? .on : .off
 
         let keyButton = NSButton(title: "選ぶ…", target: self, action: #selector(chooseKey))
 
@@ -169,6 +177,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
 
         let tcpGrid = NSGridView(views: [
             [label("ホスト:"), hostBox],
+            [NSGridCell.emptyContentView, historyCheck],
             [label("サービス:"), row([sshRadio, telnetRadio, otherRadio, label("  TCPポート:"), portField])],
             [label("ユーザー名:"), row([userField, label("パスワード:"), passField])],
             [label("秘密鍵:"), row([keyField, keyButton])],
@@ -182,7 +191,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         ])
         serialGrid.rowSpacing = 8
         serialGrid.column(at: 0).xPlacement = .trailing
-        tcpViews = [hostBox, sshRadio, telnetRadio, otherRadio, portField, userField, passField, keyField, keyButton]
+        tcpViews = [hostBox, historyCheck, sshRadio, telnetRadio, otherRadio, portField, userField, passField, keyField, keyButton]
         serialViews = [portPopup, refresh, baudPopup, dataPopup, parityPopup, stopPopup, flowPopup]
 
         var parts: [NSView] = []
@@ -237,11 +246,12 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         if tcp { serviceChanged() }
     }
 
-    @objc private func serviceChanged() {
+    @objc private func serviceChanged(_ sender: NSButton? = nil) {
         let tcp = tcpRadio.state == .on
         let ssh = sshRadio.state == .on
-        if ssh && portField.stringValue == "23" { portField.stringValue = "22" }
-        if !ssh && portField.stringValue == "22" { portField.stringValue = "23" }
+        // IDC_HOSTTELNET → ts.TelPort (23)、IDC_HOSTSSH → 22、その他はそのまま
+        if sender === telnetRadio { portField.stringValue = "23" }
+        if sender === sshRadio { portField.stringValue = "22" }
         userField.isEnabled = tcp && ssh
         passField.isEnabled = tcp && ssh
         keyField.isEnabled = tcp && ssh
@@ -286,7 +296,14 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
             if let at = host.firstIndex(of: "@") {
                 user = String(host[..<at]); host = String(host[host.index(after: at)...])
             }
-            let port = Int(portField.stringValue) ?? 22
+            guard let port = Int(portField.stringValue.trimmingCharacters(in: .whitespaces)) else {
+                let a = NSAlert()
+                a.alertStyle = .warning
+                a.messageText = "Tera Term"
+                a.informativeText = "TCPポート番号には数値を入力してください."
+                a.beginSheetModal(for: panel, completionHandler: nil)
+                return
+            }
             let history: String
             if sshRadio.state == .on {
                 spec = .ssh(host: host, port: port, user: user, keyFile: keyField.stringValue)
@@ -304,7 +321,10 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
                 ConnHistory.lastService = "raw"
                 history = "\(host):\(port) /t=0"
             }
-            ConnHistory.remember(host: history)
+            // ts.HistoryList: チェックしたときだけホストリストに足す
+            historyList = historyCheck.state == .on
+            UserDefaults.standard.set(historyList, forKey: "HistoryList")
+            if historyList { ConnHistory.remember(host: history) }
             ConnHistory.lastMode = "tcp"
         }
         close()

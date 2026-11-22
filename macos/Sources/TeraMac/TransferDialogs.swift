@@ -7,6 +7,7 @@
 // 埋め込みのオプション (IDD_XOPT / IDD_FOPT) はパネルの accessoryView にしている。
 
 import AppKit
+import ObjectiveC
 import TeraCore
 
 // MARK: - ts のうち FileTransferOptions / DropSettings にないもの
@@ -24,6 +25,10 @@ final class TransferExtraSettings {
     var fileSendFilter = ""
     /// FileReceiveFilter=
     var fileReceiveFilter = ""
+    /// FTHideDialog=off: ファイル送信の進み具合のダイアログを出さない
+    var ftHideDialog = false
+    /// FileSendHighSpeedMode=on: シリアル 115200bps 以上のシーケンシャルのバイナリ送信を大きなまとまりで送る
+    var fileSendHighSpeedMode = true
 
     static func load() -> TransferExtraSettings {
         let s = TransferExtraSettings()
@@ -35,12 +40,81 @@ final class TransferExtraSettings {
             s.receivefileSkipOptionDialog = ini.onOff(sec, "ReceivefileSkipOptionDialog") ?? false
             s.fileSendFilter = ini.string(sec, "FileSendFilter") ?? ""
             s.fileReceiveFilter = ini.string(sec, "FileReceiveFilter") ?? ""
+            s.ftHideDialog = ini.onOff(sec, "FTHideDialog") ?? false
+            s.fileSendHighSpeedMode = ini.onOff(sec, "FileSendHighSpeedMode") ?? true
         }
+        // 設定画面で保存したもの (UserDefaults のキーは INI と同じ) があればそちら
+        let d = UserDefaults.standard
+        if let v = d.string(forKey: "FileSendFilter") { s.fileSendFilter = v }
+        if let v = d.string(forKey: "FileReceiveFilter") { s.fileReceiveFilter = v }
+        if d.object(forKey: "FTHideDialog") != nil { s.ftHideDialog = d.bool(forKey: "FTHideDialog") }
+        if d.object(forKey: "FileSendHighSpeedMode") != nil { s.fileSendHighSpeedMode = d.bool(forKey: "FileSendHighSpeedMode") }
         return s
     }
 }
 
 // MARK: - 共通の部品
+
+private var filePanelFilterKey: UInt8 = 0
+
+/// ファイルのパネルのフィルタ (GetCommonDialogFilterWW): 「ユーザ定義(*.txt;*.log)」と「すべてのファイル(*.*)」を選べる。
+/// 合わないファイルは選べない (灰色)。パネルが持つ (objc の関連付け) ので、呼んだ側で持っておかなくてよい
+final class FilePanelFilter: NSObject, NSOpenSavePanelDelegate {
+    let filter: FileDialogFilter
+    private var all = false
+    private weak var panel: NSSavePanel?
+
+    private init(filter: FileDialogFilter, panel: NSSavePanel) {
+        self.filter = filter
+        self.panel = panel
+    }
+
+    /// mask が空なら何もしない。いまの accessoryView (転送のオプション) はフィルタの下に残す
+    @discardableResult
+    static func attach(to p: NSSavePanel, mask: String) -> FilePanelFilter? {
+        let f = FileDialogFilter(mask)
+        guard !f.isEmpty else { return nil }
+        let k = FilePanelFilter(filter: f, panel: p)
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: [f.userFilterName, FileDialogFilter.allFilterName])
+        popup.target = k
+        popup.action = #selector(changed(_:))
+        let row = NSStackView(views: [NSTextField(labelWithString: "ファイルの種類:"), popup])
+        row.spacing = 6
+        var views: [NSView] = [row]
+        if let old = p.accessoryView {
+            old.translatesAutoresizingMaskIntoConstraints = false
+            old.widthAnchor.constraint(equalToConstant: old.frame.width).isActive = true
+            old.heightAnchor.constraint(equalToConstant: old.frame.height).isActive = true
+            views.append(old)
+        }
+        let st = NSStackView(views: views)
+        st.orientation = .vertical
+        st.alignment = .centerX
+        st.spacing = 6
+        st.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+        st.frame = NSRect(origin: .zero, size: st.fittingSize)
+        p.accessoryView = st
+        if let op = p as? NSOpenPanel { op.isAccessoryViewDisclosed = true }
+        p.delegate = k
+        objc_setAssociatedObject(p, &filePanelFilterKey, k, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return k
+    }
+
+    @objc private func changed(_ sender: NSPopUpButton) {
+        all = sender.indexOfSelectedItem == 1
+        panel?.validateVisibleColumns()
+    }
+
+    func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
+        if all { return true }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue { return true }
+        return filter.matches(url.lastPathComponent)
+    }
+}
+
+private var pendingFilterMaskKey: UInt8 = 0
 
 /// ファイルをドロップできるダイアログの中身 (WM_DROPFILES: 最初の 1 つだけ)
 final class FileDropContentView: NSView {
@@ -231,8 +305,12 @@ final class SendFileDialog: TransferModalDialog {
     }
 
     /// sendfiledlg(): Control キー (Windows の Ctrl) を押していたら skip の扱いを逆にする
+    /// ts.FileSendFilter (「...」の Open ダイアログのフィルタ)
+    static var filter = ""
+
     static func run(values: Values, initialDir: String, skipDialog: Bool, filter: String,
                     over parent: NSWindow?) -> Values? {
+        SendFileDialog.filter = filter
         var skip = skipDialog
         if NSEvent.modifierFlags.contains(.control) { skip.toggle() }
         if !skip {
@@ -254,7 +332,9 @@ final class SendFileDialog: TransferModalDialog {
         p.canChooseFiles = true
         p.canChooseDirectories = false
         p.allowsMultipleSelection = false
-        p.directoryURL = URL(fileURLWithPath: initialDir, isDirectory: true)
+        p.directoryURL = TransferFilePanels.defaultFile(filter: filter, fileDir: initialDir)
+            ?? URL(fileURLWithPath: initialDir, isDirectory: true)
+        FilePanelFilter.attach(to: p, mask: filter)
         if !initial.isEmpty {
             let full = FileTransferPaths.resolve(initial, fileDir: initialDir)
             if FileManager.default.fileExists(atPath: full) { p.directoryURL = URL(fileURLWithPath: full) }
@@ -405,8 +485,13 @@ final class ReceiveFileDialog: TransferModalDialog {
         build()
     }
 
+    /// ts.FileReceiveFilter (「...」の保存ダイアログのフィルタ)
+    static var filter = ""
+
     /// recvfiledlg(): Control キーで skip の扱いを逆にする。skip のときは保存ダイアログだけ
-    static func run(values: Values, initialDir: String, skipDialog: Bool, over parent: NSWindow?) -> Values? {
+    static func run(values: Values, initialDir: String, skipDialog: Bool, filter: String = "",
+                    over parent: NSWindow?) -> Values? {
+        ReceiveFileDialog.filter = filter
         var skip = skipDialog
         if NSEvent.modifierFlags.contains(.control) { skip.toggle() }
         if !skip {
@@ -427,6 +512,7 @@ final class ReceiveFileDialog: TransferModalDialog {
         p.message = "Tera Term: ファイル受信"
         p.canCreateDirectories = true
         p.directoryURL = URL(fileURLWithPath: initialDir, isDirectory: true)
+        FilePanelFilter.attach(to: p, mask: filter)
         if !initial.isEmpty {
             let full = FileTransferPaths.resolve(initial, fileDir: initialDir)
             p.directoryURL = URL(fileURLWithPath: (full as NSString).deletingLastPathComponent, isDirectory: true)
@@ -591,10 +677,13 @@ enum TransferFilePanels {
         p.canChooseDirectories = false
         p.allowsMultipleSelection = multi
         p.directoryURL = defaultFile(filter: filter, fileDir: fileDir) ?? URL(fileURLWithPath: fileDir, isDirectory: true)
+        // フィルタ (ts.FileSendFilter) は begin で付ける (オプションの accessoryView を付けたあと)
+        objc_setAssociatedObject(p, &pendingFilterMaskKey, filter, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         return p
     }
 
     private static func begin(_ p: NSSavePanel, over w: NSWindow?, _ done: @escaping (Bool) -> Void) {
+        if let mask = objc_getAssociatedObject(p, &pendingFilterMaskKey) as? String { FilePanelFilter.attach(to: p, mask: mask) }
         if let w = w {
             p.beginSheetModal(for: w) { done($0 == .OK) }
         } else {
@@ -821,9 +910,14 @@ enum SequentialSendPlan {
     ///   - bracketed: BracketedPasteMode(): ESC[200~ と ESC[201~ (バイナリとして) で囲む
     /// テキストは 1 バイトずつ読み、CR の直後の LF は飛ばし (CR LF → CR)、2 バイト文字は CP932 で 1 文字にし、
     /// TAB / LF / CR 以外の制御文字は送らない。それ以外の 1 バイトはそのまま U+00xx として送る (CommTextOutW)
-    static func make(data: Data, binary: Bool, bracketed: Bool) -> SendFilePlan {
+    /// FILE_SEND_BUF_SIZE (FileSendBinayBoost で 1 度に読む大きさ)
+    static let boostPiece = 8192
+
+    /// highSpeed: FileSendBinayBoost の条件 (シリアル・FileSendHighSpeedMode・バイナリ・ブラケットなし・Telnet でない・
+    /// ローカルエコーなし・115200bps 以上) を満たす: 8192 バイトずつまとめて送る
+    static func make(data: Data, binary: Bool, bracketed: Bool, highSpeed: Bool = false) -> SendFilePlan {
         let b = [UInt8](data)
-        let piece = 1024
+        let piece = highSpeed && binary && !bracketed ? boostPiece : 1024
         var chunks: [SendFilePlan.Chunk] = []
         if bracketed { chunks.append(.binary(Array("\u{1B}[200~".utf8))) }
         if binary {

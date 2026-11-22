@@ -16,7 +16,13 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     private(set) var connected = false
     /// connect したが、まだつながっていない (TCP の接続中・ssh がまだ何も出していない)
     private(set) var connecting = false
-    var remoteTitle: String?
+    /// cv.TitleRemoteW (端末が持つ。nil を入れるとリモートのタイトルを消す)
+    var remoteTitle: String? {
+        get { term.remoteTitle }
+        set { if newValue == nil { term.clearRemoteTitle() } }
+    }
+    /// JIS の送信 (漢字アウトを次の英数の前に付けるので、ウインドウごとに状態を持つ)
+    private var jisEncoder = JISEncoder()
     /// ログ (filesys_log.cpp の LogVar)
     private(set) var teraLog: TeraLog?
     var logPath: String? { teraLog?.path }
@@ -29,8 +35,19 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     var logAutoClose = false
     // マクロ用
     var multicastName = ""
-    /// settitle / /W= のタイトル (Tera Term の ts.TitleW)。AcceptTitleChangeRequest=overwrite と同じくリモートのタイトルを消す
-    var macroTitle: String? { didSet { remoteTitle = nil; updateTitle() } }
+    /// settitle / /W= のタイトル (Tera Term の ts.TitleW。nil なら設定の Title)。
+    /// CmdSetTitle: AcceptTitleChangeRequest=overwrite ならリモートのタイトルを消す
+    var macroTitle: String? {
+        didSet {
+            if settings.acceptTitleChangeRequest.lowercased() == "overwrite" { remoteTitle = nil }
+            term.localTitle = localTitle   // タイトル報告 (CSI 21 t) にも使う
+            updateTitle()
+        }
+    }
+    /// ts.TitleW
+    var localTitle: String { macroTitle ?? settings.title }
+    /// SerialNo (RegWin: 前のウインドウの番号 + 1)
+    let serialNo: Int
     /// connect の /timeout= など、ssh に渡す追加の引数
     private var sshExtraArgs: [String] = []
     /// ファイル転送のフォルダ (GetFileDir: FileDir を展開し、無ければダウンロード)。設定すると FileDir をそのまま書き換える
@@ -78,11 +95,20 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     var skipCloseConfirm = false
     var replayTitle: String?
     var replayFinished = false
+    /// ドラッグ中に変わった端末の大きさ (終わったときに相手へ知らせる)
+    var pendingResize: (Int, Int)?
 
     static var all: [SessionWindowController] = []
 
-    init(settings: TermSettings = TermSettings.load()) {
+    init(settings initial: TermSettings = TermSettings.load()) {
+        var settings = initial
+        // 起動時のテーマ (BGLoadThemeFile): テーマの色を設定に写してから画面を作る
+        if let t = ThemeFile.startupTheme(base: settings) {
+            t.colors.apply(to: &settings)
+            ThemeRuntime.shared.set(t)
+        }
         self.settings = settings
+        serialNo = (SessionWindowController.all.last?.serialNo ?? 0) + 1
         term = Terminal(cols: settings.cols, rows: settings.rows)
         termView = TerminalView(term: term, settings: settings)
         decoder = StreamDecoder(encoding: settings.encoding)
@@ -91,7 +117,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         win.tabbingMode = .preferred
         super.init(window: win)
         win.delegate = self
-        win.contentView = termView
+        win.contentView = TerminalContainerView(termView: termView)  // ウィンドウ内のメニューバー + 端末
         win.backgroundColor = settings.bg
         applyNewlineSettings()
         fitWindow(cols: settings.cols, rows: settings.rows)
@@ -101,9 +127,33 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
         win.makeFirstResponder(termView)
 
-        term.onResponse = { [weak self] s in self?.sendBytes(Array(s.utf8), echo: false) }
-        term.onTitle = { [weak self] t in self?.remoteTitle = t; self?.updateTitle() }
+        // 応答はバイト列のまま送る (Answerback・タイトル報告は UTF-8 とは限らない)
+        term.onResponseBytes = { [weak self] b in self?.sendBytes(b, echo: false, reconnect: false) }
+        // OSC 0 / 1 / 2: 端末がリモートのタイトルを覚えている (AcceptTitleChangeRequest=off なら受けない)。タイトルを組み立て直す
+        term.onTitle = { [weak self] _ in self?.updateTitle() }
         term.onBell = { NSSound.beep() }
+        term.onBellKind = { [weak self] k in
+            switch k {
+            case .sound: NSSound.beep()
+            case .visual: self?.flashTerminal()
+            case .off: break
+            }
+        }
+        term.onWindowOp = { [weak self] op in self?.windowOperation(op) }
+        term.windowInfo = { [weak self] in self?.currentWindowInfo() ?? WindowInfo() }
+        term.onClipboardWrite = { s in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(s, forType: .string)
+        }
+        term.onClipboardRead = { NSPasteboard.general.string(forType: .string) }
+        term.onClipboardNotice = { [weak self] n in self?.showClipboardNotice(n) }
+        term.onPrint = { [weak self] r in
+            guard let self = self else { return }
+            switch r {
+            case .screen: self.printText(self.termView.visibleText, selectionOnly: false)
+            case .text(let t): self.printText(t, selectionOnly: false)
+            }
+        }
         term.onMacroText = { [weak self] b in self?.macroText(b) }
         termView.onSendText = { [weak self] s in self?.sendText(s) }
         termView.onSendBytes = { [weak self] b in self?.sendBytes(b, echo: true) }
@@ -111,14 +161,103 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         termView.onPaste = { [weak self] s in self?.sendPasteText(s, echo: true) }
         termView.canPaste = { [weak self] in self?.canPaste ?? false }
         termView.onResize = { [weak self] c, r in
-            self?.conn?.resize(cols: c, rows: r)
-            self?.updateTitle()
+            guard let self = self else { return }
+            // ウインドウの大きさをドラッグで変えている間は相手に知らせず、終わったときに 1 回だけ知らせる
+            // (知らせるたびにシェルがプロンプトを描き直し、古い行が何度も残るため)
+            if self.window?.inLiveResize == true {
+                self.pendingResize = (c, r)
+            } else {
+                self.conn?.resize(cols: c, rows: r)
+            }
+            self.updateTitle()
         }
         SessionWindowController.all.append(self)
+        // 端末の設定 (端末 ID・タイトル・制御シーケンスなど) をすぐにかける
+        applySettings(settings)
         updateTitle()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - 端末からの依頼 (ベル・ウィンドウ操作・OSC 52)
+
+    /// ビジュアルベル: 端末を一瞬白くする
+    func flashTerminal() {
+        let flash = NSView(frame: termView.bounds)
+        flash.wantsLayer = true
+        flash.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
+        flash.autoresizingMask = [.width, .height]
+        termView.addSubview(flash)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { flash.removeFromSuperview() }
+    }
+
+    /// スクリーンの左上を原点にした座標 (Windows と同じ向き) と Mac の座標を変える
+    private var screenTop: CGFloat { (window?.screen ?? NSScreen.main)?.frame.maxY ?? 0 }
+
+    /// CSI Ps t (vtwin.cpp / vtdisp.c DispWindowOp)
+    private func windowOperation(_ op: WindowOp) {
+        guard let w = window else { return }
+        switch op {
+        case .deiconify: w.deminiaturize(nil)
+        case .iconify: w.miniaturize(nil)
+        case .move(let x, let y): w.setFrameTopLeftPoint(NSPoint(x: CGFloat(x), y: screenTop - CGFloat(y)))
+        case .resizePixels(let width, let height):
+            let cur = termView.bounds.size
+            let wd = width > 0 ? CGFloat(width) : cur.width, ht = height > 0 ? CGFloat(height) : cur.height
+            let cols = max(1, Int(wd / termView.cellW)), rows = max(1, Int(ht / termView.cellH))
+            resizeTerminal(cols: cols, rows: rows)
+        case .raise: w.orderFront(nil)
+        case .lower: w.orderBack(nil)
+        case .refresh: termView.needsDisplay = true
+        case .resizeTerminal(let c, let r):
+            resizeTerminal(cols: c > 0 ? c : term.cols, rows: r > 0 ? r : term.rows)
+        case .maximize: if !w.isZoomed { w.zoom(nil) }
+        case .restore: if w.isZoomed { w.zoom(nil) }
+        case .toggleMaximize: w.zoom(nil)
+        }
+    }
+
+    /// ChangeTerminalSize: 端末の桁数・行数を変えてウインドウを合わせ、相手に知らせる
+    private func resizeTerminal(cols: Int, rows: Int) {
+        fitWindow(cols: cols, rows: rows)
+        conn?.resize(cols: term.cols, rows: term.rows)
+        updateTitle()
+    }
+
+    private func currentWindowInfo() -> WindowInfo {
+        var i = WindowInfo()
+        guard let w = window else { return i }
+        let top = screenTop
+        i.iconified = w.isMiniaturized
+        i.windowX = Int(w.frame.minX); i.windowY = Int(top - w.frame.maxY)
+        i.windowWidth = Int(w.frame.width); i.windowHeight = Int(w.frame.height)
+        let client = w.convertToScreen(termView.convert(termView.bounds, to: nil))
+        i.clientX = Int(client.minX); i.clientY = Int(top - client.maxY)
+        i.clientWidth = Int(client.width); i.clientHeight = Int(client.height)
+        let vis = (w.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        i.screenWidth = Int(vis.width); i.screenHeight = Int(vis.height)
+        i.cellWidth = Int(termView.cellW); i.cellHeight = Int(termView.cellH)
+        i.screenCols = termView.cellW > 0 ? Int(vis.width / termView.cellW) : 0
+        i.screenRows = termView.cellH > 0 ? Int(vis.height / termView.cellH) : 0
+        return i
+    }
+
+    /// OSC 52 の通知 (NotifyClipboardAccess)。止めないようにシートで出す
+    private func showClipboardNotice(_ n: ClipboardNotice) {
+        guard let w = window, w.attachedSheet == nil else { return }
+        let a = NSAlert()
+        a.alertStyle = .informational
+        a.messageText = n.title
+        a.informativeText = n.message
+        a.beginSheetModal(for: w, completionHandler: nil)
+    }
+
+    /// 送る文字を送信の文字コードにする (JIS は漢字アウトの状態を続ける)
+    func encodeForSend(_ s: String) -> [UInt8] {
+        guard settings.encodingSend == .jis else { return settings.encodingSend.encode(s) }
+        jisEncoder.options = TermEncoding.jisSendOptions
+        return jisEncoder.encode(s)
+    }
 
     private func applyNewlineSettings() {
         term.recvCRasCRLF = settings.recvNewline == "CR"
@@ -127,7 +266,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     func fitWindow(cols: Int? = nil, rows: Int? = nil) {
         guard let w = window else { return }
-        let size = termView.contentSize(cols: cols ?? term.cols, rows: rows ?? term.rows)
+        var size = termView.contentSize(cols: cols ?? term.cols, rows: rows ?? term.rows)
+        size.height += InWindowMenuBar.currentHeight(forWidth: size.width)
         let top = w.frame.maxY
         w.setContentSize(size)
         w.setFrameTopLeftPoint(NSPoint(x: w.frame.minX, y: top))
@@ -135,10 +275,19 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func applySettings(_ s: TermSettings) {
+        term.aixterm16Color = s.aixterm16Color
+        term.xterm256Color = s.xterm256Color
         let resize = s.cols != settings.cols || s.rows != settings.rows || s.fontName != settings.fontName || s.fontSize != settings.fontSize
         settings = s
         termView.settings = s
         decoder.encoding = s.encoding
+        decoder.jis7Katakana = s.katakanaReceive7
+        TermEncoding.jisSendOptions = JISSendOptions(kanjiIn: s.kanjiIn, kanjiOut: s.kanjiOut, katakana7: s.katakanaSend7)
+        term.applyTeraTermSettings(terminalID: s.terminalID, answerback: s.answerbackBytes, title: localTitle, acceptTitleChangeRequest: s.acceptTitleChangeRequest, titleReportSequence: s.titleReportSequence,
+            windowCtrlSequence: s.windowCtrlSequence, windowReportSequence: s.windowReportSequence, cursorCtrlSequence: s.cursorCtrlSequence, clipboardAccessFromRemote: s.clipboardAccessFromRemote, notifyClipboardAccess: s.notifyClipboardAccess,
+            clearScrollBufferFromRemote: s.clearScrollBufferFromRemote, printerCtrlSequence: s.printerCtrlSequence, beep: s.beep, receive: s.encoding, send: s.encodingSend,
+            decSpMappingDir: s.decSpMappingDir, unicodeToDecSpMapping: s.unicodeToDecSpMapping, unicodeEmojiOverride: s.unicodeEmojiOverride, unicodeEmojiWidth: s.unicodeEmojiWidth)
+        term.defaultCursorBlink = s.cursorBlink
         window?.backgroundColor = s.bg
         applyNewlineSettings()
         if let sc = conn as? SerialConnection { sc.charDelayMs = s.charDelayMs; sc.lineDelayMs = s.lineDelayMs }
@@ -149,16 +298,41 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         termView.needsDisplay = true
     }
 
+    /// ChangeTitle (ttwinman.c): Title / TitleFormat / AcceptTitleChangeRequest と接続の状態から
     func updateTitle() {
-        if let mt = macroTitle {
-            window?.title = mt
-            window?.tab.title = mt
-            return
+        let t = WindowTitle.make(titleInput)
+        guard let w = window else { return }
+        w.title = t
+        w.tab.title = t
+        // Windows と同じくタイトルバーにアプリのアイコン
+        if w.representedURL == nil {
+            w.representedURL = Bundle.main.bundleURL
+            if let icon = NSApp.applicationIconImage?.copy() as? NSImage {
+                icon.size = NSSize(width: 16, height: 16)
+                w.standardWindowButton(.documentIconButton)?.image = icon
+            }
         }
-        var t = remoteTitle ?? replayTitle ?? spec?.title ?? "未接続"
-        if (spec != nil && !connected && !connecting) || replayFinished { t += " [未接続]" }
-        window?.title = "\(t) - Tera Term Mac \(term.cols)x\(term.rows)"
-        window?.tab.title = remoteTitle ?? spec?.title ?? "未接続"
+    }
+
+    /// ChangeTitle の材料 (GetConnectHostName は ts.HostName: ホスト名だけ。ポートは ts.TCPPort)
+    var titleInput: WindowTitleInput {
+        var i = WindowTitleInput(title: localTitle, remoteTitle: remoteTitle,
+                                 acceptTitleChangeRequest: settings.acceptTitleChangeRequest,
+                                 titleFormat: settings.titleFormat, connecting: connecting,
+                                 ready: connected, serialNo: serialNo)
+        if isReplay {
+            // ログの再生 (IdFile): 再生しているファイル
+            i.ready = !replayFinished
+            i.port = .tcp(host: replayTitle ?? "", port: 0)
+            return i
+        }
+        switch spec {
+        case .ssh(let h, let p, _, _)?, .telnet(let h, let p)?, .rawTCP(let h, let p)?: i.port = .tcp(host: h, port: p)
+        case .serial(let sp)?: i.port = .serial(name: (sp.path as NSString).lastPathComponent, baud: (conn as? SerialConnection)?.params.baud ?? sp.baud)
+        case .shell?: i.port = .tcp(host: ConnectionSpec.shell.title, port: 0)
+        case nil: break
+        }
+        return i
     }
 
     // MARK: - 接続
@@ -166,9 +340,17 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     func showConnectDialog(onEnd: (() -> Void)? = nil) {
         guard let w = window else { onEnd?(); return }
         let dlg = ConnectDialog()
-        dlg.begin(on: w) { [weak self] spec, password in
+        dlg.settings = settings
+        dlg.begin(on: w) { [weak self, weak dlg] spec, password in
             defer { onEnd?() }
             guard let self = self, let spec = spec else { return }
+            // ダイアログの値を ts に (HistoryList / Telnet / TCPPort)
+            switch spec {
+            case .ssh: self.settings.historyList = dlg?.historyList ?? self.settings.historyList
+            case .telnet(_, let p): self.settings.telnet = true; self.settings.tcpPort = p; self.settings.historyList = dlg?.historyList ?? self.settings.historyList
+            case .rawTCP(_, let p): self.settings.telnet = false; self.settings.tcpPort = p; self.settings.historyList = dlg?.historyList ?? self.settings.historyList
+            default: break
+            }
             self.connect(spec, password: password)
         }
     }
@@ -182,7 +364,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         self.spec = spec
         remoteTitle = nil
         sshExtraArgs = sshArgs
-        let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs + SSHSetupArgs.forConnection(spec), timeout: timeout, telnetBinary: telnetBinary)
+        // TTSSH は pty-req の端末の種類に ts.TermType を使う
+        var sshEnv = SSHSetupArgs.environment(spec)
+        if !settings.termType.isEmpty { sshEnv["TERM"] = settings.termType }
+        let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs + SSHSetupArgs.forConnection(spec),
+                               sshEnv: sshEnv, timeout: timeout, telnetBinary: telnetBinary, termType: settings.termType,
+                               keepAlive: settings.telKeepAliveInterval, proxy: ProxySettings.load().config)
         if let sc = c as? SerialConnection { sc.charDelayMs = settings.charDelayMs; sc.lineDelayMs = settings.lineDelayMs; sc.breakMs = settings.sendBreakTime }
         c.onData = { [weak self] b in self?.received(b) }
         c.onClose = { [weak self, weak c] msg in
@@ -215,6 +402,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             self.teraLog?.connectedTime = self.connectedAt
             if c is TCPConnection { self.notice("\(spec.title) に接続しました") }
             self.updateTitle()
+            self.autoStartLog()
             self.macro?.connectionChanged()
         }
         if c is TCPConnection { notice("\(spec.title) に接続しています…") }
@@ -249,7 +437,15 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         macro?.connectionChanged()
         if case .serial(let p) = spec { notice("\(p.path) を開きました (\(p.baud) bps, \(p.dataBits)\(p.parity.prefix(1).uppercased())\(p.stopBits), フロー制御: \(p.flow))") }
         updateTitle()
+        autoStartLog()
         return true
+    }
+
+    /// 開いているシリアルポートの設定を変えた (setbaud・設定の変更): spec とタイトルを今の値にする
+    func serialParamsChanged() {
+        guard let sc = conn as? SerialConnection, case .serial? = spec else { return }
+        spec = .serial(sc.params)
+        updateTitle()
     }
 
     var isConnected: Bool { connected }
@@ -311,6 +507,9 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             if bytes.isEmpty { return }
         }
         teraLog?.putBinary(bytes)   // バイナリのログは受信したそのまま (FLogPutBinary)
+        // TEK ウインドウが前のときは TEK へ (VT ↔ TEK の切り替えもここ)
+        bytes = routeTEK(bytes)
+        if bytes.isEmpty { return }
         let s = decoder.decode(bytes)
         guard !s.isEmpty else { return }
         term.feed(s)
@@ -328,7 +527,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             if hit {
                 loginSteps.removeFirst()
                 recentOutput = ""
-                sendBytes(settings.encodingSend.encode(step.response) + settings.sendNewlineBytes, echo: false)
+                sendBytes(encodeForSend(step.response) + settings.sendNewlineBytes, echo: false)
             }
         }
     }
@@ -336,7 +535,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - 送信
 
     func sendText(_ s: String) {
-        sendBytes(settings.encodingSend.encode(s), echo: true)
+        sendBytes(encodeForSend(s), echo: true)
     }
 
     /// binary: Telnet の CR を CR NUL にするか (CommBinaryOut は CR LF も CR NUL LF。テキストは改行コードの設定どおり)。
@@ -374,6 +573,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     func startLog(path: String, options o: TTLLogOptions, code: TeraLog.Code = .utf8, bom: Bool = false) -> Bool {
         guard teraLog == nil else { return false }
         guard let l = TeraLog(path: path, options: o, code: code, bom: bom, connectedTime: connectedAt) else { return false }
+        // Log rotate configuration (ts.LogRotate / LogRotateSize / LogRotateStep)
+        l.configureRotation(enabled: settings.logRotate != 0, size: settings.logRotateSize, step: settings.logRotateStep)
         teraLog = l
         // CmdSetLogOpt で ts.LogTypePlainText が変わり、FixLogOption でバイナリなら off になる (BS をマクロに渡すかも変わる)
         term.logTypePlainText = l.options.plainText
@@ -396,8 +597,10 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     /// logrotate size N / rotate N / halt (今のログだけ)
     func setLogRotate(_ command: String) { teraLog?.setRotate(command) }
 
-    /// ログのフォルダ (GetTermLogDir: LogDefaultPath がなければ FileDir)。Mac 版は changedir のフォルダ、なければ書類フォルダ
+    /// ログのフォルダ (GetTermLogDir: LogDefaultPath があればそれ、なければ FileDir)。どちらもなければ書類フォルダ
     var logDirectory: String {
+        let def = (settings.logDefaultPath as NSString).expandingTildeInPath
+        if !def.isEmpty { return FileTransferPaths.expandEnvironment(def) }
         if let d = transferDir, !d.isEmpty, FileManager.default.fileExists(atPath: d) { return d }
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()
     }
@@ -533,7 +736,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         var out: [UInt8] = []
         for (i, part) in text.components(separatedBy: "\r").enumerated() {
             if i > 0 { out += settings.sendNewlineBytes }
-            out += settings.encodingSend.encode(part)
+            out += encodeForSend(part)
         }
         sendBytes(out, echo: echo, reconnect: false)
     }
@@ -542,6 +745,24 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     /// Mac には KEYBOARD.CNF がないので、既定の割り当て (IBMKEYB.CNF / VT のキー) と主なキーだけを送る。
     /// Enter は送信の改行コード、カーソルキーはアプリケーションカーソルモードに従う
     func macroSendKeyCode(_ code: Int, count: Int) {
+        // KeyCodeSend: キーマップ (KEYBOARD.CNF) に割り当てのあるキーはその内容 (GetKeyStr) を送る
+        let km = KeyMapStore.current
+        let id = km.keyID(forCode: code)
+        if id > 0, let a = km.action(for: id, appKeypad: term.appKeypad, appCursor: term.appCursor) {
+            for _ in 0..<max(1, count) {
+                switch a {
+                case .binary(let str):
+                    sendBytes(str.unicodeScalars.map { UInt8(truncatingIfNeeded: $0.value) }, echo: false, reconnect: false)
+                case .text(let str):
+                    macroSend(Array(str.utf8), mode: .text, echo: false)
+                case .command(let c):
+                    macroCallMenu(c)
+                case .macro, .accel:
+                    break   // マクロの実行中に別のマクロ・ショートカットは動かさない
+                }
+            }
+            return
+        }
         guard let seq = SessionWindowController.keyCodeSequence(code, appCursor: term.appCursor, appKeypad: term.appKeypad,
                                                                 newline: settings.sendNewlineBytes) else {
             notice("sendkcode \(code) には対応していません")
@@ -655,7 +876,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         transferPanel = panel
         let name = (full as NSString).lastPathComponent
         panel.onCancel = { [weak job] in job?.finish() }
-        panel.show(title: "ファイル送信", over: window)
+        if !transferExtra.ftHideDialog { panel.show(title: "ファイル送信", over: window) }   // FTHideDialog
         panel.set(proto: binary ? "ファイル送信 (バイナリ)" : "ファイル送信", file: name, detail: "0 / \(job.totalBytes) バイト", percent: 0)
         job.onProgress = { [weak panel] sent, total in
             panel?.set(proto: binary ? "ファイル送信 (バイナリ)" : "ファイル送信", file: name,
@@ -873,7 +1094,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// gettitle: ts.TitleW (settitle・/W= のタイトル。既定は TERATERM.INI の Title=Tera Term)。リモートのタイトルやウインドウの飾りは含まない
-    var titleForMacro: String { macroTitle ?? "Tera Term" }
+    var titleForMacro: String { localTitle }
 
     var hostnameForMacro: String {
         guard connected, let s = spec else { return "" }
@@ -922,7 +1143,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             50340: { self.showTerminalSetup(nil) }, 50370: { self.showTerminalSetup(nil) }, 50375: { self.showTerminalSetup(nil) },
             50350: { self.serialSetup(nil) }, 50360: { self.newConnection(nil) },
             50380: { self.settings.save() },
-            50410: { self.resetTerminal(nil) }, 50411: { self.remoteTitle = nil; self.updateTitle() },
+            50410: { self.resetTerminal(nil) }, 50411: { self.term.clearRemoteTitle(); self.updateTitle() },
             50420: { (self.conn as? TCPConnection)?.sendAreYouThere() },
             50430: { self.sendBreak(nil) }, 50001: { self.sendBreak(nil) },
             50440: { if case .serial? = self.spec, let s = self.spec { self.connect(s) } },
@@ -1057,4 +1278,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidResize(_ notification: Notification) { updateTitle() }
+
+    /// ドラッグで大きさを変え終わった: 最後の大きさだけ相手に知らせる
+    func windowDidEndLiveResize(_ notification: Notification) {
+        if let (c, r) = pendingResize {
+            pendingResize = nil
+            conn?.resize(cols: c, rows: r)
+        }
+    }
 }

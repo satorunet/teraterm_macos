@@ -4,41 +4,67 @@
 import AppKit
 import TeraCore
 
-// MARK: - ログの設定 (ts.LogBinary など)。UserDefaults に "log" で始まるキーで覚える
+// MARK: - ログの設定 (ts.LogBinary など)。TermSettings (設定画面のログのタブ) と同じ値を使う
 
 struct LogDefaults {
     var binary = false              // LogBinary
     var append = false              // LogAppend
     var plainText = false           // LogTypePlainText
-    var timestamp = false           // LogTimestamp (TermSettings.logTimestamp と同じキー)
+    var timestamp = false           // LogTimestamp
     var timestampType = 0           // LogTimestampType 0 ローカル 1 UTC 2 経過(Logging) 3 経過(Connection)
     var hideDialog = false          // LogHideDialog
     var includeScreenBuffer = false // LogIncludeScreenBuffer (LogAllBuffIncludedInFirst)
     var defaultName = "teraterm.log" // LogDefaultName
 
-    static func load() -> LogDefaults {
-        let d = UserDefaults.standard
+    /// LogTimestampType の INI の値 (Local / UTC / LoggingElapsed / ConnectionElapsed。空はローカル)
+    static let timestampTypeNames = ["Local", "UTC", "LoggingElapsed", "ConnectionElapsed"]
+    static func timestampIndex(_ s: String) -> Int {
+        timestampTypeNames.firstIndex { $0.caseInsensitiveCompare(s) == .orderedSame } ?? 0
+    }
+
+    static func load(_ s: TermSettings) -> LogDefaults {
         var v = LogDefaults()
-        v.binary = d.bool(forKey: "logBinary")
-        v.append = d.bool(forKey: "logAppend")
-        v.plainText = d.bool(forKey: "logTypePlainText")
-        v.timestamp = d.bool(forKey: "logTimestamp")
-        v.timestampType = min(3, max(0, d.integer(forKey: "logTimestampType")))
-        v.hideDialog = d.bool(forKey: "logHideDialog")
-        v.includeScreenBuffer = d.bool(forKey: "logIncludeScreenBuffer")
-        if let n = d.string(forKey: "logDefaultName"), !n.isEmpty { v.defaultName = n }
+        v.binary = s.logBinary
+        v.append = s.logAppend
+        v.plainText = s.logTypePlainText
+        v.timestamp = s.logTimestamp
+        v.timestampType = timestampIndex(s.logTimestampType)
+        v.hideDialog = s.logHideDialog
+        v.includeScreenBuffer = s.logIncludeScreenBuffer
+        if !s.logDefaultName.isEmpty { v.defaultName = s.logDefaultName }
         return v
     }
 
-    func save() {
+    /// ts に書き戻す (SetLogFlags)。次に開くウインドウも同じになるよう、そのキーだけ保存する
+    func store(into s: inout TermSettings) {
+        s.logBinary = binary
+        s.logAppend = append
+        s.logTypePlainText = plainText
+        s.logTimestamp = timestamp
+        s.logTimestampType = LogDefaults.timestampTypeNames[max(0, min(3, timestampType))]
+        s.logHideDialog = hideDialog
+        s.logIncludeScreenBuffer = includeScreenBuffer
         let d = UserDefaults.standard
-        d.set(binary, forKey: "logBinary")
-        d.set(append, forKey: "logAppend")
-        d.set(plainText, forKey: "logTypePlainText")
+        d.set(binary, forKey: "LogBinary")
+        d.set(append, forKey: "LogAppend")
+        d.set(plainText, forKey: "LogTypePlainText")
         d.set(timestamp, forKey: "logTimestamp")
-        d.set(timestampType, forKey: "logTimestampType")
-        d.set(hideDialog, forKey: "logHideDialog")
-        d.set(includeScreenBuffer, forKey: "logIncludeScreenBuffer")
+        d.set(s.logTimestampType, forKey: "LogTimestampType")
+        d.set(hideDialog, forKey: "LogHideDialog")
+        d.set(includeScreenBuffer, forKey: "LogIncludeScreenBuffer")
+    }
+
+    /// FLogOpen に渡すオプション
+    var options: TTLLogOptions {
+        var o = TTLLogOptions()
+        o.binary = binary
+        o.append = append
+        o.plainText = plainText
+        o.timestamp = timestamp
+        o.timestampType = timestampType
+        o.hideDialog = hideDialog
+        o.includeScreenBuffer = includeScreenBuffer
+        return o
     }
 }
 
@@ -76,7 +102,7 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
     private static var history: [String] = []
 
     private weak var session: SessionWindowController?
-    private var defaults = LogDefaults.load()
+    private var defaults = LogDefaults()
     private var completion: ((LogDialogResult?) -> Void)?
 
     private let nameCombo = NSComboBox()
@@ -103,7 +129,7 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
     init(session: SessionWindowController) {
         self.session = session
         super.init()
-        defaults.timestamp = session.settings.logTimestamp
+        defaults = LogDefaults.load(session.settings)
         build()
     }
 
@@ -328,13 +354,14 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
         stopTimer()
         let sp = NSSavePanel()
         sp.title = "Tera Term: ログ"
-        sp.message = "ログファイル (*.txt;*.log)"
         sp.canCreateDirectories = true
         sp.allowsOtherFileTypes = true
+        let filterKeeper = FilePanelFilter.attach(to: sp, mask: "*.txt;*.log")
         let cur = resolve(nameCombo.stringValue)
         sp.directoryURL = URL(fileURLWithPath: session?.logDirectory ?? NSHomeDirectory(), isDirectory: true)
         sp.nameFieldStringValue = (cur as NSString).lastPathComponent
         sp.beginSheetModal(for: panel) { [weak self] r in
+            _ = filterKeeper
             guard let self = self, r == .OK, let u = sp.url else { return }
             self.nameCombo.stringValue = u.path
             self.arrangeFilename(u.path)
@@ -366,17 +393,8 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
         defaults.hideDialog = hideCheck.state == .on
         defaults.includeScreenBuffer = includeCheck.state == .on
         defaults.timestampType = max(0, timestampPopup.indexOfSelectedItem)
-        defaults.save()
-        session?.settings.logTimestamp = defaults.timestamp
-
-        var o = TTLLogOptions()
-        o.binary = binary
-        o.append = defaults.append
-        o.plainText = defaults.plainText
-        o.timestamp = defaults.timestamp
-        o.timestampType = defaults.timestampType
-        o.hideDialog = defaults.hideDialog
-        o.includeScreenBuffer = defaults.includeScreenBuffer
+        if let ss = session { defaults.store(into: &ss.settings) }
+        let o = defaults.options
 
         // HistoryStoreAddTop
         LogDialog.history.removeAll { $0 == name }

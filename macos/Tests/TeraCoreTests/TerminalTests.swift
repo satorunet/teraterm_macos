@@ -100,6 +100,64 @@ final class TerminalTests: XCTestCase {
         XCTAssertEqual(row(t, 3), "4")
     }
 
+    func testResizeReflowsNarrowerAndBack() {
+        let t = Terminal(cols: 10, rows: 4)
+        t.feed("abcdefgh\r\n$ ")
+        t.resize(cols: 4, rows: 4)
+        XCTAssertEqual(row(t, 0), "abcd")
+        XCTAssertEqual(row(t, 1), "efgh")
+        XCTAssertEqual(row(t, 2), "$")
+        XCTAssertEqual(t.cy, 2); XCTAssertEqual(t.cx, 2)
+        t.resize(cols: 10, rows: 4)
+        XCTAssertEqual(row(t, 0), "abcdefgh")
+        XCTAssertEqual(row(t, 1), "$")
+        XCTAssertEqual(t.cy, 1); XCTAssertEqual(t.cx, 2)
+        t.feed("x")
+        XCTAssertEqual(row(t, 1), "$ x")
+    }
+
+    func testResizeReflowJoinsWrappedLines() {
+        let t = Terminal(cols: 4, rows: 3)
+        t.feed("abcdefg")
+        t.resize(cols: 8, rows: 3)
+        XCTAssertEqual(row(t, 0), "abcdefg")
+        XCTAssertEqual(t.cy, 0); XCTAssertEqual(t.cx, 7)
+    }
+
+    func testResizeReflowPushesToScrollback() {
+        let t = Terminal(cols: 6, rows: 2)
+        t.feed("123456\r\nabcdef")
+        t.resize(cols: 3, rows: 2)
+        XCTAssertEqual(row(t, 0), "abc")
+        XCTAssertEqual(row(t, 1), "def")
+        XCTAssertEqual(t.scrollback.map { $0.text }, ["123", "456"])
+        t.resize(cols: 6, rows: 2)
+        XCTAssertEqual(row(t, 0), "123456")
+        XCTAssertEqual(row(t, 1), "abcdef")
+        XCTAssertTrue(t.scrollback.isEmpty)
+    }
+
+    func testResizeReflowWideChars() {
+        let t = Terminal(cols: 6, rows: 3)
+        t.feed("aあいう")
+        t.resize(cols: 4, rows: 3)
+        XCTAssertEqual(row(t, 0), "aあ")
+        XCTAssertEqual(row(t, 1), "いう")
+        t.resize(cols: 7, rows: 3)
+        XCTAssertEqual(row(t, 0), "aあいう")
+    }
+
+    func testResizeKeepsClearedScreen() {
+        let t = Terminal(cols: 10, rows: 3)
+        t.feed("old1\r\nold2\r\nold3\r\n")
+        t.feed("\u{1b}[H\u{1b}[2J$ ")
+        let sb = t.scrollback.count
+        t.resize(cols: 6, rows: 3)
+        t.resize(cols: 12, rows: 3)
+        XCTAssertEqual(row(t, 0), "$")
+        XCTAssertEqual(t.scrollback.count, sb)
+    }
+
     func testDecoderSplits() {
         var d = StreamDecoder(encoding: .utf8)
         let b = Array("あい".utf8)

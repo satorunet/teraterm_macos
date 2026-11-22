@@ -48,10 +48,13 @@ extension SessionWindowController {
             if p.baud != old.baud { sc.setBaud(p.baud) }
             if p.flow != sc.flow { sc.setFlow(["xon": 1, "rts": 2, "none": 3, "dsr": 4][p.flow] ?? 3) }
             if p.dataBits != old.dataBits || p.parity != old.parity || p.stopBits != old.stopBits {
-                // SerialConnection はデータ長・パリティ・ストップビットを開いたあとに変えられないので開き直す
-                connect(.serial(p), quiet: true)
+                // CommResetSerial: 開いたままデータ長・パリティ・ストップビットをかけ直す
+                if !sc.setLineParams(dataBits: p.dataBits, parity: p.parity, stopBits: p.stopBits) {
+                    notice("\(p.dataBits) ビット・パリティ \(p.parity)・ストップ \(p.stopBits) にできませんでした")
+                }
             }
             ConnHistory.serial = p
+            serialParamsChanged()
         } else {
             ConnHistory.serial = serial
         }

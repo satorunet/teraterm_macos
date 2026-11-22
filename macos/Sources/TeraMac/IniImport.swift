@@ -142,7 +142,7 @@ enum TeraTermIniImport {
         if let v = ini.int(T, "BaudRate"), v > 0 { sp.baud = v; serialTouched = true }
         if let v = ini.int(T, "DataBit"), v == 7 || v == 8 { sp.dataBits = v; serialTouched = true }
         if let v = ini.string(T, "Parity")?.lowercased(), !v.isEmpty {
-            if ["none", "odd", "even"].contains(v) { sp.parity = v } else { r.skipped.append("パリティ \(v)") }
+            if ["none", "odd", "even", "mark", "space"].contains(v) { sp.parity = v } else { r.skipped.append("パリティ \(v)") }
             serialTouched = true
         }
         if let v = ini.string(T, "StopBit") {

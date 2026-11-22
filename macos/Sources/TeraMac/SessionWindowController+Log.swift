@@ -96,34 +96,63 @@ extension SessionWindowController {
         }
     }
 
-    /// ログを表示 (OnViewLog): ViewlogEditor (Windows の既定は notepad.exe) で開く。
-    /// Mac は UserDefaults の logViewlogEditor (アプリのパス) があればそれ、なければテキストエディット
+    /// ログを表示 (OnViewLog → TTCreateProcess(ViewlogEditor, ViewlogEditorArg, ファイル名))。
+    /// ViewlogEditor が空 (Windows の notepad.exe) ならテキストエディット。.app ならそのアプリで開き、
+    /// ViewlogEditorArg はアプリへの引数にする。それ以外は実行ファイルとして「引数... ファイル名」で起動する
     @objc func viewLog(_ sender: Any?) {
         guard let p = logPath else { return }
-        let file = URL(fileURLWithPath: p)
-        let ws = NSWorkspace.shared
-        var app: URL?
-        if let e = UserDefaults.standard.string(forKey: "logViewlogEditor"), !e.isEmpty {
-            app = URL(fileURLWithPath: (e as NSString).expandingTildeInPath)
-        } else {
-            app = ws.urlForApplication(withBundleIdentifier: "com.apple.TextEdit")
-        }
-        let fail: (Error?) -> Void = { [weak self] err in
+        let fail: (Int) -> Void = { [weak self] code in
             DispatchQueue.main.async {
                 let a = NSAlert()
                 a.alertStyle = .warning
                 a.messageText = "エラー"
-                a.informativeText = "ログファイルを表示できません (\((err as NSError?)?.code ?? 0))"
+                a.informativeText = "ログファイルを表示できません (\(code))"
                 if let w = self?.window { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
             }
         }
-        guard let appURL = app else {
-            if !ws.open(file) { fail(nil) }
+        let editor = (settings.viewlogEditor.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
+        let args = CommandLineSplit.split(settings.viewlogEditorArg)
+        let file = URL(fileURLWithPath: p)
+        let ws = NSWorkspace.shared
+        if editor.isEmpty || editor.lowercased() == "notepad.exe" || editor.hasSuffix(".app") || editor.hasSuffix(".app/") {
+            let app = editor.hasSuffix(".app") || editor.hasSuffix(".app/") ? URL(fileURLWithPath: editor)
+                : ws.urlForApplication(withBundleIdentifier: "com.apple.TextEdit")
+            guard let appURL = app else {
+                if !ws.open(file) { fail(0) }
+                return
+            }
+            let cfg = NSWorkspace.OpenConfiguration()
+            cfg.arguments = args
+            ws.open([file], withApplicationAt: appURL, configuration: cfg) { _, err in
+                if let err = err { fail((err as NSError).code) }
+            }
             return
         }
-        ws.open([file], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration()) { _, err in
-            if let err = err { fail(err) }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: editor)
+        proc.arguments = args + [p]
+        do { try proc.run() } catch { fail((error as NSError).code) }
+    }
+
+    // MARK: - 自動的にログ採取を開始する (OnCommStart: ts.LogAutoStart)
+
+    /// 接続できたとき: LogAutoStart なら、標準のログファイル名 (LogDefaultName を strftime と &h &p &u で展開し、
+    /// LogDefaultPath / FileDir のフォルダに置いたもの) でログを始める。設定のログのオプションを使う
+    func autoStartLog() {
+        guard settings.logAutoStart, teraLog == nil, !isReplay else { return }
+        let (h, port) = logHostAndPort
+        let path = TeraLog.logFileName(settings.logDefaultName.isEmpty ? "teraterm.log" : settings.logDefaultName,
+                                       logDir: logDirectory, host: h, port: port)
+        let d = LogDefaults.load(settings)
+        if startLog(path: path, options: d.options) {
+            return
         }
+        // ts.HideWindow / ts.Minimize でなければ知らせる
+        let a = NSAlert()
+        a.alertStyle = .critical
+        a.messageText = "Tera Term: ファイル オープン エラー"
+        a.informativeText = "ログファイルに書き込めません。\n\(path)"
+        if let w = window { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
     }
 
     /// ログ記録中ダイアログを表示 (OnShowLogDialog / FLogShowDlg)

@@ -16,11 +16,96 @@ public enum TermEncoding: String, CaseIterable {
         }
     }
 
-    public func encode(_ s: String) -> [UInt8] {
+    /// JIS で送るときの漢字イン・漢字アウト・半角カナ (KanjiIn / KanjiOut / KatakanaSend)。
+    /// encode(_:) が使う。設定を変えたら入れ直す
+    public static var jisSendOptions = JISSendOptions()
+
+    public func encode(_ s: String) -> [UInt8] { encode(s, jis: TermEncoding.jisSendOptions) }
+
+    /// 1 回分を変換する。JIS は最後に英数へ戻す (続けて送るなら JISEncoder を使う)
+    public func encode(_ s: String, jis: JISSendOptions) -> [UInt8] {
         if self == .utf8 { return Array(s.utf8) }
-        if self == .jis { return JISCodec.encode(s) }
+        if self == .jis {
+            var e = JISEncoder(options: jis)
+            return e.encode(s) + e.finish()
+        }
         if let d = s.data(using: nsEncoding, allowLossyConversion: true) { return [UInt8](d) }
         return Array(s.utf8)
+    }
+}
+
+/// JIS 送信の設定 (エンコーディングタブの「漢字イン」「漢字アウト」「半角カナ」)
+public struct JISSendOptions: Equatable {
+    /// KanjiIn: "B" → ESC $ B, "@" → ESC $ @
+    public var kanjiIn: UInt8 = 0x42
+    /// KanjiOut: "B" → ESC ( B, "J" → ESC ( J, "H" → ESC ( H
+    public var kanjiOut: UInt8 = 0x42
+    /// KatakanaSend=7: 半角カナを SO/SI と 7 ビットで送る (8 なら 8 ビットのまま)
+    public var katakana7 = false
+    public init() {}
+    /// INI の文字列から (makeoutputstring.cpp GetKanjiInCodeFromIni / GetKanjiOutCodeFromIni)。
+    /// 知らない値は KanjiIn = B、KanjiOut = J。H は AllowWrongSequence のときだけ (ないなら J)
+    public init(kanjiIn: String, kanjiOut: String, katakana7: Bool, allowWrongSequence: Bool = false) {
+        self.kanjiIn = kanjiIn == "@" ? 0x40 : 0x42
+        switch kanjiOut {
+        case "B": self.kanjiOut = 0x42
+        case "H": self.kanjiOut = allowWrongSequence ? 0x48 : 0x4A
+        default: self.kanjiOut = 0x4A
+        }
+        self.katakana7 = katakana7
+    }
+}
+
+/// JIS の送信 (makeoutputstring.cpp MakeOutputString の IdJIS)。直前の文字集合を覚えているので、
+/// 漢字のあとの漢字アウトは次に英数 (または制御文字) を送るときに付く
+public struct JISEncoder {
+    public var options: JISSendOptions
+    private enum Mode { case ascii, kana, kanji }
+    private var mode = Mode.ascii
+    public init(options: JISSendOptions = JISSendOptions()) { self.options = options }
+
+    /// U+0100 未満の文字の前: 漢字アウト、7 ビットカナなら SI で戻す
+    private mutating func toASCII(_ out: inout [UInt8]) {
+        if mode == .kanji { out += [0x1B, 0x28, options.kanjiOut] }
+        if options.katakana7 && mode == .kana { out.append(0x0F) }
+        mode = .ascii
+    }
+
+    public mutating func encode(_ s: String) -> [UInt8] {
+        var out: [UInt8] = []
+        for u in s.unicodeScalars {
+            if u.value < 0x100 { toASCII(&out) }
+            guard let d = String(Character(u)).data(using: .shiftJIS), !d.isEmpty, d.count <= 2 else {
+                out.append(0x3F)   // CP932 にない文字は ?
+                continue
+            }
+            let b = [UInt8](d)
+            if u.value < 0x100 {
+                out.append(b[0])
+            } else if (0xFF61...0xFF9F).contains(u.value), b.count == 1 {
+                if options.katakana7 {
+                    if mode != .kana { out.append(0x0E) }
+                    out.append(b[0] & 0x7F)
+                } else {
+                    out.append(b[0])
+                }
+                mode = .kana
+            } else if b.count == 2 {
+                let (j1, j2) = JISCodec.sjisToJIS(b[0], b[1])
+                if mode != .kanji { out += [0x1B, 0x24, options.kanjiIn]; mode = .kanji }
+                out += [j1, j2]
+            } else {
+                out.append(b[0])
+            }
+        }
+        return out
+    }
+
+    /// 英数に戻す (まとめて変換するとき最後に付ける)
+    public mutating func finish() -> [UInt8] {
+        var out: [UInt8] = []
+        toASCII(&out)
+        return out
     }
 }
 
@@ -32,6 +117,12 @@ public struct StreamDecoder {
     public init(encoding: TermEncoding) { self.encoding = encoding }
 
     private var jis = JISCodec.Decoder()
+    /// KatakanaReceive=7 (JIS のとき)。charset.cpp CharSetInit2: GR は G3 (漢字) になり、
+    /// 0xA1–0xFE の 2 バイトは 8 ビットの JIS 漢字として読む。8 (既定) なら GR は G2 (半角カナ)
+    public var jis7Katakana: Bool {
+        get { jis.jis7Katakana }
+        set { jis.jis7Katakana = newValue }
+    }
 
     public mutating func decode(_ input: [UInt8]) -> String {
         if encoding == .jis { return jis.decode(input) }
@@ -136,39 +227,10 @@ enum JISCodec {
         return (UInt8(truncatingIfNeeded: j1), UInt8(truncatingIfNeeded: j2))
     }
 
-    /// 送信: 漢字の前に ESC $ B、英数に戻るとき ESC ( B、半角カナは ESC ( I。最後は英数に戻す
+    /// 送信 (既定の設定で 1 回分。最後は英数に戻す)
     static func encode(_ s: String) -> [UInt8] {
-        enum Mode { case ascii, kanji, kana }
-        var mode = Mode.ascii
-        var out: [UInt8] = []
-        func switchTo(_ m: Mode) {
-            guard m != mode else { return }
-            switch m {
-            case .ascii: out += [0x1B, 0x28, 0x42]
-            case .kanji: out += [0x1B, 0x24, 0x42]
-            case .kana: out += [0x1B, 0x28, 0x49]
-            }
-            mode = m
-        }
-        for ch in s {
-            if let a = ch.asciiValue {
-                switchTo(.ascii); out.append(a); continue
-            }
-            guard let d = String(ch).data(using: .shiftJIS), !d.isEmpty else {
-                switchTo(.ascii); out.append(0x3F); continue   // JIS にない文字は ?
-            }
-            let b = [UInt8](d)
-            if b.count == 1 && (0xA1...0xDF).contains(b[0]) {
-                switchTo(.kana); out.append(b[0] - 0x80)
-            } else if b.count == 2 {
-                let (j1, j2) = sjisToJIS(b[0], b[1])
-                switchTo(.kanji); out += [j1, j2]
-            } else {
-                switchTo(.ascii); out += b
-            }
-        }
-        switchTo(.ascii)
-        return out
+        var e = JISEncoder(options: TermEncoding.jisSendOptions)
+        return e.encode(s) + e.finish()
     }
 
     /// 受信: 文字集合を切り替えるエスケープシーケンスだけ読み取り、それ以外の ESC は端末へそのまま渡す
@@ -177,6 +239,8 @@ enum JISCodec {
         var mode = Mode.ascii
         /// SO (0x0E) で半角カナ、SI (0x0F) で戻る
         var shiftOut = false
+        /// KatakanaReceive=7: GR (0xA1–0xFE) を漢字として読む
+        var jis7Katakana = false
         private var pending: [UInt8] = []
 
         mutating func decode(_ input: [UInt8]) -> String {
@@ -204,7 +268,7 @@ enum JISCodec {
                     } else if c1 == 0x28 {
                         if i + 2 >= b.count { pending = Array(b[i...]); break }
                         let c2 = b[i + 2]
-                        if c2 == 0x42 || c2 == 0x4A { mode = .ascii; i += 3; continue }
+                        if c2 == 0x42 || c2 == 0x4A || c2 == 0x48 { mode = .ascii; i += 3; continue }
                         if c2 == 0x49 { mode = .kana; i += 3; continue }
                     }
                     out.unicodeScalars.append(Unicode.Scalar(c)); i += 1; continue
@@ -213,6 +277,19 @@ enum JISCodec {
                 if c == 0x0F { shiftOut = false; i += 1; continue }
                 if c < 0x21 || c == 0x7F {
                     out.unicodeScalars.append(Unicode.Scalar(c)); i += 1; continue
+                }
+                if c >= 0xA1 && c <= 0xFE && jis7Katakana {
+                    // GR = G3 (漢字): 8 ビットの JIS 漢字 (2 バイト目は 0x21–0x7E か 0xA1–0xFE)
+                    if i + 1 >= b.count { pending = [c]; break }
+                    let c2 = b[i + 1]
+                    if (0x21...0x7E).contains(c2) || (0xA1...0xFE).contains(c2) {
+                        let (s1, s2) = JISCodec.jisToSJIS(c & 0x7F, c2 & 0x7F)
+                        out += sjis(s1, s2)
+                        i += 2
+                    } else {
+                        out += "\u{FFFD}"; i += 1
+                    }
+                    continue
                 }
                 if c >= 0x80 {
                     // 8 ビットの半角カナ (JIS8) と、それ以外はそのまま Shift_JIS として読む

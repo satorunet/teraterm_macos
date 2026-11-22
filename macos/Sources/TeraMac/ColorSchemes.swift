@@ -104,12 +104,22 @@ final class SchemePreview: NSView {
     var cursor = NSColor.green { didSet { needsDisplay = true } }
     var ansi: [NSColor] = Palette.colors.prefix(16).map { $0 } { didSet { needsDisplay = true } }
     var font = NSFont(name: "Menlo-Regular", size: 12)! { didSet { needsDisplay = true } }
+    /// テーマの背景 (BG Theme)。あれば背景色の代わりに描く
+    var background: BGImageSpec? { didSet { bgImage = nil; needsDisplay = true } }
+    private var bgImage: NSImage?
 
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
         bg.setFill()
         bounds.fill()
+        if let b = background {
+            if bgImage?.size != bounds.size {
+                bgImage = b.image(size: bounds.size, scale: window?.backingScaleFactor ?? 2,
+                                  windowFrame: window.map { $0.convertToScreen(convert(bounds, to: nil)) }, screen: window?.screen)
+            }
+            bgImage?.draw(in: bounds)
+        }
         NSGraphicsContext.current?.cgContext.setShouldSmoothFonts(false)
         let lh = ceil(NSLayoutManager().defaultLineHeight(for: font))
         func line(_ y: Int, _ parts: [(String, NSColor)]) {

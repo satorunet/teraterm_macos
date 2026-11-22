@@ -139,6 +139,9 @@ enum MenuBar {
             item("TEKウィンドウを開く", #selector(S.openTEK(_:))),
             item("TEKウィンドウを閉じる", #selector(S.closeTEK(_:))),
             .separator(),
+            // TTXAlwaysOnTop (追加プラグイン) が「マクロ」の前に入れる項目
+            item("常に最前面に表示", #selector(S.toggleAlwaysOnTop(_:))),
+            .separator(),
             item("マクロ", #selector(S.macroMenu(_:))),
             item("マクロウィンドウの表示", #selector(S.showMacroWindow(_:))),
         ])
@@ -151,10 +154,13 @@ enum MenuBar {
         let kanji = add("漢字コード", [])
         kanji.delegate = KanjiMenuController.shared
 
-        // ヘルプ (TTSSH・TTProxy の「について」は Mac 版では「謝辞とライセンス」にまとめる)
+        // ヘルプ
         let help = add("ヘルプ", [
             item("目次", #selector(AppDelegate.openHelpIndex(_:))),
             .separator(),
+            // TTProxy・TTSSH が「Tera Termについて」の前に入れる項目
+            item("TTProxyについて...", #selector(AppDelegate.showAboutTTProxy(_:))),
+            item("TTSSHについて...", #selector(AppDelegate.showAboutTTSSH(_:))),
             item("Tera Termについて...", #selector(AppDelegate.showAbout(_:))),
         ])
         NSApp.helpMenu = help

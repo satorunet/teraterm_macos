@@ -53,9 +53,9 @@ struct TermSettings {
     var answerback = ""                             // Answerback (\xx でエスケープ)
     var autoWinSwitch = false                       // AutoWinSwitch
     // ウィンドウ
-    var title = "Tera Term"                         // Title
-    var pcBoldColor = false                         // PcBoldColor
-    var aixterm16Color = false                      // Aixterm16Color
+    var title = "Tera Term Mac"                     // Title (Mac の既定は "Tera Term Mac")
+    var pcBoldColor = true                          // PcBoldColor (同梱の TERATERM.INI と同じ on)
+    var aixterm16Color = true                       // Aixterm16Color (同梱の TERATERM.INI と同じ on)
     var xterm256Color = true                        // Xterm256Color
     var enableScrollBuff = true                     // EnableScrollBuff
     var enableBold = true                           // EnableBold
@@ -168,8 +168,28 @@ struct TermSettings {
         return (try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSFont.self, from: data)) ?? fallback
     }()
 
-    static func load() -> TermSettings {
+    /// 初期値: プログラムの既定値に、アプリに同梱した本家の TERATERM.INI (installer/release/TERATERM.INI) を重ねたもの。
+    /// 本家も同梱の TERATERM.INI を読んで起動するので、初めて起動したときの設定は本家と同じになる。
+    /// そのうえで Mac では次の 2 つだけ変える (macOverrides)
+    static func initial() -> TermSettings {
         var s = TermSettings()
+        if let url = Bundle.main.url(forResource: "TERATERM", withExtension: "INI"),
+           let data = try? Data(contentsOf: url), let ini = IniFile(data: data) {
+            // 設定だけ使う。ホスト履歴 (例の名前) やシリアルの既定は取り込まない
+            s = TeraTermIniImport.read(ini, base: s).settings
+        }
+        s.macOverrides()
+        return s
+    }
+
+    /// Mac での使いやすさのために、同梱の TERATERM.INI と変えている値
+    private mutating func macOverrides() {
+        termType = "xterm-256color"   // TermType=xterm。Mac のターミナルと同じく 256 色を使えるように
+        bsSendsDel = true             // BSKey=BS。Mac の delete キーはターミナル.app と同じく DEL を送る
+    }
+
+    static func load() -> TermSettings {
+        var s = initial()
         let d = Self.d
         if let v = d.string(forKey: "fontName"), NSFont(name: v, size: 12) != nil { s.fontName = v }
         if d.object(forKey: "fontSize") != nil { s.fontSize = CGFloat(max(6, min(72, d.double(forKey: "fontSize")))) }

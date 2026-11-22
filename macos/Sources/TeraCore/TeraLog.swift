@@ -196,6 +196,15 @@ public final class TeraLog {
 
     // MARK: - ローテート
 
+    /// FLogOpen のローテートの設定 (ts.LogRotate / LogRotateSize (バイト) / LogRotateStep)。
+    /// ローテートするときは、数え始めをいまのファイルの大きさにする (追記のとき)
+    public func configureRotation(enabled: Bool, size: Int, step: Int) {
+        guard enabled else { rotateSize = 0; rotateStep = 0; return }
+        rotateSize = max(0, size)
+        rotateStep = max(0, step)
+        if let h = handle { byteCount = Int(h.offsetInFile) }
+    }
+
     /// logrotate size N / rotate N / halt
     public func setRotate(_ command: String) {
         let p = command.split(separator: " ")

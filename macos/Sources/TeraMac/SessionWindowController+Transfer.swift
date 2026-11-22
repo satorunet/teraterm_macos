@@ -93,7 +93,13 @@ extension SessionWindowController {
         } else {
             // FileSendStart: cv.Ready でなければ始めない
             guard connected else { return }
-            let plan = SequentialSendPlan.make(data: d, binary: v.binary, bracketed: term.bracketedPaste)
+            let bracketed = term.bracketedPaste
+            // FileSend(): FileSendBinayBoost の条件
+            var boost = false
+            if case .serial(let p)? = spec, ex.fileSendHighSpeedMode, v.binary, !bracketed, !settings.localEcho {
+                boost = ((conn as? SerialConnection)?.params.baud ?? p.baud) >= 115200
+            }
+            let plan = SequentialSendPlan.make(data: d, binary: v.binary, bracketed: bracketed, highSpeed: boost)
             runSendFilePlan(plan, path: full, binary: v.binary)
         }
     }
@@ -115,7 +121,8 @@ extension SessionWindowController {
         let name = (path as NSString).lastPathComponent
         let proto = binary ? "ファイル送信 (バイナリ)" : "ファイル送信"
         panel.onCancel = { [weak job] in job?.finish() }
-        panel.show(title: "ファイル送信中", over: window)
+        // FTHideDialog: 進み具合のダイアログを出さない
+        if !transferExtra.ftHideDialog { panel.show(title: "ファイル送信中", over: window) }
         panel.set(proto: proto, file: name, detail: "0 / \(job.totalBytes) バイト", percent: 0)
         job.onProgress = { [weak panel] sent, total in
             panel?.set(proto: proto, file: name, detail: "\(sent) / \(total) バイト",
@@ -137,8 +144,8 @@ extension SessionWindowController {
         let dir = transferFileDir
         let ex = transferExtra
         let initial = ReceiveFileDialog.Values(filename: "", autoStopSec: transferOptions.receiveFileAutoStopWaitTime)
-        guard let v = ReceiveFileDialog.run(values: initial, initialDir: dir,
-                                            skipDialog: ex.receivefileSkipOptionDialog, over: window) else { return }
+        guard let v = ReceiveFileDialog.run(values: initial, initialDir: dir, skipDialog: ex.receivefileSkipOptionDialog,
+                                            filter: ex.fileReceiveFilter, over: window) else { return }
         dropSettings.transBin = true   // ts.TransBin = data.binary (いつも TRUE)
         // RawStartReceive(filename, ts.ReceivefileAutoStopWaitTime)
         _ = startTransfer(.rawRecv, files: [v.filename], binaryFlag: 1, xmodemOption: 0,

@@ -203,6 +203,10 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
             guard editing else { return e }
             if self.realtime.state == .on {
                 if e.modifierFlags.contains(.command) { return e }   // ⌘ の操作 (貼り付けなど) は入力欄で
+                // IME で変換中: 入力欄 (BroadcastFieldEditor) に渡す。確定した文字は insertText で送り先へ (WM_IME_COMPOSITION)
+                if self.fieldEditor.hasMarkedText() { return e }
+                // 文字のキー (修飾なし・Shift だけ) も入力欄に渡して IME を通す。制御キーなどはそのまま送り先のキー入力に
+                if BroadcastWindow.isTextKey(e) { return e }
                 for t in self.targets { t.termView.keyDown(with: e) }
                 if e.keyCode == 36 || e.keyCode == 76 { self.combo.stringValue = "" }
                 return nil
@@ -217,6 +221,30 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
             }
             return e
         }
+    }
+
+    /// IME を通す文字のキー
+    private static func isTextKey(_ e: NSEvent) -> Bool {
+        if !e.modifierFlags.intersection([.control, .option, .command, .function]).isEmpty { return false }
+        guard let c = e.characters?.unicodeScalars.first else { return false }
+        // 0xF700- は矢印・ファンクションキー
+        return c.value >= 0x20 && c.value != 0x7F && !(0xF700...0xF8FF).contains(c.value)
+    }
+
+    /// 入力欄の編集 (リアルタイムのときは確定した文字を送り先へ送り、入力欄には残さない)
+    private lazy var fieldEditor: BroadcastFieldEditor = {
+        let f = BroadcastFieldEditor()
+        f.isFieldEditor = true
+        f.onInsert = { [weak self] text in
+            guard let self = self, self.realtime.state == .on else { return false }
+            for t in self.targets { t.termView.onSendText?(text) }
+            return true
+        }
+        return f
+    }()
+
+    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
+        (client as AnyObject?) === combo ? fieldEditor : nil
     }
 
     // MARK: - 送信
@@ -288,5 +316,19 @@ extension SessionWindowController {
     func receiveBroadcast(_ text: String) {
         guard connected, settings.acceptBroadcast else { return }
         sendPasteText(text, echo: false)
+    }
+}
+
+/// ブロードキャストの入力欄の編集 (broadcast.cpp BroadcastEditProc の WM_CHAR / WM_IME_COMPOSITION)
+final class BroadcastFieldEditor: NSTextView {
+    /// 確定した文字。true を返したら入力欄には残さない
+    var onInsert: ((String) -> Bool)?
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+        super.insertText(string, replacementRange: replacementRange)
+        if !text.isEmpty, onInsert?(text) == true {
+            self.string = ""   // 入力した文字が入力欄に残らないように捨てる
+        }
     }
 }

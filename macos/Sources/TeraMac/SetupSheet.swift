@@ -161,13 +161,15 @@ final class IniDocument {
 
 // MARK: - その他の設定シート
 
-final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    /// タブ (addsetting.cpp の順。Mac で意味のない UI / Cygwin / Plugin / Debug / TEK は無い)
+final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
+    /// タブ (addsetting.cpp の順。Cygwin の場所は Mac のローカルシェル。Plugin / Debug / TEK は無い)
     enum Page: Int, CaseIterable {
-        case general, sequence, copyPaste, visual, log, encoding, font, theme, keyboard, mouse, tcpip, terminal, serial, window
+        case general, ui, sequence, copyPaste, visual, log, localShell, encoding, font, theme, keyboard, mouse, tcpip, terminal, serial, window
         var title: String {
             switch self {
             case .general: return "全般"
+            case .ui: return "UI"
+            case .localShell: return "ローカルシェル"
             case .sequence: return "制御シーケンス"
             case .copyPaste: return "コピーと貼り付け"
             case .visual: return "表示"
@@ -292,45 +294,22 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
             }
         }
         tabView.translatesAutoresizingMaskIntoConstraints = false
-        tabView.widthAnchor.constraint(equalToConstant: size.width).isActive = true
         tabView.heightAnchor.constraint(equalToConstant: size.height).isActive = true
-        // タブが 14 枚あるので、Tera Term のツリー表示 (ExperimentalTreePropertySheetEnable) と同じく左に一覧を出す
+        // Windows の Tera Term と同じく、上に 2 段のタブ (Win32 の複数行タブ)
         tabView.tabViewType = .noTabsNoBorder
-        let col = NSTableColumn(identifier: .init("page"))
-        col.width = 150
-        pageList.addTableColumn(col)
-        pageList.headerView = nil
-        pageList.dataSource = self
-        pageList.delegate = self
-        pageList.rowHeight = 22
-        pageList.style = .sourceList
-        let sc = NSScrollView()
-        sc.documentView = pageList
-        sc.borderType = .bezelBorder
-        sc.translatesAutoresizingMaskIntoConstraints = false
-        sc.widthAnchor.constraint(equalToConstant: 160).isActive = true
-        sc.heightAnchor.constraint(equalToConstant: size.height).isActive = true
+        tabBar.onSelect = { [unowned self] i in self.selectPage(at: i) }
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        tabBar.widthAnchor.constraint(equalToConstant: max(size.width + 2, tabBar.minimumWidth + 8)).isActive = true
         for b in binders { b.load() }
         refresh()
-        layout(SetupUI.row([sc, tabView], spacing: 12, align: .top))
+        layout(tabBar)
     }
 
-    private let pageList = NSTableView()
+    private lazy var tabBar = MultiRowTabView(titles: Page.allCases.map(\.title), rows: 2, content: tabView)
 
     private func selectPage(at i: Int) {
         tabView.selectTabViewItem(at: i)
-        if pageList.selectedRow != i { pageList.selectRowIndexes([i], byExtendingSelection: false) }
-    }
-
-    func numberOfRows(in tableView: NSTableView) -> Int { Page.allCases.count }
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let f = NSTextField(labelWithString: Page.allCases[row].title)
-        f.font = .systemFont(ofSize: 13)
-        return f
-    }
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        let r = pageList.selectedRow
-        if r >= 0 && tabView.indexOfTabViewItem(tabView.selectedTabViewItem!) != r { tabView.selectTabViewItem(at: r) }
+        tabBar.selectedIndex = i
     }
 
     // MARK: 項目と ts の対応
@@ -415,6 +394,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
         kanaSendCheck.isEnabled = send == .jis
         kanjiInPopup.isEnabled = send == .jis
         kanjiOutPopup.isEnabled = send == .jis
+        updateThemeControls()
         updateColorControls()
         updateAnsiControls()
         updateFontLabel()
@@ -425,6 +405,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
     private func page(_ p: Page) -> NSView {
         switch p {
         case .general: return generalPage()
+        case .ui: return uiPage()
+        case .localShell: return localShellPage()
         case .sequence: return sequencePage()
         case .copyPaste: return copyPastePage()
         case .visual: return visualPage()
@@ -627,7 +609,22 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
     private lazy var logTimestampPopup = pop(["ローカルタイム", "UTC", "経過時間(Logging)", "経過時間(Connection)"],
                                              ["Local", "UTC", "LoggingElapsed", "ConnectionElapsed"], \.logTimestampType)
     private let logRotateCheck = SetupUI.check("ログのローテート(&L)")
-    private lazy var logRotateSize = num(\.logRotateSize, width: 80)
+    /// LogRotateSize はバイトで持ち、画面には単位 (Byte/KB/MB) で割った値を出す (log_pp.cpp)
+    private lazy var logRotateSize: NSTextField = {
+        let f = SetupUI.field(width: 80)
+        f.delegate = self
+        custom(load: { [unowned self] in
+            var v = self.s.logRotateSize
+            for _ in 0..<max(0, self.s.logRotateSizeType) { v /= 1024 }
+            f.stringValue = String(v)
+        }, store: { [unowned self] in
+            guard let v = Int(f.stringValue.trimmingCharacters(in: .whitespaces)), v >= 0 else { return }
+            var b = v
+            for _ in 0..<max(0, self.logRotateType.indexOfSelectedItem) { b *= 1024 }
+            self.s.logRotateSize = b
+        })
+        return f
+    }()
     private lazy var logRotateType = popInt(["Byte", "KB", "MB"], [0, 1, 2], \.logRotateSizeType)
     private lazy var logRotateStep = num(\.logRotateStep, width: 50)
     private let logEditorField = SetupUI.field(width: 300)
@@ -800,11 +797,40 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
         NSWorkspace.shared.open(URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Library/Fonts")))
     }
 
-    // テーマ (theme_pp.cpp → Mac の配色の候補)
+    // テーマ (theme_pp.cpp)。下に Mac の配色の候補 (配色かんたん設定)
+    private let themeEnableCheck = SetupUI.check("Enable")
+    private lazy var themeEditorButton = SetupUI.button("Theme Editor", target: self, action: nil)
+    private let fastSizeMoveCheck = SetupUI.check("ウィンドウ移動/リサイズ時テーマを一時的にdisableする")
+    private let themeStartupPopup = SetupUI.popup(["使用しない", "固定テーマ(テーマファイル指定)", "ランダムテーマ"])
+    private let themeFileField = SetupUI.field(width: 380)
+    private lazy var themeFileButton = SetupUI.button("...", target: self, action: #selector(chooseThemeFile))
+    private let bundledThemePopup = NSPopUpButton(frame: .zero, pullsDown: true)
     private let schemePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let preview = SchemePreview()
     private let cursorWell = NSColorWell()
     private func themePage() -> NSView {
+        // テーマ
+        themeEnableCheck.target = self; themeEnableCheck.action = #selector(changed(_:))
+        themeStartupPopup.target = self; themeStartupPopup.action = #selector(themeSettingChanged)
+        themeFileField.delegate = self
+        themeEditorButton.isEnabled = false   // テーマエディタ (themedlg.cpp) は未対応
+        themeEditorButton.toolTip = "Mac 版では未対応です"
+        bundledThemePopup.addItem(withTitle: "同梱のテーマ")
+        for p in ThemeFile.bundledThemes() {
+            let item = NSMenuItem(title: ThemeFile.storedName(for: p), action: nil, keyEquivalent: "")
+            item.representedObject = p
+            bundledThemePopup.menu?.addItem(item)
+        }
+        bundledThemePopup.target = self; bundledThemePopup.action = #selector(bundledThemeChosen)
+        custom(load: { [unowned self] in
+            let t = ThemeSettings.load()
+            self.themeEnableCheck.state = ThemeRuntime.shared.enabled ? .on : .off
+            self.fastSizeMoveCheck.state = t.fastSizeMove ? .on : .off
+            self.themeStartupPopup.selectItem(at: t.bgEnable)
+            self.themeFileField.stringValue = t.themeFile
+        }, store: {})
+
+        // Mac の配色の候補
         schemes = ColorScheme.presets + ColorScheme.terminalProfiles()
         schemePopup.addItem(withTitle: "使用しない")
         for (i, sc) in schemes.enumerated() {
@@ -836,11 +862,88 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
         note.preferredMaxLayoutWidth = 440
         return SetupUI.column([
             SetupUI.label("Theme"),
-            SetupUI.indent(SetupUI.row([SetupUI.label("固定テーマ"), schemePopup])),
+            SetupUI.indent(SetupUI.column([
+                themeEnableCheck,
+                themeEditorButton,
+                fastSizeMoveCheck,
+                SetupUI.label("Startup"),
+                SetupUI.indent(SetupUI.column([
+                    SetupUI.row([themeStartupPopup, bundledThemePopup]),
+                    SetupUI.row([themeFileField, themeFileButton]),
+                ])),
+            ], spacing: 8)),
             SetupUI.indent(preview),
-            SetupUI.indent(SetupUI.row([SetupUI.label("カーソルの色"), cursorWell])),
-            note,
+            SetupUI.box("配色 (Mac)", SetupUI.column([
+                SetupUI.row([SetupUI.label("配色"), schemePopup, SetupUI.label("カーソルの色"), cursorWell]),
+                note,
+            ])),
         ], spacing: 10)
+    }
+    /// テーマタブの有効・無効 (theme_pp.cpp ArrangeControls / CBN_SELCHANGE)
+    private func updateThemeControls() {
+        let on = themeEnableCheck.state == .on
+        let fixed = themeStartupPopup.indexOfSelectedItem == 1
+        fastSizeMoveCheck.isEnabled = on
+        themeStartupPopup.isEnabled = on
+        themeFileField.isEnabled = on && fixed
+        themeFileButton.isEnabled = on && fixed
+        bundledThemePopup.isEnabled = on && fixed
+    }
+    @objc private func themeSettingChanged() { refresh() }
+    @objc private func bundledThemeChosen() {
+        guard let p = bundledThemePopup.selectedItem?.representedObject as? String else { return }
+        themeFileField.stringValue = ThemeFile.storedName(for: p)
+        refresh()
+    }
+    @objc private func chooseThemeFile() {
+        let p = NSOpenPanel()
+        p.title = "select theme file"
+        p.allowedFileTypes = ["ini", "INI"]
+        p.allowsOtherFileTypes = true
+        let cur = ThemeFile.resolve(themeFileField.stringValue)
+        p.directoryURL = URL(fileURLWithPath: cur.map { ($0 as NSString).deletingLastPathComponent } ?? ThemeFile.themeDirectory ?? NSHomeDirectory())
+        p.beginSheetModal(for: panel) { r in
+            if r == .OK, let u = p.url { self.themeFileField.stringValue = ThemeFile.storedName(for: u.path); self.refresh() }
+        }
+    }
+    /// 見本に出すテーマ (固定テーマのときだけ。ランダムは毎回変わるので出さない)
+    private var previewTheme: ThemeData? {
+        guard themeEnableCheck.state == .on, themeStartupPopup.indexOfSelectedItem == 1,
+              let path = ThemeFile.resolve(themeFileField.stringValue) else { return nil }
+        if previewThemeCache?.path != path { previewThemeCache = ThemeFile.load(path, base: themeBase(s)) }
+        return previewThemeCache
+    }
+    private var previewThemeCache: ThemeData?
+    /// テーマの色の既定値 (テーマを当てる前の色)
+    private func themeBase(_ cur: TermSettings) -> TermSettings {
+        var b = cur
+        if let bk = ThemeSettings.colorBackup { ThemeSettings.restore(bk, to: &b) }
+        return b
+    }
+    /// OK: テーマの設定を保存し、変わっていればすぐ当てる (Tera Term は次の接続から。BGLoadThemeFile)
+    private func applyThemeTab() {
+        let old = ThemeSettings.load()
+        var t = ThemeSettings()
+        t.bgEnable = max(0, themeStartupPopup.indexOfSelectedItem)
+        t.themeFile = themeFileField.stringValue.trimmingCharacters(in: .whitespaces)
+        t.fastSizeMove = fastSizeMoveCheck.state == .on
+        ThemeRuntime.shared.enabled = themeEnableCheck.state == .on
+        if t.bgEnable != 0 {
+            if t != old || ThemeRuntime.shared.current == nil {
+                let base = themeBase(s)
+                let path = t.bgEnable == 1 ? ThemeFile.resolve(t.themeFile) : ThemeFile.randomTheme()
+                if let path = path {
+                    let d = ThemeFile.load(path, base: base)
+                    if ThemeSettings.colorBackup == nil { ThemeSettings.colorBackup = ThemeSettings.backup(s) }
+                    d.colors.apply(to: &s)
+                    ThemeRuntime.shared.set(d)
+                }
+            }
+        } else if old.bgEnable != 0 {
+            if let b = ThemeSettings.colorBackup { ThemeSettings.restore(b, to: &s); ThemeSettings.colorBackup = nil }
+            ThemeRuntime.shared.set(nil)
+        }
+        t.save()
     }
     @objc private func schemeChosen() {
         guard schemePopup.indexOfSelectedItem > 0, let item = schemePopup.selectedItem else { s.themeName = ""; return }
@@ -852,11 +955,96 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
         refresh()
     }
     private func updatePreview() {
-        preview.fg = workColors.first?.fg ?? s.fg
-        preview.bg = workColors.first?.bg ?? s.bg
+        if let th = previewTheme {
+            preview.fg = th.colors.vt.fg
+            preview.bg = th.colors.vt.bg
+            preview.ansi = th.colors.ansi
+            preview.background = th.background.isEnabled ? th.background : nil
+        } else {
+            preview.fg = workColors.first?.fg ?? s.fg
+            preview.bg = workColors.first?.bg ?? s.bg
+            if !ansiWork.isEmpty { preview.ansi = ansiWork }
+            preview.background = nil
+        }
         preview.cursor = cursorWell.color
-        if !ansiWork.isEmpty { preview.ansi = ansiWork }
         preview.font = NSFont(name: s.fontName, size: 12) ?? preview.font
+    }
+
+    // UI (ui_pp.cpp)。言語は macOS の設定に従うので日本語だけ。ダイアログフォントは Mac では変えられないので無い
+    private func uiPage() -> NSView {
+        let lang = SetupUI.popup(["日本語"])
+        lang.isEnabled = false
+        let note = NSTextField(wrappingLabelWithString: "Mac 版の表示言語は日本語です (メニューやダイアログの文字は macOS の設定に従います)。")
+        note.preferredMaxLayoutWidth = 420
+        note.textColor = .secondaryLabelColor
+        let fontsDir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Fonts")
+        let link = NSButton(title: "フォント設定/フォントフォルダ(\(fontsDir))を開く", target: self, action: #selector(openFontFolder))
+        link.isBordered = false
+        link.contentTintColor = .linkColor
+        link.attributedTitle = NSAttributedString(string: link.title, attributes: [
+            .foregroundColor: NSColor.linkColor, .underlineStyle: NSUnderlineStyle.single.rawValue, .font: NSFont.systemFont(ofSize: 13)])
+        return SetupUI.column([
+            SetupUI.label("UI言語(&L):"),
+            SetupUI.indent(lang),
+            SetupUI.indent(note),
+            SetupUI.indent(link),
+        ], spacing: 8)
+    }
+
+    // ローカルシェル (Cygwin タブ cygwin_pp の場所。CygTerm の SHELL / TERM / ENV_1 / ENV_2 / LOGIN_SHELL / HOME_CHDIR)
+    private let shellField = SetupUI.field(width: 260)
+    private let shellTermField = SetupUI.field(width: 260)
+    private let shellEnv1Field = SetupUI.field(width: 260)
+    private let shellEnv2Field = SetupUI.field(width: 260)
+    private let loginShellCheck = SetupUI.check("LOGIN_SHELL")
+    private let homeChdirCheck = SetupUI.check("HOME_CHDIR")
+    private func localShellPage() -> NSView {
+        shellField.placeholderString = LocalShellSettings.defaultShell
+        shellEnv1Field.placeholderString = "名前=値"
+        shellEnv2Field.placeholderString = "名前=値"
+        custom(load: { [unowned self] in
+            let l = LocalShellSettings.load()
+            self.shellField.stringValue = l.shell.isEmpty ? LocalShellSettings.defaultShell : l.shell
+            self.shellTermField.stringValue = l.term
+            self.shellEnv1Field.stringValue = l.env1
+            self.shellEnv2Field.stringValue = l.env2
+            self.loginShellCheck.state = l.loginShell ? .on : .off
+            self.homeChdirCheck.state = l.homeChdir ? .on : .off
+        }, store: { [unowned self] in
+            var l = LocalShellSettings()
+            let sh = self.shellField.stringValue.trimmingCharacters(in: .whitespaces)
+            l.shell = sh == LocalShellSettings.defaultShell ? "" : sh
+            let term = self.shellTermField.stringValue.trimmingCharacters(in: .whitespaces)
+            l.term = term.isEmpty ? "xterm-256color" : term
+            l.env1 = self.shellEnv1Field.stringValue
+            l.env2 = self.shellEnv2Field.stringValue
+            l.loginShell = self.loginShellCheck.state == .on
+            l.homeChdir = self.homeChdirCheck.state == .on
+            l.save()
+        })
+        let shellButton = SetupUI.button("...", target: self, action: #selector(chooseShell))
+        let note = NSTextField(wrappingLabelWithString: "ファイル > ローカルシェル で開くシェルの設定です (新しく開くときから)。")
+        note.preferredMaxLayoutWidth = 420
+        note.textColor = .secondaryLabelColor
+        return SetupUI.column([
+            SetupUI.box("ローカルシェル", SetupUI.column([
+                SetupUI.grid([
+                    [SetupUI.label("SHELL"), SetupUI.row([shellField, shellButton])],
+                    [SetupUI.label("TERM"), shellTermField],
+                    [SetupUI.label("ENV_1"), shellEnv1Field],
+                    [SetupUI.label("ENV_2"), shellEnv2Field],
+                ]),
+                SetupUI.row([loginShellCheck, homeChdirCheck], spacing: 20),
+            ], spacing: 10)),
+            note,
+        ], spacing: 10)
+    }
+    @objc private func chooseShell() {
+        let p = NSOpenPanel()
+        p.canChooseFiles = true
+        p.canChooseDirectories = false
+        p.directoryURL = URL(fileURLWithPath: "/bin")
+        p.beginSheetModal(for: panel) { r in if r == .OK, let u = p.url { self.shellField.stringValue = u.path } }
     }
 
     // キーボード (keyboard_pp.c)
@@ -931,7 +1119,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
     private let portPopup = NSPopUpButton()
     private let baudCombo = NSComboBox()
     private let dataPopup = SetupUI.popup(["7 bit", "8 bit"])
-    private let parityPopup = SetupUI.popup(["none", "odd", "even"])
+    private let parityPopup = SetupUI.popup(["none", "odd", "even", "mark", "space"])
     private let stopPopup = SetupUI.popup(["1 bit", "2 bit"])
     private let flowPopup = SetupUI.popup(["Xon/Xoff", "RTS/CTS", "DSR/DTR", "none"])
     private let statusChecks = ["CTS", "DSR", "RING", "RLSD"].map { NSButton(checkboxWithTitle: $0, target: nil, action: nil) }
@@ -1106,6 +1294,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate, NST
             return
         }
         for b in binders { b.store() }
+        applyThemeTab()
         s.optionAsMeta = s.metaKey.lowercased() != "off"
         // シリアルポート
         if portPopup.isEnabled, let p = portPopup.titleOfSelectedItem { serial.path = p }

@@ -4,7 +4,14 @@ import TeraCore
 /// 端末画面を描き、キー入力・マウス・日本語入力を受ける
 final class TerminalView: NSView, NSTextInputClient {
     let term: Terminal
-    var settings: TermSettings { didSet { applyFont(); needsDisplay = true } }
+    var settings: TermSettings {
+        didSet {
+            applyFont()
+            delimChars = TTKeyMap.hex2Str(settings.delimList)
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+        }
+    }
 
     /// 端末から相手に送る文字列 (エンコード前)
     var onSendText: ((String) -> Void)?
@@ -17,6 +24,10 @@ final class TerminalView: NSView, NSTextInputClient {
     private(set) var cellW: CGFloat = 8
     private(set) var cellH: CGFloat = 16
     private var baseline: CGFloat = 12
+    /// 文字間スペース (VTFontSpace の DX, DY) と、1 文字ごとに足す幅 (セル幅 − 文字の幅)
+    private var textDX: CGFloat = 0
+    private var textDY: CGFloat = 0
+    private var kern: CGFloat = 0
     private var font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
     private var italicFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
@@ -24,6 +35,8 @@ final class TerminalView: NSView, NSTextInputClient {
 
     /// 何行ぶん過去にさかのぼって表示しているか
     private(set) var scrollOffset = 0
+    /// 前に見たときの term.scrolledOutTotal (AutoScrollOnlyInBottomLine で表示位置を保つため)
+    private var lastScrolledOut = 0
     private var marked: NSAttributedString?
     private var markedSel = NSRange(location: 0, length: 0)
     private var blinkOn = true
@@ -38,15 +51,26 @@ final class TerminalView: NSView, NSTextInputClient {
     private var selAnchor: Pos?
     private var selHead: Pos?
     private var selMode = 1  // 1 = 文字, 2 = 単語, 3 = 行
+    /// マウスのボタンを端末に送っている (押したボタン 0 = 左, 1 = 中, 2 = 右)
     private var mouseReporting = false
+    private var reportButton = 0
+    /// 中・右ボタンで選択を始めた (SelectOnlyByLButton がオフのとき)
+    private var otherSelecting = false
+    /// DelimList の $XX を外したもの
+    private var delimChars = ""
 
     init(term: Terminal, settings: TermSettings) {
         self.term = term
         self.settings = settings
         super.init(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        delimChars = TTKeyMap.hex2Str(settings.delimList)
         applyFont()
         startBlink()
         registerForDraggedTypes([.fileURL])
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged), name: ThemeRuntime.didChange, object: nil)
+        bgSpec = ThemeRuntime.shared.background
+        lastScrolledOut = term.scrolledOutTotal
+        _ = KeyMapStore.current   // 保存されたキーボード設定ファイルを読んでおく
     }
 
     // MARK: - ファイルのドロップ (Tera Term のドラッグ&ドロップ)
@@ -77,7 +101,11 @@ final class TerminalView: NSView, NSTextInputClient {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override var isOpaque: Bool { true }
+    // 背景画像がある (テーマ) ときは透明 (絵を描いてから文字を重ねる)
+    override var isOpaque: Bool { bgSpec == nil }
+
+    /// SelectOnActivate: ウインドウを選んだクリックで文字の選択を始めるか (vtwin.cpp OnMouseActivate)
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { settings.selectOnActivate }
 
     override func becomeFirstResponder() -> Bool { focused = true; blinkOn = true; needsDisplay = true; return true }
     override func resignFirstResponder() -> Bool { focused = false; needsDisplay = true; return true }
@@ -85,13 +113,81 @@ final class TerminalView: NSView, NSTextInputClient {
     private func startBlink() {
         blinkTimer?.invalidate()
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
-            guard let self = self, self.settings.cursorBlink, self.focused else { return }
+            guard let self = self, self.term.cursorBlink, self.focused else { return }
             self.blinkOn.toggle()
             self.setNeedsDisplay(self.cursorRect().insetBy(dx: -2, dy: -2))
         }
     }
 
-    deinit { blinkTimer?.invalidate() }
+    deinit {
+        blinkTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: - 背景画像 (テーマの BGTheme。vtdisp.c CreateBGImage)
+
+    /// 描く背景 (ThemeRuntime.shared.background)。nil なら設定の背景色で塗る
+    private var bgSpec: BGImageSpec?
+    /// bounds の大きさ × backingScaleFactor で描いておいた背景の絵
+    private var bgImage: CGImage?
+    private var bgImageKey: (NSSize, CGFloat, NSRect?)?
+    private var moveObserver: NSObjectProtocol?
+
+    @objc private func themeChanged() {
+        bgSpec = ThemeRuntime.shared.background
+        bgImage = nil
+        bgImageKey = nil
+        observeWindowMove()
+        needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observeWindowMove()
+        bgImage = nil
+    }
+
+    /// 壁紙 (Src1) を使うときは、ウインドウを動かしたら切り出し直す
+    private func observeWindowMove() {
+        if let o = moveObserver { NotificationCenter.default.removeObserver(o); moveObserver = nil }
+        guard let w = window, bgSpec?.src1.enable == true else { return }
+        moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: w, queue: .main) { [weak self] _ in
+            guard let self = self else { return }
+            if ThemeSettings.load().fastSizeMove && self.inLiveResize { return }
+            self.bgImage = nil
+            self.needsDisplay = true
+        }
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        if bgSpec != nil { bgImage = nil; needsDisplay = true }
+    }
+
+    /// 背景の絵を描く。描けたら true (FastSizeMove なら、大きさを変えている間は描かない)
+    private func drawBackgroundImage(_ dirtyRect: NSRect) -> Bool {
+        guard let spec = bgSpec else { return false }
+        if inLiveResize && ThemeSettings.load().fastSizeMove { return false }
+        let scale = window?.backingScaleFactor ?? 2
+        let wf: NSRect? = spec.src1.enable ? window.map { w in w.convertToScreen(convert(bounds, to: nil)) } : nil
+        if let k = bgImageKey, bgImage != nil, k.0 == bounds.size, k.1 == scale, k.2 == wf {
+            // そのまま使う
+        } else {
+            bgImage = spec.render(size: bounds.size, scale: scale, windowFrame: wf, screen: window?.screen)
+            bgImageKey = (bounds.size, scale, wf)
+        }
+        guard let img = bgImage, let ctx = NSGraphicsContext.current?.cgContext else { return false }
+        ctx.saveGState()
+        ctx.clip(to: dirtyRect)
+        // 反転した座標 (isFlipped) なので上下を戻して描く
+        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(img, in: CGRect(origin: .zero, size: bounds.size))
+        ctx.restoreGState()
+        return true
+    }
+
+    private var session: SessionWindowController? { window?.windowController as? SessionWindowController }
 
     // MARK: - フォントと大きさ
 
@@ -101,13 +197,20 @@ final class TerminalView: NSView, NSTextInputClient {
         boldFont = fm.convert(font, toHaveTrait: .boldFontMask)
         italicFont = fm.convert(font, toHaveTrait: .italicFontMask)
         let adv = ("M" as NSString).size(withAttributes: [.font: font]).width
-        cellW = max(1, round(adv * 2) / 2)
+        // vtdisp.c ChangeFont: CellWidth = FontWidth + FontDW, CellHeight = FontHeight + FontDH
+        cellW = max(1, round(adv * 2) / 2 + CGFloat(settings.fontDW))
         let lm = NSLayoutManager()
-        cellH = ceil(lm.defaultLineHeight(for: font))
+        cellH = max(1, ceil(lm.defaultLineHeight(for: font)) + CGFloat(settings.fontDH))
         baseline = ceil(font.ascender)
+        kern = cellW - adv
+        textDX = CGFloat(settings.fontDX)
+        textDY = CGFloat(settings.fontDY)
         term.ambiguousWide = settings.ambiguousWide
+        // 点滅は相手 (DECSCUSR / ?12) が変えられるので term.cursorBlink を見る。設定はその既定値
+        if term.defaultCursorBlink != settings.cursorBlink { term.defaultCursorBlink = settings.cursorBlink }
         term.defaultCursorStyle = settings.cursorShape == "vertical" ? .bar : (settings.cursorShape == "horizontal" ? .underline : .block)
-        term.scrollbackLimit = settings.scrollback
+        // EnableScrollBuff がオフならスクロールバッファを使わない
+        term.scrollbackLimit = settings.enableScrollBuff ? settings.scrollback : 0
     }
 
     /// cols × rows がちょうど入る中身の大きさ
@@ -120,8 +223,13 @@ final class TerminalView: NSView, NSTextInputClient {
         let c = max(10, Int((newSize.width - pad * 2) / cellW))
         let r = max(2, Int((newSize.height - pad * 2) / cellH))
         if c != term.cols || r != term.rows {
+            // 幅が変わると行を折り返し直すので、選んでいた位置は合わなくなる
+            if c != term.cols { selAnchor = nil; selHead = nil }
             term.resize(cols: c, rows: r)
+            // ClearOnResize: 大きさを変えたら画面をクリアする (buffer.c BuffChangeWinSize)
+            if settings.clearOnResize { term.clearScreen() }
             scrollOffset = min(scrollOffset, term.scrollback.count)
+            lastScrolledOut = term.scrolledOutTotal
             onResize?(c, r)
             needsDisplay = true
         }
@@ -130,9 +238,16 @@ final class TerminalView: NSView, NSTextInputClient {
     // MARK: - 表示更新
 
     func dataArrived() {
+        let delta = max(0, term.scrolledOutTotal - lastScrolledOut)
+        lastScrolledOut = term.scrolledOutTotal
         if scrollOffset != 0 {
-            // 新しい出力が来たら一番下に戻る (Tera Term と同じ)
-            scrollOffset = 0
+            if settings.autoScrollOnlyInBottomLine {
+                // 一番下を見ているときだけ自動でスクロールする: さかのぼって見ている行をそのまま見せる
+                scrollOffset = min(term.scrollback.count, scrollOffset + delta)
+            } else {
+                // 新しい出力が来たら一番下に戻る (Tera Term と同じ)
+                scrollOffset = 0
+            }
         }
         blinkOn = true
         needsDisplay = true
@@ -145,19 +260,72 @@ final class TerminalView: NSView, NSTextInputClient {
         NSRect(x: pad + CGFloat(term.cx) * cellW, y: pad + CGFloat(term.cy + scrollOffset) * cellH, width: cellW * 2, height: cellH)
     }
 
-    // MARK: - 描画
+    // MARK: - 色 (vtdisp.c GetDrawAttr / Get16ColorIndex)
 
-    private func color(_ c: TColor, isFG: Bool, bold: Bool) -> NSColor {
+    /// ANSI の色 (シーケンスの色番号)。nil は「ANSI の色ではない」(Attr2Fore / Attr2Back がない)
+    private func ansiColor(_ c: TColor, bright: Bool) -> NSColor? {
+        let s = settings
+        let fullColor = s.pcBoldColor || s.aixterm16Color || s.xterm256Color
         switch c {
-        case .def: return isFG ? settings.fg : settings.bg
+        case .def:
+            return nil
+        case .rgb(let r, let g, let b):
+            // 38;2 / 48;2 は 256 色モード (Xterm256Color) のときだけ
+            guard s.xterm256Color else { return nil }
+            return NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
         case .idx(let i):
             var n = Int(i)
-            if isFG && bold && n < 8 { n += 8 }
-            if n < 16, let a = settings.ansi16 { return a[n] }
+            // 256 色の番号は 38;5 / 48;5 から (Xterm256Color)。8〜15 は 90〜97 / 100〜107 (Aixterm16Color) か 38;5
+            if n >= 16 && !s.xterm256Color { return nil }
+            if n >= 8 && n < 16 && !s.aixterm16Color && !s.xterm256Color { return nil }
+            if !fullColor {
+                // 8 色モード: 1〜7 は明るい色
+                if n > 0 && n < 8 { n += 8 }
+            } else if s.pcBoldColor {
+                // 16 色モード (PC 形式): 太字 (背景は点滅) の 0〜7 は明るい色
+                if n < 8 && bright { n += 8 }
+            }
+            if n < 16, let a = s.ansi16 { return a[n] }
             return Palette.colors[n]
-        case .rgb(let r, let g, let b):
-            return NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
         }
+    }
+
+    /// 文字と背景の色。selected: マウスで選んだところ (反転する)
+    private func drawColors(_ a: CellAttr, selected: Bool, url: Bool) -> (NSColor, NSColor, Bool) {
+        let s = settings
+        let isURL = s.enableURLColor && url
+        let isUnder = s.underlineAttrColor && a.underline
+        let isBold = s.enableBoldAttrColor && a.bold
+        let isBlink = s.enableBlinkAttrColor && a.blink
+        var reverse = selected
+        if a.reverse { reverse.toggle() }
+        if term.reverseScreen { reverse.toggle() }
+        var text = s.fg, back = s.bg
+        func pair(_ p: ColorPair) {
+            if !reverse {
+                text = p.fg; back = s.useNormalBGColor ? s.bg : p.bg
+            } else {
+                text = s.useNormalBGColor ? s.bg : p.bg; back = p.fg
+            }
+        }
+        if !(isURL || isUnder || isBold || isBlink) {
+            if reverse {
+                if s.enableReverseAttrColor { text = s.reverseColor.fg; back = s.reverseColor.bg } else { text = s.bg; back = s.fg }
+            }
+        } else if isBlink {
+            pair(s.blinkColor)
+        } else if isBold {
+            pair(s.boldColor)
+        } else if isUnder {
+            pair(s.underlineColor)
+        } else {
+            pair(s.urlColor)
+        }
+        if s.enableANSIColor {
+            if let c = ansiColor(a.fg, bright: isBold) { if !reverse { text = c } else { back = c } }
+            if let c = ansiColor(a.bg, bright: isBlink) { if !reverse { back = c } else { text = c } }
+        }
+        return (text, back, reverse)
     }
 
     private func selectionRange() -> (Pos, Pos)? {
@@ -173,18 +341,83 @@ final class TerminalView: NSView, NSTextInputClient {
         return p >= s && p < e
     }
 
+    // MARK: - URL (buffer.c mark_url_w。Mac では描くときと押したときに探す)
+
+    /// 行 (term.line(at:) の番号) → URL の桁。折り返してつながった行もまとめて調べる
+    private func urlColumns(_ li: Int, cache: inout [Int: Set<Int>]) -> Set<Int> {
+        if let c = cache[li] { return c }
+        var start = li
+        var guardCount = 0
+        while start > 0 && term.line(at: start - 1).wrapped && guardCount < 64 { start -= 1; guardCount += 1 }
+        var end = start
+        while end < term.totalLines - 1 && term.line(at: end).wrapped && end - start < 128 { end += 1 }
+        var scalars: [Unicode.Scalar] = []
+        var where_: [(Int, Int)] = []
+        for l in start...end {
+            let cells = term.line(at: l).cells
+            for (x, c) in cells.enumerated() where c.width != 0 {
+                let u = c.ch.unicodeScalars
+                scalars.append(u.count == 1 ? u.first! : " ")
+                where_.append((l, x))
+            }
+            cache[l] = []
+        }
+        for r in TTURL.urlRanges(scalars) {
+            for i in r { cache[where_[i].0, default: []].insert(where_[i].1) }
+        }
+        return cache[li] ?? []
+    }
+
+    /// その位置の URL の文字列
+    private func urlAt(_ p: Pos) -> String? {
+        let li = p.line - lineBase
+        guard li >= 0 && li < term.totalLines else { return nil }
+        var start = li
+        while start > 0 && term.line(at: start - 1).wrapped && li - start < 64 { start -= 1 }
+        var end = start
+        while end < term.totalLines - 1 && term.line(at: end).wrapped && end - start < 128 { end += 1 }
+        var scalars: [Unicode.Scalar] = []
+        var hit: Int?
+        for l in start...end {
+            for (x, c) in term.line(at: l).cells.enumerated() where c.width != 0 {
+                if l == li && x == min(p.col, term.cols - 1) { hit = scalars.count }
+                let u = c.ch.unicodeScalars
+                scalars.append(u.count == 1 ? u.first! : " ")
+            }
+        }
+        guard let h = hit, let r = TTURL.urlRanges(scalars).first(where: { $0.contains(h) }) else { return nil }
+        var s = String.UnicodeScalarView()
+        s.append(contentsOf: scalars[r])
+        return String(s)
+    }
+
+    /// buffer.c invokeBrowserWithUrl
+    private func openURL(_ s: String) {
+        guard let u = URL(string: s) ?? URL(string: s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") else { return }
+        NSWorkspace.shared.open(u)
+    }
+
+    // MARK: - 描画
+
     override func draw(_ dirtyRect: NSRect) {
         // macOS の「フォントスムージング」は暗い背景の明るい文字を太く見せるので切る (Terminal.app の見た目に合わせる)
         NSGraphicsContext.current?.cgContext.setShouldSmoothFonts(false)
         let screenRev = term.reverseScreen
-        (screenRev ? settings.fg : settings.bg).setFill()
-        dirtyRect.fill()
+        let defaultBG = screenRev ? settings.fg : settings.bg
+        let bgDrawn = drawBackgroundImage(dirtyRect)
+        let spec = bgDrawn ? bgSpec : nil
+        if !bgDrawn {
+            defaultBG.setFill()
+            dirtyRect.fill()
+        }
         let sel = selectionRange()
         let first = firstLineIndex
         let base = lineBase
         let r0 = max(0, Int((dirtyRect.minY - pad) / cellH))
         let r1 = min(term.rows - 1, Int((dirtyRect.maxY - pad) / cellH))
         guard r0 <= r1 else { return }
+        let wantURL = settings.enableURLColor || settings.urlUnderline
+        var urlCache: [Int: Set<Int>] = [:]
 
         for r in r0...r1 {
             let li = first + r
@@ -192,6 +425,7 @@ final class TerminalView: NSView, NSTextInputClient {
             let line = term.line(at: li)
             let global = base + li
             let y = pad + CGFloat(r) * cellH
+            let urls = wantURL ? urlColumns(li, cache: &urlCache) : []
             var x = 0
             // 同じ見た目の半角 ASCII はまとめて描く
             var run = ""
@@ -199,7 +433,7 @@ final class TerminalView: NSView, NSTextInputClient {
             var runAttrs: [NSAttributedString.Key: Any] = [:]
             func flush() {
                 if !run.isEmpty {
-                    (run as NSString).draw(at: NSPoint(x: pad + CGFloat(runX) * cellW, y: y), withAttributes: runAttrs)
+                    (run as NSString).draw(at: NSPoint(x: pad + CGFloat(runX) * cellW + textDX, y: y + textDY), withAttributes: runAttrs)
                     run = ""
                 }
             }
@@ -208,28 +442,33 @@ final class TerminalView: NSView, NSTextInputClient {
                 if cell.width == 0 { x += 1; continue }
                 let w = Int(cell.width)
                 let a = cell.attr
-                var fg = color(a.fg, isFG: true, bold: a.bold)
-                var bg = color(a.bg, isFG: false, bold: false)
-                var rev = a.reverse
-                if screenRev { rev.toggle() }
-                if isSelected(global, x, sel) { rev.toggle() }
-                if rev { swap(&fg, &bg) }
+                let isURL = urls.contains(x)
+                var (fg, bg, rev) = drawColors(a, selected: isSelected(global, x, sel), url: isURL)
                 if a.dim { fg = fg.withAlphaComponent(0.6) }
                 if a.invisible { fg = bg }
-                let defaultBG = screenRev ? settings.fg : settings.bg
-                if bg != defaultBG {
+                if let spec = spec {
+                    // 背景画像の上: 文字の背景は BGTextBackAlpha などの不透明度で塗る
+                    let alpha = spec.cellBackAlpha(isDefaultBack: bg == defaultBG, reverse: rev)
+                    if alpha > 0 {
+                        bg.withAlphaComponent(alpha).setFill()
+                        NSRect(x: pad + CGFloat(x) * cellW, y: y, width: CGFloat(w) * cellW, height: cellH).fill(using: .sourceOver)
+                    }
+                } else if bg != defaultBG {
                     bg.setFill()
                     NSRect(x: pad + CGFloat(x) * cellW, y: y, width: CGFloat(w) * cellW, height: cellH).fill()
                 }
+                // 下線: UnderlineAttrFont (下線属性) / URLUnderline (URL)
+                let underline = (settings.underlineAttrFont && a.underline) || (settings.urlUnderline && isURL)
                 if cell.ch != " " {
                     var attrs: [NSAttributedString.Key: Any] = [
-                        .font: a.bold ? boldFont : (a.italic ? italicFont : font),
+                        .font: a.bold && settings.enableBold ? boldFont : (a.italic ? italicFont : font),
                         .foregroundColor: fg,
                     ]
-                    if a.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                    if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
                     if a.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                     let isAscii = cell.ch.unicodeScalars.count == 1 && cell.ch.unicodeScalars.first!.value < 0x7F
-                    if isAscii && w == 1 {
+                    if isAscii && w == 1 && !a.decSpecial {
+                        if abs(kern) > 0.01 { attrs[.kern] = kern }
                         if run.isEmpty || !NSDictionary(dictionary: runAttrs).isEqual(to: attrs) || runX + run.count != x {
                             flush()
                             runX = x; runAttrs = attrs
@@ -241,11 +480,13 @@ final class TerminalView: NSView, NSTextInputClient {
                     }
                 } else {
                     flush()
-                    if a.underline || a.strike {
+                    if underline || a.strike {
                         let s: NSString = w == 2 ? "  " : " "
                         var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fg]
-                        if a.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-                        s.draw(at: NSPoint(x: pad + CGFloat(x) * cellW, y: y), withAttributes: attrs)
+                        if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                        if a.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                        if abs(kern) > 0.01 { attrs[.kern] = kern }
+                        s.draw(at: NSPoint(x: pad + CGFloat(x) * cellW + textDX, y: y + textDY), withAttributes: attrs)
                     }
                 }
                 x += w
@@ -263,19 +504,20 @@ final class TerminalView: NSView, NSTextInputClient {
         }
         let s = String(ch) as NSString
         let size = s.size(withAttributes: attrs)
+        let tx = rect.minX + textDX, ty = rect.minY + textDY
         var dx: CGFloat = 0
         if size.width < rect.width { dx = (rect.width - size.width) / 2 }
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: rect.insetBy(dx: -1, dy: 0)).addClip()
-        if size.width > rect.width + 1 {
-            // 幅が広すぎる文字は横に縮める
+        if size.width > rect.width + 1 && settings.drawingResizedFont {
+            // DrawingResizedFont: 幅が広すぎる文字は描画幅に合わせて横に縮める
             let t = NSAffineTransform()
-            t.translateX(by: rect.minX, yBy: rect.minY)
+            t.translateX(by: tx, yBy: ty)
             t.scaleX(by: rect.width / size.width, yBy: 1)
             t.concat()
             s.draw(at: .zero, withAttributes: attrs)
         } else {
-            s.draw(at: NSPoint(x: rect.minX + dx, y: rect.minY), withAttributes: attrs)
+            s.draw(at: NSPoint(x: tx + dx, y: ty), withAttributes: attrs)
         }
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -299,6 +541,14 @@ final class TerminalView: NSView, NSTextInputClient {
             0x2570: (true, false, false, true), 0x256F: (true, false, true, false),
         ]
         if (0x2588...0x2588).contains(v) { color.setFill(); r.fill(); return true }
+        // DEC Special Graphics: ▒ (0x61) と スキャンライン ⎺⎻⎼⎽ (0x6F〜0x73)
+        if v == 0x2592 { color.withAlphaComponent(0.5).setFill(); r.fill(); return true }
+        if (0x23BA...0x23BD).contains(v) {
+            let lw = max(1, round(cellW / 8))
+            let fy: [CGFloat] = [0, 0.25, 0.75, 1]
+            let yy = r.minY + (r.height - lw) * fy[Int(v - 0x23BA)]
+            color.setFill(); NSRect(x: r.minX, y: yy, width: r.width, height: lw).fill(); return true
+        }
         if v == 0x2580 { color.setFill(); NSRect(x: r.minX, y: r.minY, width: r.width, height: r.height / 2).fill(); return true }
         if v == 0x2584 { color.setFill(); NSRect(x: r.minX, y: r.midY, width: r.width, height: r.height / 2).fill(); return true }
         guard let d = light[v] else { return false }
@@ -352,14 +602,15 @@ final class TerminalView: NSView, NSTextInputClient {
             p.stroke()
             return
         }
-        guard blinkOn || !settings.cursorBlink else { return }
+        guard blinkOn || !term.cursorBlink else { return }
         switch term.cursorStyle {
         case .block:
             rect.fill()
             // カーソルの下の文字を背景色で描き直す
             let cell = term.lines[term.cy].cells[term.cx]
             if cell.ch != " " && cell.width != 0 {
-                let attrs: [NSAttributedString.Key: Any] = [.font: cell.attr.bold ? boldFont : font, .foregroundColor: settings.bg]
+                let attrs: [NSAttributedString.Key: Any] = [.font: cell.attr.bold && settings.enableBold ? boldFont : font,
+                                                            .foregroundColor: settings.bg]
                 drawSingle(cell.ch, x: term.cx, y: y, width: Int(cell.width), attrs: attrs)
             }
         case .underline:
@@ -369,7 +620,7 @@ final class TerminalView: NSView, NSTextInputClient {
         }
     }
 
-    // MARK: - キー入力
+    // MARK: - キー入力 (keyboard.c KeyDown)
 
     override func keyDown(with event: NSEvent) {
         if !keyboardEnabled { NSSound.beep(); return }
@@ -378,17 +629,17 @@ final class TerminalView: NSView, NSTextInputClient {
             inputContext?.handleEvent(event)
             return
         }
-        if let seq = specialKey(event) {
-            clearSelection()
-            sendKey(seq)
-            return
-        }
+        if teraTermKeyDown(event) { return }
+        // ここからは Windows の WM_CHAR にあたる
         let mods = event.modifierFlags
-        if mods.contains(.control), let raw = event.charactersIgnoringModifiers, let c = raw.unicodeScalars.first {
-            if let code = controlCode(c) { sendKey([code]); return }
+        let meta = isMeta(event)
+        if mods.contains(.control), !mods.contains(.command), let raw = event.charactersIgnoringModifiers, let c = raw.unicodeScalars.first {
+            if let code = controlCode(c) { sendKey(meta ? [0x1B, code] : [code]); return }
         }
-        if mods.contains(.option) && settings.optionAsMeta,
-           let s = event.characters(byApplyingModifiers: mods.intersection(.shift)), !s.isEmpty {
+        if meta, !mods.contains(.command),
+           let s = event.characters(byApplyingModifiers: mods.intersection(.shift)), !s.isEmpty, !TerminalView.isFunctionKeyText(s) {
+            clearSelection()
+            scrollToBottom()
             onSendBytes?([0x1B])
             onSendText?(s)
             return
@@ -396,7 +647,198 @@ final class TerminalView: NSView, NSTextInputClient {
         inputContext?.handleEvent(event)
     }
 
+    /// NSEvent のファンクションキーの文字 (U+F700〜U+F8FE) は送らない
+    private static func isFunctionKeyText(_ s: String) -> Bool {
+        s.unicodeScalars.contains { (0xF700...0xF8FE).contains($0.value) }
+    }
+
+    /// MetaKey: off / on / left (左 Option だけ) / right (右 Option だけ)
+    private func isMeta(_ e: NSEvent) -> Bool {
+        let m = e.modifierFlags
+        guard m.contains(.option) else { return false }
+        let raw = m.rawValue
+        switch settings.metaKey.lowercased() {
+        case "off": return false
+        case "left": return raw & 0x20 != 0     // NX_DEVICELALTKEYMASK
+        case "right": return raw & 0x40 != 0    // NX_DEVICERALTKEYMASK
+        default: return true
+        }
+    }
+
+    /// キーマップ (KEYBOARD.CNF) と VKey2KeyStr。送った (した) ら true
+    private func teraTermKeyDown(_ event: NSEvent) -> Bool {
+        let m = event.modifierFlags
+        if m.contains(.command) { return false }   // ⌘ はメニューのショートカット
+        let shift = m.contains(.shift), ctrl = m.contains(.control), alt = m.contains(.option)
+        guard let code = TTKeyMap.keyCode(macKeyCode: event.keyCode, shift: shift, control: ctrl, alt: alt) else {
+            return xtermModifiedKey(event)
+        }
+        let meta = isMeta(event)
+        var modStat = 0
+        if shift { modStat = 2 }
+        if ctrl { modStat |= 4 }
+        if alt && !meta { modStat |= 16 }
+        let km = KeyMapStore.current
+        let appK = term.appKeypad && !settings.disableAppKeypad
+        let appC = term.appCursor && !settings.disableAppCursor
+        var key = 0
+        // DeleteKey がオンなら Delete キー (テンキーの . を除く) はキーマップを見ずに DEL
+        if !(event.keyCode == 117 && settings.deleteKeySendsDel && (code & 0x1FF) != 83) {
+            key = km.keyID(forCode: code)
+        }
+        if key == 0 {
+            guard var a = vkey2KeyStr(event.keyCode, modStat: modStat, keyMap: km, appKeypad: appK, appCursor: appC) else {
+                return xtermModifiedKey(event)
+            }
+            // Meta: 1 文字なら ESC を前に付ける (Meta8Bit はオフ)
+            if meta {
+                switch a {
+                case .binary(let s) where s.unicodeScalars.count == 1: a = .binary("\u{1B}" + s)
+                case .text(let s) where s.unicodeScalars.count == 1: a = .text("\u{1B}" + s)
+                default: break
+                }
+            }
+            perform(a)
+            return true
+        }
+        guard let a = km.action(for: key, appKeypad: appK, appCursor: appC) else { return false }
+        perform(a)
+        return true
+    }
+
+    /// keyboard.c VKey2KeyStr (キーマップにないキー)。modStat: 0 = 修飾なし, 2 = Shift, 4 = Ctrl
+    private func vkey2KeyStr(_ k: UInt16, modStat: Int, keyMap km: TTKeyMap, appKeypad: Bool, appCursor: Bool) -> TTKeyMap.Action? {
+        let single = modStat == 0, shiftOnly = modStat == 2, control = modStat == 4
+        func key(_ id: Int) -> TTKeyMap.Action? { km.action(for: id, appKeypad: appKeypad, appCursor: appCursor) }
+        switch k {
+        case 51:   // BS
+            if control { return .binary(settings.bsSendsDel ? "\u{08}" : "\u{7F}") }
+            if single { return .binary(settings.bsSendsDel ? "\u{7F}" : "\u{08}") }
+        case 36, 76:   // Return / テンキーの Enter (VK_RETURN)
+            if single { return .text("\r") }
+        case 53:   // Esc
+            if single { return .binary("\u{1B}") }
+        case 49:   // Space
+            if control { return .binary("\u{0}") }
+        case 117:  // Delete (前方削除)
+            if single { return settings.deleteKeySendsDel ? .binary("\u{7F}") : key(TTKeyID.remove) }
+        case 126: if single { return key(TTKeyID.up) }
+        case 125: if single { return key(TTKeyID.down) }
+        case 124: if single { return key(TTKeyID.right) }
+        case 123: if single { return key(TTKeyID.left) }
+        case 114: if single { return key(TTKeyID.insert) }
+        case 115: if single { return key(TTKeyID.find) }
+        case 119: if single { return key(TTKeyID.select) }
+        case 116: if single { return key(TTKeyID.prev) }
+        case 121: if single { return key(TTKeyID.next) }
+        case 122: if single { return key(TTKeyID.xf1) }
+        case 120: if single { return key(TTKeyID.xf2) }
+        case 99: if single { return key(TTKeyID.xf3) } else if shiftOnly { return key(TTKeyID.f13) }
+        case 118: if single { return key(TTKeyID.xf4) } else if shiftOnly { return key(TTKeyID.f14) }
+        case 96: if single { return key(TTKeyID.xf5) } else if shiftOnly { return key(TTKeyID.help) }
+        case 97: if single { return key(TTKeyID.f6) } else if shiftOnly { return key(TTKeyID.doKey) }
+        case 98: if single { return key(TTKeyID.f7) } else if shiftOnly { return key(TTKeyID.f17) }
+        case 100: if single { return key(TTKeyID.f8) } else if shiftOnly { return key(TTKeyID.f18) }
+        case 101: if single { return key(TTKeyID.f9) } else if shiftOnly { return key(TTKeyID.f19) }
+        case 109: if single { return key(TTKeyID.f10) } else if shiftOnly { return key(TTKeyID.f20) }
+        case 103: if single { return key(TTKeyID.f11) }
+        case 111: if single { return key(TTKeyID.f12) }
+        case 105: if single { return key(TTKeyID.f13) }
+        case 107: if single { return key(TTKeyID.f14) }
+        case 113: if single { return key(TTKeyID.help) }
+        case 106: if single { return key(TTKeyID.doKey) }
+        case 64: if single { return key(TTKeyID.f17) }
+        case 79: if single { return key(TTKeyID.f18) }
+        case 80: if single { return key(TTKeyID.f19) }
+        case 90: if single { return key(TTKeyID.f20) }
+        case 19: if control { return .binary("\u{0}") }      // Ctrl+2 → NUL
+        case 20: if control { return .binary("\u{1B}") }     // Ctrl+3 → ESC
+        case 21: if control { return .binary("\u{1C}") }     // Ctrl+4 → FS
+        case 23: if control { return .binary("\u{1D}") }     // Ctrl+5 → GS
+        case 22: if control { return .binary("\u{1E}") }     // Ctrl+6 → RS
+        case 26, 44: if control { return .binary("\u{1F}") } // Ctrl+7 / Ctrl+/ → US
+        case 28: if control { return .binary("\u{7F}") }     // Ctrl+8 → DEL
+        case 10, 94: if modStat == 6 { return .binary("\u{7F}") }   // Shift+Ctrl+_ (VK_OEM_102)
+        default: break
+        }
+        return nil
+    }
+
+    /// キーマップの結果をする (KeyDown の CodeType ごとの処理)
+    private func perform(_ a: TTKeyMap.Action) {
+        switch a {
+        case .binary(let s):
+            let u = Array(s.unicodeScalars)
+            if u.allSatisfy({ $0.value < 0x100 }) { sendKey(u.map { UInt8($0.value) }) } else { clearSelection(); scrollToBottom(); onSendText?(s) }
+        case .text(let s):
+            clearSelection()
+            scrollToBottom()
+            // 改行の変換 (CR → 送信改行コード)
+            var pending = ""
+            for u in s.unicodeScalars {
+                if u == "\r" {
+                    if !pending.isEmpty { onSendText?(pending); pending = "" }
+                    onSendBytes?(settings.sendNewlineBytes)
+                } else {
+                    pending.unicodeScalars.append(u)
+                }
+            }
+            if !pending.isEmpty { onSendText?(pending) }
+        case .macro(let name):
+            var p = (name.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
+            if !p.hasPrefix("/") { p = (AppPaths.setupDirectory as NSString).appendingPathComponent(p) }
+            session?.runMacro(url: URL(fileURLWithPath: p))
+        case .command(let id):
+            session?.macroCallMenu(id)
+        case .accel(let id):
+            accelCommand(id)
+        }
+    }
+
+    /// vtwin.cpp OnAccelCommand
+    private func accelCommand(_ id: Int) {
+        switch id {
+        case TTKeyID.print: session?.printMenu(nil)
+        case TTKeyID.breakKey: session?.sendBreak(nil)
+        case TTKeyID.cmdEditCopy: copy(nil)
+        case TTKeyID.cmdEditPaste: if canPaste?() ?? true { startPaste(addCR: false) }
+        case TTKeyID.cmdEditPasteCR: if canPaste?() ?? true { startPaste(addCR: true) }
+        case TTKeyID.cmdEditCLS: session?.clearScreen(nil)
+        case TTKeyID.cmdEditCLB: session?.clearBuffer(nil)
+        case TTKeyID.cmdLineUp: scrollBy(1)
+        case TTKeyID.cmdLineDown: scrollBy(-1)
+        case TTKeyID.cmdPageUp: scrollBy(term.rows - 1)
+        case TTKeyID.cmdPageDown: scrollBy(-(term.rows - 1))
+        case TTKeyID.cmdBuffTop: scrollBy(term.scrollback.count)
+        case TTKeyID.cmdBuffBottom: scrollToBottom()
+        case TTKeyID.cmdNextWin: selectNextWindow(1, shownOnly: false)
+        case TTKeyID.cmdPrevWin: selectNextWindow(-1, shownOnly: false)
+        case TTKeyID.cmdNextSWin: selectNextWindow(1, shownOnly: true)
+        case TTKeyID.cmdPrevSWin: selectNextWindow(-1, shownOnly: true)
+        case TTKeyID.cmdLocalEcho: session?.settings.localEcho.toggle()
+        case TTKeyID.cmdCtrlOpenTEK: _ = session?.openTEKWindow()
+        case TTKeyID.cmdCtrlCloseTEK: session?.closeTEKWindow()
+        default: break   // Hold・ScrollLock は Mac 版にない
+        }
+    }
+
+    /// ttcmn SelectNextWin: Tera Term のウインドウを順に切り替える。shownOnly なら最小化したものは飛ばす
+    private func selectNextWindow(_ dir: Int, shownOnly: Bool) {
+        let all = SessionWindowController.all.compactMap { $0.window }
+        guard let me = window, let i = all.firstIndex(of: me), all.count > 1 else { return }
+        var j = i
+        for _ in 0..<all.count {
+            j = (j + dir + all.count) % all.count
+            let w = all[j]
+            if shownOnly && w.isMiniaturized { continue }
+            if w.isMiniaturized { w.deminiaturize(nil) }
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+    }
+
     private func sendKey(_ b: [UInt8]) {
+        clearSelection()
         scrollToBottom()
         onSendBytes?(b)
     }
@@ -407,7 +849,7 @@ final class TerminalView: NSView, NSTextInputClient {
         case "A"..."Z": return UInt8(c.value - 0x40)
         case "@", " ", "2": return 0
         case "[", "3": return 27
-        case "\\", "4": return 28
+        case "\\", "¥", "4": return 28
         case "]", "5": return 29
         case "^", "6": return 30
         case "_", "-", "7": return 31
@@ -416,61 +858,59 @@ final class TerminalView: NSView, NSTextInputClient {
         }
     }
 
-    private func specialKey(_ e: NSEvent) -> [UInt8]? {
+    /// Mac 版の追加: キーマップにも VKey2KeyStr にもない修飾キー付きの特殊キーは xterm の書き方で送る
+    /// (Shift+矢印 → ESC[1;2A など)。Tab / Shift+Tab と、Shift+PageUp/PageDown のスクロールもここ
+    private func xtermModifiedKey(_ e: NSEvent) -> Bool {
         let m = e.modifierFlags
+        if m.contains(.command) { return false }
         var mod = 1
         if m.contains(.shift) { mod += 1 }
         if m.contains(.option) { mod += 2 }
         if m.contains(.control) { mod += 4 }
+        let appC = term.appCursor && !settings.disableAppCursor
         func csi(_ s: String) -> [UInt8] { Array("\u{1B}[\(s)".utf8) }
         func cursorKey(_ c: String) -> [UInt8] {
             if mod > 1 { return csi("1;\(mod)\(c)") }
-            return Array((term.appCursor ? "\u{1B}O" : "\u{1B}[").utf8) + Array(c.utf8)
+            return Array((appC ? "\u{1B}O" : "\u{1B}[").utf8) + Array(c.utf8)
         }
         func tilde(_ n: Int) -> [UInt8] { mod > 1 ? csi("\(n);\(mod)~") : csi("\(n)~") }
         func ss3(_ c: String) -> [UInt8] { mod > 1 ? csi("1;\(mod)\(c)") : Array("\u{1B}O\(c)".utf8) }
+        var seq: [UInt8]?
         switch e.keyCode {
-        case 36, 76: return settings.sendNewlineBytes
-        case 51:
-            if m.contains(.option) && settings.optionAsMeta { return [0x1B, settings.bsSendsDel ? 0x7F : 0x08] }
-            return [settings.bsSendsDel ? 0x7F : 0x08]
-        case 117: return tilde(3)
-        case 48: return m.contains(.shift) ? csi("Z") : [0x09]
-        case 53: return [0x1B]
-        case 123: return cursorKey("D")
-        case 124: return cursorKey("C")
-        case 125: return cursorKey("B")
-        case 126: return cursorKey("A")
-        case 115: return cursorKey("H")
-        case 119: return cursorKey("F")
+        case 48:
+            if m.contains(.shift) && !m.contains(.control) { seq = csi("Z") }
+            else if !m.contains(.control) { seq = isMeta(e) ? [0x1B, 0x09] : [0x09] }
+        case 117: seq = tilde(3)
+        case 123: seq = cursorKey("D")
+        case 124: seq = cursorKey("C")
+        case 125: seq = cursorKey("B")
+        case 126: seq = cursorKey("A")
+        case 115: seq = cursorKey("H")
+        case 119: seq = cursorKey("F")
         case 116:
-            if m.contains(.shift) { scrollBy(term.rows - 1); return [] }
-            return tilde(5)
+            if m.contains(.shift) { scrollBy(term.rows - 1); return true }
+            seq = tilde(5)
         case 121:
-            if m.contains(.shift) { scrollBy(-(term.rows - 1)); return [] }
-            return tilde(6)
-        case 114: return tilde(2)
-        case 122: return ss3("P")
-        case 120: return ss3("Q")
-        case 99: return ss3("R")
-        case 118: return ss3("S")
-        case 96: return tilde(15)
-        case 97: return tilde(17)
-        case 98: return tilde(18)
-        case 100: return tilde(19)
-        case 101: return tilde(20)
-        case 109: return tilde(21)
-        case 103: return tilde(23)
-        case 111: return tilde(24)
+            if m.contains(.shift) { scrollBy(-(term.rows - 1)); return true }
+            seq = tilde(6)
+        case 114: seq = tilde(2)
+        case 122: seq = ss3("P")
+        case 120: seq = ss3("Q")
+        case 99: seq = ss3("R")
+        case 118: seq = ss3("S")
+        case 96: seq = tilde(15)
+        case 97: seq = tilde(17)
+        case 98: seq = tilde(18)
+        case 100: seq = tilde(19)
+        case 101: seq = tilde(20)
+        case 109: seq = tilde(21)
+        case 103: seq = tilde(23)
+        case 111: seq = tilde(24)
         default: break
         }
-        // テンキー (アプリケーションモード)
-        if term.appKeypad && m.contains(.numericPad) {
-            let map: [UInt16: String] = [82: "p", 83: "q", 84: "r", 85: "s", 86: "t", 87: "u", 88: "v", 89: "w", 91: "x", 92: "y",
-                                         65: "n", 67: "j", 69: "k", 75: "o", 78: "m", 81: "X"]
-            if let c = map[e.keyCode] { return Array("\u{1B}O\(c)".utf8) }
-        }
-        return nil
+        guard let s = seq else { return false }
+        sendKey(s)
+        return true
     }
 
     // MARK: - NSTextInputClient (日本語入力)
@@ -479,7 +919,7 @@ final class TerminalView: NSView, NSTextInputClient {
         let s = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
         marked = nil
         needsDisplay = true
-        guard !s.isEmpty else { return }
+        guard !s.isEmpty, !TerminalView.isFunctionKeyText(s) else { return }
         clearSelection()
         scrollToBottom()
         onSendText?(s)
@@ -529,21 +969,32 @@ final class TerminalView: NSView, NSTextInputClient {
         if scrollOffset != 0 { scrollOffset = 0; needsDisplay = true }
     }
 
+    /// vtwin.cpp OnMouseWheel: 1 ノッチで MouseWheelScrollLine 行
     override func scrollWheel(with event: NSEvent) {
         var dy = event.scrollingDeltaY
-        if event.hasPreciseScrollingDeltas { dy /= cellH } else { dy *= 3 }
+        if event.hasPreciseScrollingDeltas {
+            dy /= cellH
+        } else if dy != 0 {
+            let notches = max(1, Int(abs(dy).rounded()))
+            dy = CGFloat((notches == 1 ? max(1, settings.mouseWheelScrollLine) : notches) * (dy < 0 ? -1 : 1))
+        }
         accumScroll += dy
         let n = Int(accumScroll)
         guard n != 0 else { return }
         accumScroll -= CGFloat(n)
-        if term.mouseMode != 0 && !event.modifierFlags.contains(.shift) {
+        if trackingMouse(event) {
             let p = cellAt(event)
-            for _ in 0..<abs(n) { sendMouse(button: n > 0 ? 64 : 65, x: p.col, y: p.row, press: true) }
+            if event.hasPreciseScrollingDeltas {
+                for _ in 0..<abs(n) { sendMouse(button: n > 0 ? 64 : 65, x: p.col, y: p.row, press: true, event: event) }
+            } else {
+                sendMouse(button: n > 0 ? 64 : 65, x: p.col, y: p.row, press: true, event: event)
+            }
             return
         }
         if term.usingAlt {
             // vim / less などではスクロールを矢印キーとして送る
-            let key: [UInt8] = Array((term.appCursor ? "\u{1B}O" : "\u{1B}[").utf8) + [n > 0 ? 0x41 : 0x42]
+            let appC = term.appCursor && !settings.disableAppCursor
+            let key: [UInt8] = Array((appC ? "\u{1B}O" : "\u{1B}[").utf8) + [n > 0 ? 0x41 : 0x42]
             for _ in 0..<abs(n) { onSendBytes?(key) }
             return
         }
@@ -567,24 +1018,71 @@ final class TerminalView: NSView, NSTextInputClient {
         return Pos(line: lineBase + firstLineIndex + c.row, col: col)
     }
 
-    private func sendMouse(button: Int, x: Int, y: Int, press: Bool) {
-        if term.mouseSGR {
-            onSendBytes?(Array("\u{1B}[<\(button);\(x + 1);\(y + 1)\(press ? "M" : "m")".utf8))
-        } else {
-            let b = press ? button : 3
-            onSendBytes?([0x1B, 0x5B, 0x4D, UInt8(min(255, 32 + b)), UInt8(min(255, 33 + x)), UInt8(min(255, 33 + y))])
+    /// 押したセル (半分より右でも次の桁にしない)
+    private func cellPosAt(_ e: NSEvent) -> Pos {
+        let c = cellAt(e)
+        return Pos(line: lineBase + firstLineIndex + c.row, col: min(c.col, term.cols - 1))
+    }
+
+    /// マウスを端末に送るか (vtterm.c MouseReport): MouseEventTracking がオンで、相手が求めていて、
+    /// DisableMouseTrackingByCtrl なら Ctrl を押していないとき。Mac 版では Shift を押しても送らない (xterm と同じ)
+    private func trackingMouse(_ e: NSEvent) -> Bool {
+        guard settings.mouseEventTracking, term.mouseMode != 0 else { return false }
+        let m = e.modifierFlags
+        if settings.disableMouseTrackingByCtrl && m.contains(.control) { return false }
+        if m.contains(.shift) { return false }
+        return true
+    }
+
+    private func sendMouse(button: Int, x: Int, y: Int, press: Bool, event: NSEvent? = nil) {
+        var b = button
+        if let m = event?.modifierFlags {
+            // MouseReport: Shift = 4, Alt (Option) = 8, Ctrl = 16
+            if m.contains(.shift) { b |= 4 }
+            if m.contains(.option) { b |= 8 }
+            if m.contains(.control) { b |= 16 }
         }
+        if term.mouseSGR {
+            onSendBytes?(Array("\u{1B}[<\(b);\(x + 1);\(y + 1)\(press ? "M" : "m")".utf8))
+        } else {
+            let v = press ? b : (3 | (b & 0x1C))
+            onSendBytes?([0x1B, 0x5B, 0x4D, UInt8(min(255, 32 + v)), UInt8(min(255, 33 + x)), UInt8(min(255, 33 + y))])
+        }
+    }
+
+    private func reportPress(_ event: NSEvent, button: Int) -> Bool {
+        guard trackingMouse(event) else { return false }
+        let c = cellAt(event)
+        mouseReporting = true
+        reportButton = button
+        sendMouse(button: button, x: min(c.col, term.cols - 1), y: c.row, press: true, event: event)
+        return true
+    }
+
+    private func reportDrag(_ event: NSEvent) {
+        if term.mouseMode >= 1002 {
+            let c = cellAt(event)
+            sendMouse(button: 32 + reportButton, x: min(c.col, term.cols - 1), y: c.row, press: true, event: event)
+        }
+    }
+
+    private func reportRelease(_ event: NSEvent) {
+        let c = cellAt(event)
+        sendMouse(button: reportButton, x: min(c.col, term.cols - 1), y: c.row, press: false, event: event)
+        mouseReporting = false
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        if term.mouseMode != 0 && !event.modifierFlags.contains(.shift) {
-            let c = cellAt(event)
-            mouseReporting = true
-            sendMouse(button: 0, x: min(c.col, term.cols - 1), y: c.row, press: true)
+        if reportPress(event, button: 0) { return }
+        mouseReporting = false
+        // クリッカブル URL: URL をダブルクリック (buffer.c BuffUrlDblClk)。Mac 版は ⌘-クリックでも開く
+        if settings.enableClickableUrl && (event.clickCount == 2 || event.modifierFlags.contains(.command)),
+           let u = urlAt(cellPosAt(event)) {
+            clearSelection()
+            openURL(u)
             return
         }
-        mouseReporting = false
         let p = posAt(event)
         selMode = min(3, event.clickCount)
         if selMode == 1 {
@@ -594,7 +1092,7 @@ final class TerminalView: NSView, NSTextInputClient {
                 selAnchor = p; selHead = p
             }
         } else if selMode == 2 {
-            let (s, e) = wordBounds(p)
+            let (s, e) = wordBounds(cellPosAt(event))
             selAnchor = s; selHead = e
         } else {
             selAnchor = Pos(line: p.line, col: 0); selHead = Pos(line: p.line, col: term.cols)
@@ -602,19 +1100,12 @@ final class TerminalView: NSView, NSTextInputClient {
         needsDisplay = true
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        if mouseReporting {
-            if term.mouseMode >= 1002 {
-                let c = cellAt(event)
-                sendMouse(button: 32, x: min(c.col, term.cols - 1), y: c.row, press: true)
-            }
-            return
-        }
+    private func extendSelection(_ event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         if p.y < 0 { scrollBy(1) } else if p.y > bounds.height { scrollBy(-1) }
         var pos = posAt(event)
         if selMode == 2, let a = selAnchor {
-            let (s, e) = wordBounds(pos)
+            let (s, e) = wordBounds(cellPosAt(event))
             pos = pos < a ? s : e
         } else if selMode == 3 {
             pos.col = pos < (selAnchor ?? pos) ? 0 : term.cols
@@ -623,26 +1114,93 @@ final class TerminalView: NSView, NSTextInputClient {
         needsDisplay = true
     }
 
+    override func mouseDragged(with event: NSEvent) {
+        if mouseReporting { reportDrag(event); return }
+        extendSelection(event)
+    }
+
     override func mouseUp(with event: NSEvent) {
-        if mouseReporting {
-            let c = cellAt(event)
-            sendMouse(button: 0, x: min(c.col, term.cols - 1), y: c.row, press: false)
-            mouseReporting = false
-            return
-        }
+        if mouseReporting { reportRelease(event); return }
         if settings.copyOnSelect, selectionRange() != nil { copy(nil) }
     }
 
+    /// 右ボタン (vtwin.cpp ButtonDown / OnRButtonUp)
     override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        if reportPress(event, button: 2) { return }
+        mouseReporting = false
         if settings.rightClickPaste {
-            if canPaste?() ?? true { startPaste(addCR: false) }
-        } else {
-            super.rightMouseDown(with: event)
+            // ConfirmPasteMouseRButton: 貼り付け / 貼り付け<CR> のメニューを出す (メニューから選んだときだけ貼り付ける)
+            if settings.confirmPasteMouseRButton {
+                if (canPaste?() ?? true) && NSPasteboard.general.string(forType: .string) != nil {
+                    let m = NSMenu()
+                    m.autoenablesItems = false
+                    m.addItem(withTitle: "貼り付け", action: #selector(paste(_:)), keyEquivalent: "").target = self
+                    m.addItem(withTitle: "貼り付け<CR>", action: #selector(pasteCR(_:)), keyEquivalent: "").target = self
+                    NSMenu.popUpContextMenu(m, with: event, for: self)
+                }
+                return
+            }
+            beginOtherSelection(event)
+            return
+        }
+        if !settings.selectOnlyByLButton { beginOtherSelection(event); return }
+        super.rightMouseDown(with: event)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        if mouseReporting { reportDrag(event); return }
+        if otherSelecting { extendSelection(event) }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        if mouseReporting { reportRelease(event); return }
+        endOtherSelection()
+        if settings.rightClickPaste && !settings.confirmPasteMouseRButton && (canPaste?() ?? true) {
+            startPaste(addCR: false)
         }
     }
 
+    /// 中ボタン (OnMButtonDown / OnMButtonUp)。DisablePasteMouseMButton がオフなら離したときに貼り付ける
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { super.otherMouseDown(with: event); return }
+        window?.makeFirstResponder(self)
+        if reportPress(event, button: 1) { return }
+        mouseReporting = false
+        beginOtherSelection(event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        if mouseReporting { reportDrag(event); return }
+        if otherSelecting { extendSelection(event) }
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { super.otherMouseUp(with: event); return }
+        if mouseReporting { reportRelease(event); return }
+        endOtherSelection()
+        if !settings.disablePasteMouseMButton && (canPaste?() ?? true) { startPaste(addCR: false) }
+    }
+
+    /// SelectOnlyByLButton がオフなら中・右ボタンでも選択を始める
+    private func beginOtherSelection(_ event: NSEvent) {
+        otherSelecting = false
+        guard !settings.selectOnlyByLButton else { return }
+        let p = posAt(event)
+        selMode = 1
+        selAnchor = p; selHead = p
+        otherSelecting = true
+        needsDisplay = true
+    }
+
+    private func endOtherSelection() {
+        guard otherSelecting else { return }
+        otherSelecting = false
+        if settings.copyOnSelect, selectionRange() != nil { copy(nil) }
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
-        if settings.rightClickPaste { return nil }
+        if settings.rightClickPaste || !settings.selectOnlyByLButton { return nil }
         let m = NSMenu()
         m.addItem(withTitle: "コピー", action: #selector(copy(_:)), keyEquivalent: "")
         m.addItem(withTitle: "貼り付け", action: #selector(paste(_:)), keyEquivalent: "")
@@ -650,20 +1208,111 @@ final class TerminalView: NSView, NSTextInputClient {
         return m
     }
 
-    private func wordBounds(_ p: Pos) -> (Pos, Pos) {
-        let idx = p.line - lineBase
-        guard idx >= 0 && idx < term.totalLines else { return (p, p) }
-        let cells = term.line(at: idx).cells
-        func isWord(_ x: Int) -> Bool {
-            guard x >= 0 && x < cells.count else { return false }
-            let ch = cells[x].ch
-            return !(ch == " " || "\"'`()[]{}<>|;,".contains(ch))
+    // MARK: - マウスカーソル (MouseCursor、URL の上では HAND)
+
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = trackingArea { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: .zero, options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(t)
+        trackingArea = t
+    }
+
+    private var baseCursor: NSCursor {
+        switch settings.mouseCursor.uppercased() {
+        case "ARROW": return .arrow
+        case "CROSS": return .crosshair
+        case "HAND": return .pointingHand
+        default: return .iBeam
         }
-        var s = min(p.col, cells.count - 1), e = s
-        guard isWord(s) else { return (Pos(line: p.line, col: s), Pos(line: p.line, col: s + 1)) }
-        while s > 0 && isWord(s - 1) { s -= 1 }
-        while e < cells.count && isWord(e) { e += 1 }
-        return (Pos(line: p.line, col: s), Pos(line: p.line, col: e))
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: baseCursor)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor(event)
+    }
+
+    private func updateCursor(_ event: NSEvent) {
+        if settings.enableClickableUrl, urlAt(cellPosAt(event)) != nil {
+            NSCursor.pointingHand.set()
+        } else {
+            baseCursor.set()
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        // 1003 (any event): ボタンを押していなくても動きを送る
+        if term.mouseMode == 1003 && trackingMouse(event) {
+            let c = cellAt(event)
+            sendMouse(button: 35, x: min(c.col, term.cols - 1), y: c.row, press: true, event: event)
+        }
+        updateCursor(event)
+    }
+
+    // MARK: - 単語の選択 (buffer.c BuffDblClk / SearchDelimiterPrev / SearchDelimiterNext)
+
+    /// 区切り文字 (DelimList)。DelimDBCS (オン) と同じく、半角と全角の境目でも区切る
+    private func wordBounds(_ p: Pos) -> (Pos, Pos) {
+        var idx = p.line - lineBase
+        guard idx >= 0 && idx < term.totalLines else { return (p, p) }
+        var cells = term.line(at: idx).cells
+        guard !cells.isEmpty else { return (p, p) }
+        var x = min(max(0, p.col), cells.count - 1)
+        while x > 0 && cells[x].width == 0 { x -= 1 }   // 全角の右半分なら左半分から
+        let startCh = cells[x].ch
+        let startDelim = isDelimiter(startCh)
+        let startWide = cells[x].width == 2
+        func stop(_ c: Cell) -> Bool {
+            if startDelim { return c.ch != startCh }
+            return isDelimiter(c.ch) || ((c.width == 2) != startWide)
+        }
+        let cont = settings.continuedLineCopy
+        // 前へ
+        var sIdx = idx, sx = x
+        while true {
+            var px = sx - 1
+            while px >= 0 && cells[px].width == 0 { px -= 1 }
+            if px < 0 {
+                // 前の行から続いている (継続行コピーのとき)
+                guard cont, sIdx > 0, term.line(at: sIdx - 1).wrapped else { break }
+                let prev = term.line(at: sIdx - 1).cells
+                var qx = prev.count - 1
+                while qx > 0 && prev[qx].width == 0 { qx -= 1 }
+                guard qx >= 0, !stop(prev[qx]) else { break }
+                sIdx -= 1; cells = prev; sx = qx
+                continue
+            }
+            if stop(cells[px]) { break }
+            sx = px
+        }
+        // 後ろへ
+        idx = p.line - lineBase
+        cells = term.line(at: idx).cells
+        var eIdx = idx, ex = x
+        while true {
+            var nx = ex + max(1, Int(cells[ex].width))
+            if nx >= cells.count {
+                guard cont, term.line(at: eIdx).wrapped, eIdx + 1 < term.totalLines else { break }
+                let next = term.line(at: eIdx + 1).cells
+                guard !next.isEmpty, !stop(next[0]) else { break }
+                eIdx += 1; cells = next; ex = 0
+                continue
+            }
+            while nx < cells.count && cells[nx].width == 0 { nx += 1 }
+            if nx >= cells.count || stop(cells[nx]) { break }
+            ex = nx
+        }
+        let endCol = ex + max(1, Int(cells[ex].width))
+        return (Pos(line: lineBase + sIdx, col: sx), Pos(line: lineBase + eIdx, col: endCol))
+    }
+
+    private func isDelimiter(_ ch: Character) -> Bool {
+        delimChars.contains(ch)
     }
 
     func clearSelection() {

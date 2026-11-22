@@ -46,7 +46,7 @@ enum ConnectionSpec: Equatable {
             if s.path.isEmpty { s.path = SerialPort.list().first ?? "" }
             if let v = cl.baud { s.baud = v }
             if let v = cl.dataBit, v == 7 || v == 8 { s.dataBits = v }
-            if let v = cl.parity, ["none", "odd", "even"].contains(v) { s.parity = v }
+            if let v = cl.parity, ["none", "odd", "even", "mark", "space"].contains(v) { s.parity = v }
             if let v = cl.stopBit { s.stopBits = v == "1" ? 1 : 2 }
             if let v = cl.flowCtrl {
                 switch v {
@@ -97,7 +97,7 @@ struct SerialParams: Equatable {
     var path = ""
     var baud = 9600
     var dataBits = 8
-    var parity = "none"     // none / odd / even
+    var parity = "none"     // none / odd / even / mark / space (mark / space は SerialLineMode で作る)
     var stopBits = 1
     var flow = "none"       // none / xon / rts
 }
@@ -147,6 +147,8 @@ final class PTYConnection: Connection {
     private let queue = DispatchQueue(label: "pty.read")
     private var initialSize: winsize
     private var closed = false
+    /// HOME_CHDIR: ホームディレクトリで始める (false ならアプリのいまのフォルダのまま)
+    var chdirHome = true
 
     init(argv: [String], cols: Int, rows: Int, extraEnv: [String: String] = [:], waitForOutput: Bool = false) {
         self.argv = argv
@@ -165,7 +167,7 @@ final class PTYConnection: Connection {
         // fork 後の子プロセスではメモリ確保できないので、先に C 文字列を用意しておく
         let cArgs: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) } + [nil]
         let cEnv: [UnsafeMutablePointer<CChar>?] = env.map { strdup("\($0.key)=\($0.value)") } + [nil]
-        let home = strdup(NSHomeDirectory())
+        let home = strdup(chdirHome ? NSHomeDirectory() : FileManager.default.currentDirectoryPath)
         defer {
             cArgs.forEach { free($0) }
             cEnv.forEach { free($0) }
@@ -281,6 +283,20 @@ final class TCPConnection: Connection {
     /// /timeout= (秒)。0 は OS 任せ
     var timeout = 0
     private var ready = false
+    /// TermType (TERMINAL-TYPE のサブネゴシエーションで送る端末の種類)
+    var termType = "xterm-256color"
+    /// TelKeepAliveInterval (秒。0 = 送らない): 最後に送ってからこれだけたったら IAC NOP を送る
+    var keepAliveInterval = 0
+    /// TTProxy: プロキシを通して接続する (nil / none ならじかに)
+    var proxy: ProxyConfig?
+    private var handshake: ProxyHandshake?
+    private let queue = DispatchQueue(label: "tcp")
+    private var keepAliveTimer: DispatchSourceTimer?
+    /// cv.LastSendTime
+    private var lastSendTime = Date()
+    private let sendLock = NSLock()
+    /// ts.TelPort: この番号のときだけこちらからネゴシエーションを始める (OnCommStart)
+    private static let telPort = 23
 
     // Telnet 受信の状態
     private enum TState { case data, iac, opt(UInt8), sb, sbIac }
@@ -288,7 +304,7 @@ final class TCPConnection: Connection {
     private var sbBuf: [UInt8] = []
 
     private let IAC: UInt8 = 255, DONT: UInt8 = 254, DO: UInt8 = 253, WONT: UInt8 = 252, WILL: UInt8 = 251
-    private let SB: UInt8 = 250, SE: UInt8 = 240
+    private let SB: UInt8 = 250, SE: UInt8 = 240, NOP: UInt8 = 241
     private let OPT_BINARY: UInt8 = 0, OPT_ECHO: UInt8 = 1, OPT_SGA: UInt8 = 3, OPT_TTYPE: UInt8 = 24, OPT_NAWS: UInt8 = 31
 
     init(host: String, port: Int, telnet: Bool, cols: Int, rows: Int) {
@@ -297,14 +313,19 @@ final class TCPConnection: Connection {
     }
 
     func start() throws {
-        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { throw ConnError(msg: "ポート番号がおかしいです") }
-        let c = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
+        let viaProxy = proxy?.isEnabled == true
+        let destHost = viaProxy ? proxy!.host : host
+        let destPort = viaProxy ? proxy!.effectivePort : port
+        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: destPort)), destPort > 0 else { throw ConnError(msg: "ポート番号がおかしいです") }
+        let c = NWConnection(host: NWEndpoint.Host(destHost), port: p, using: .tcp)
         conn = c
-        let q = DispatchQueue(label: "tcp")
-        if timeout > 0 {
-            q.asyncAfter(deadline: .now() + .seconds(timeout)) { [weak self] in
+        let q = queue
+        // プロキシのときは ConnectionTimeout (TTProxy) も使う
+        let limit = timeout > 0 ? timeout : (viaProxy ? proxy!.timeout : 0)
+        if limit > 0 {
+            q.asyncAfter(deadline: .now() + .seconds(limit)) { [weak self] in
                 guard let self = self, !self.ready else { return }
-                self.finish("接続できませんでした: タイムアウト (\(self.timeout) 秒)")
+                self.finish("接続できませんでした: タイムアウト (\(limit) 秒)")
                 c.cancel()
             }
         }
@@ -312,15 +333,7 @@ final class TCPConnection: Connection {
             guard let self = self else { return }
             switch st {
             case .ready:
-                self.ready = true
-                DispatchQueue.main.async { if !self.closed { self.onConnected?() } }
-                if self.telnet {
-                    var opts: [UInt8] = [self.IAC, self.WILL, self.OPT_TTYPE, self.IAC, self.WILL, self.OPT_NAWS,
-                                         self.IAC, self.DO, self.OPT_SGA, self.IAC, self.DO, self.OPT_ECHO]
-                    if self.requestBinary { opts += [self.IAC, self.WILL, self.OPT_BINARY, self.IAC, self.DO, self.OPT_BINARY] }
-                    self.sendRaw(opts)
-                }
-                self.receive()
+                if viaProxy { self.beginProxy() } else { self.didConnect(leftover: []) }
             case .failed(let e):
                 self.finish("接続できませんでした: \(e.localizedDescription)")
             case .waiting(let e):
@@ -334,7 +347,78 @@ final class TCPConnection: Connection {
         c.start(queue: q)
     }
 
+    /// つながった (プロキシのときは中継が始まった)。leftover: プロキシの応答に続いて届いていたもの
+    private func didConnect(leftover: [UInt8]) {
+        ready = true
+        DispatchQueue.main.async { if !self.closed { self.onConnected?() } }
+        if telnet && port == TCPConnection.telPort {
+            // OnCommStart: Telnet でポートが TelPort のときだけ、こちらからネゴシエーションを始める
+            var opts: [UInt8] = [IAC, WILL, OPT_TTYPE, IAC, WILL, OPT_NAWS, IAC, DO, OPT_SGA, IAC, DO, OPT_ECHO]
+            if requestBinary { opts += [IAC, WILL, OPT_BINARY, IAC, DO, OPT_BINARY] }
+            sendRaw(opts)
+            startKeepAlive()   // TelStartKeepAliveThread
+        }
+        if !leftover.isEmpty {
+            let bytes = telnet ? telnetFilter(leftover) : leftover
+            if !bytes.isEmpty { DispatchQueue.main.async { self.onData?(bytes) } }
+        }
+        receive()
+    }
+
+    // MARK: プロキシ (TTProxy の hooked connect → begin_relay_*)
+
+    private func beginProxy() {
+        guard let cfg = proxy else { didConnect(leftover: []); return }
+        let h = ProxyHandshake(config: cfg, host: host, port: port)
+        handshake = h
+        handleProxy(h.start())
+    }
+
+    private func handleProxy(_ o: ProxyHandshake.Output) {
+        if !o.send.isEmpty { conn?.send(content: Data(o.send), completion: .contentProcessed { _ in }) }
+        switch o.result {
+        case .connected(let rest)?:
+            handshake = nil
+            didConnect(leftover: rest)
+        case .failed(let m)?:
+            handshake = nil
+            finish("接続できませんでした: \(m)")
+            conn?.cancel()
+        case nil:
+            conn?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, done, err in
+                guard let self = self, let h = self.handshake else { return }
+                var out = ProxyHandshake.Output()
+                if let d = data, !d.isEmpty { out = h.feed([UInt8](d)) }
+                if out.result == nil && (done || err != nil) {
+                    let c = h.closed()
+                    out.send += c.send
+                    out.result = c.result
+                }
+                self.handleProxy(out)
+            }
+        }
+    }
+
+    // MARK: Telnet Keep-alive (telnet.c TelKeepAliveThread / TelSendNOP)
+
+    private func startKeepAlive() {
+        guard keepAliveInterval > 0, keepAliveTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
+        t.setEventHandler { [weak self] in
+            guard let self = self, !self.closed, self.keepAliveInterval > 0 else { return }
+            self.sendLock.lock()
+            let last = self.lastSendTime
+            self.sendLock.unlock()
+            if Date().timeIntervalSince(last) >= Double(self.keepAliveInterval) { self.sendRaw([self.IAC, self.NOP]) }
+        }
+        keepAliveTimer = t
+        t.resume()
+    }
+
     private func finish(_ msg: String?) {
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
         DispatchQueue.main.async {
             guard !self.closed else { return }
             self.closed = true
@@ -427,7 +511,8 @@ final class TCPConnection: Connection {
 
     private func subnegotiation(_ b: [UInt8]) {
         if b.count >= 2 && b[0] == OPT_TTYPE && b[1] == 1 {
-            sendRaw([IAC, SB, OPT_TTYPE, 0] + Array("XTERM".utf8) + [IAC, SE])
+            // ts.TermType をそのまま送る
+            sendRaw([IAC, SB, OPT_TTYPE, 0] + Array(termType.utf8) + [IAC, SE])
         }
     }
 
@@ -441,6 +526,9 @@ final class TCPConnection: Connection {
     }
 
     private func sendRaw(_ b: [UInt8]) {
+        sendLock.lock()
+        lastSendTime = Date()
+        sendLock.unlock()
         conn?.send(content: Data(b), completion: .contentProcessed { _ in })
     }
 
@@ -513,7 +601,15 @@ final class SerialConnection: Connection {
     var onClose: ((String?) -> Void)?
     var onConnected: (() -> Void)?
     let waitsForConnection = false
-    let params: SerialParams
+    /// いまの設定 (setbaud・設定の変更でも変わる。ポートは変わらない)
+    private(set) var params: SerialParams
+    /// マーク / スペースのパリティのためのバイトの直し方 (SerialLineMode)
+    private var lineModeValue = SerialLineMode(dataBits: 8, parity: "none", stopBits: 1)
+    private let lineModeLock = NSLock()
+    private var lineMode: SerialLineMode {
+        get { lineModeLock.lock(); defer { lineModeLock.unlock() }; return lineModeValue }
+        set { lineModeLock.lock(); lineModeValue = newValue; lineModeLock.unlock() }
+    }
     private var fd: Int32 = -1
     private var source: DispatchSourceRead?
     private let queue = DispatchQueue(label: "serial.read")
@@ -552,19 +648,22 @@ final class SerialConnection: Connection {
     private func configure() throws {
         var t = termios()
         if tcgetattr(fd, &t) != 0 { throw ConnError(msg: "ポートの設定を読めませんでした") }
+        guard let mode = SerialLineMode.make(dataBits: params.dataBits, parity: params.parity, stopBits: params.stopBits) else {
+            throw ConnError(msg: "\(params.dataBits) ビット・パリティ \(params.parity) は Mac のシリアルポートでは使えません")
+        }
         cfmakeraw(&t)
         t.c_cflag |= tcflag_t(CLOCAL | CREAD)
         t.c_cflag &= ~tcflag_t(CSIZE)
-        switch params.dataBits {
+        switch mode.dataBits {
         case 5: t.c_cflag |= tcflag_t(CS5)
         case 6: t.c_cflag |= tcflag_t(CS6)
         case 7: t.c_cflag |= tcflag_t(CS7)
         default: t.c_cflag |= tcflag_t(CS8)
         }
         t.c_cflag &= ~tcflag_t(PARENB | PARODD)
-        if params.parity == "even" { t.c_cflag |= tcflag_t(PARENB) }
-        if params.parity == "odd" { t.c_cflag |= tcflag_t(PARENB | PARODD) }
-        if params.stopBits == 2 { t.c_cflag |= tcflag_t(CSTOPB) } else { t.c_cflag &= ~tcflag_t(CSTOPB) }
+        if mode.parity == "even" { t.c_cflag |= tcflag_t(PARENB) }
+        if mode.parity == "odd" { t.c_cflag |= tcflag_t(PARENB | PARODD) }
+        if mode.stopBits == 2 { t.c_cflag |= tcflag_t(CSTOPB) } else { t.c_cflag &= ~tcflag_t(CSTOPB) }
         t.c_cflag &= ~tcflag_t(CRTSCTS | CDTR_IFLOW | CDSR_OFLOW)
         t.c_iflag &= ~tcflag_t(IXON | IXOFF | IXANY)
         if flow == "rts" { t.c_cflag |= tcflag_t(CRTSCTS) }
@@ -587,13 +686,32 @@ final class SerialConnection: Connection {
         if ioctl(fd, IOSSIOSPEED, &sp) != 0 && tcsetattr(fd, TCSANOW, &t) != 0 {
             throw ConnError(msg: "通信速度 \(currentBaud) に設定できませんでした")
         }
+        lineMode = mode
+    }
+
+    /// 開いたままデータ長・パリティ・ストップビットを変える (CommResetSerial と同じく設定をかけ直す)
+    @discardableResult
+    func setLineParams(dataBits: Int, parity: String, stopBits: Int) -> Bool {
+        guard fd >= 0 else { return false }
+        let old = params
+        params.dataBits = dataBits
+        params.parity = parity
+        params.stopBits = stopBits
+        do {
+            try configure()
+            return true
+        } catch {
+            params = old
+            try? configure()
+            return false
+        }
     }
 
     private func readAvailable() {
         var buf = [UInt8](repeating: 0, count: 8192)
         let n = read(fd, &buf, buf.count)
         if n > 0 {
-            let chunk = Array(buf[0..<n])
+            let chunk = lineMode.receive(Array(buf[0..<n]))
             DispatchQueue.main.async { self.onData?(chunk) }
         } else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
             // USB シリアルを抜いたときなど
@@ -606,6 +724,7 @@ final class SerialConnection: Connection {
         let cd = charDelayMs, ld = lineDelayMs
         writeQueue.async {
             guard f >= 0 else { return }
+            let bytes = self.lineMode.transmit(bytes)
             if cd == 0 && ld == 0 {
                 var off = 0
                 var tries = 0
@@ -667,6 +786,7 @@ final class SerialConnection: Connection {
     func setBaud(_ baud: Int) -> Bool {
         guard fd >= 0, baud > 0 else { return false }
         currentBaud = baud
+        params.baud = baud
         var t = termios()
         guard tcgetattr(fd, &t) == 0 else { return false }
         cfsetspeed(&t, speed_t(baud))
@@ -684,12 +804,14 @@ final class SerialConnection: Connection {
         guard tcgetattr(fd, &t) == 0 else { return false }
         t.c_cflag &= ~tcflag_t(CRTSCTS)
         t.c_iflag &= ~tcflag_t(IXON | IXOFF | IXANY)
+        t.c_cflag &= ~tcflag_t(CDTR_IFLOW | CDSR_OFLOW)
         switch mode {
         case 1: t.c_iflag |= tcflag_t(IXON | IXOFF); flow = "xon"
         case 2: t.c_cflag |= tcflag_t(CRTSCTS); flow = "rts"
         case 4: t.c_cflag |= tcflag_t(CDTR_IFLOW | CDSR_OFLOW); flow = "dsr"
         default: flow = "none"
         }
+        params.flow = flow
         return tcsetattr(fd, TCSANOW, &t) == 0
     }
 
@@ -727,8 +849,11 @@ final class SerialConnection: Connection {
     }
 }
 
-func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [String] = [], timeout: Int? = nil,
-                    telnetBinary: Bool = false) -> Connection {
+/// - termType: TermType (Telnet の TERMINAL-TYPE)。keepAlive: TelKeepAliveInterval (秒)
+/// - proxy: TTProxy の設定 (Telnet / 生の TCP はこの中でプロキシに、ssh は sshArgs の ProxyCommand と sshEnv で)
+func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [String] = [], sshEnv: [String: String] = [:],
+                    timeout: Int? = nil, telnetBinary: Bool = false, termType: String = "xterm-256color", keepAlive: Int = 0,
+                    proxy: ProxyConfig? = nil) -> Connection {
     switch spec {
     case .ssh(let host, let port, let user, let key):
         // マクロの scpsend / scprecv が同じ接続を使えるように ControlMaster を使う。
@@ -738,22 +863,30 @@ func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [Stri
         if port != 22 { a += ["-p", String(port)] }
         if !key.isEmpty { a += ["-i", (key as NSString).expandingTildeInPath] }
         a.append(user.isEmpty ? host : "\(user)@\(host)")
-        return PTYConnection(argv: a, cols: cols, rows: rows, waitForOutput: true)
+        return PTYConnection(argv: a, cols: cols, rows: rows, extraEnv: sshEnv, waitForOutput: true)
     case .telnet(let h, let p):
         let c = TCPConnection(host: h, port: p, telnet: true, cols: cols, rows: rows)
         c.timeout = timeout ?? 0
         c.requestBinary = telnetBinary
+        c.termType = termType
+        c.keepAliveInterval = max(0, keepAlive)
+        c.proxy = proxy
         return c
     case .rawTCP(let h, let p):
         let c = TCPConnection(host: h, port: p, telnet: false, cols: cols, rows: rows)
         c.timeout = timeout ?? 0
+        c.proxy = proxy
         return c
     case .serial(let s):
         return SerialConnection(params: s)
     case .shell:
-        let sh = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        // ログインシェルとして起動 (argv[0] を "-zsh" にする代わりに -l を付ける)
-        return PTYConnection(argv: [sh, "-l"], cols: cols, rows: rows)
+        // ローカルシェルの設定 (CygTerm の SHELL / TERM / ENV_x / LOGIN_SHELL / HOME_CHDIR)
+        let ls = LocalShellSettings.load()
+        var env = ls.environment
+        if !ls.term.isEmpty { env["TERM"] = ls.term }
+        let c = PTYConnection(argv: ls.loginShell ? [ls.shellPath, "-l"] : [ls.shellPath], cols: cols, rows: rows, extraEnv: env)
+        c.chdirHome = ls.homeChdir
+        return c
     }
 }
 

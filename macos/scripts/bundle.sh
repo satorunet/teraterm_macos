@@ -68,6 +68,17 @@ ditto "$BINDIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # ライセンス (アイコンの元の Tera Term の BSD ライセンス表示も含む)
 cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
+# 設定の初期値 (TermSettings.initial) に使う本家同梱の TERATERM.INI
+cp "../installer/release/TERATERM.INI" "$APP/Contents/Resources/TERATERM.INI"
+# Tera Term のテーマの見本 (installer/release/theme) とヘルプ (doc/ja/html。Tera Term と同じ BSD ライセンス: html/about/copyright.html)
+UP=".."
+ditto "$UP/installer/release/theme" "$APP/Contents/Resources/theme"
+mkdir -p "$APP/Contents/Resources/help"
+rsync -a --exclude '*.ppt' --exclude '*.drawio' --exclude '*.md' --exclude '.gitignore' \
+    "$UP/doc/ja/html/" "$APP/Contents/Resources/help/html/"
+# ヘルプ ID → ファイルの対応 (HelpViewer が読む): hhp の [ALIAS] と helpid.h
+cp "$UP/doc/ja/teraterm.hhp" "$APP/Contents/Resources/help/teraterm.hhp"
+cp "$UP/teraterm/common/helpid.h" "$APP/Contents/Resources/help/helpid.h"
 plist "$APP/Contents/Info.plist" TeraMac "$BUNDLE_ID" "$NAME" AppIcon '    <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
