@@ -4,8 +4,7 @@ import AppKit
 /// 中身は NSApp.mainMenu の同名のメニューそのものを開く (検証・チェック印・ウィンドウ / 漢字コードの
 /// NSMenuDelegate による作り直しがそのまま効く)。項目はこのバーのウィンドウをキーにしてから開くので、
 /// target なしの項目は そのウィンドウの TerminalView → SessionWindowController の順で届く。
-/// 「メニューバー表示」(MENU_SHOW_MENUBAR / HideMenu) にあたる設定は UserDefaults "showInWindowMenuBar"
-/// (アプリ全体、既定 表示)。隠したときは Ctrl+左クリックでメニュー全体をポップアップする。
+/// 表示するかは本家と同じ PopupMenu の設定 (アプリ全体、既定 off = 表示)。隠したときは Ctrl+左クリックでメニュー全体をポップアップする。
 final class InWindowMenuBar: NSView {
     /// (表示名, mainMenu のタイトル, Option+○ のキー)
     static let entries: [(label: String, menu: String, key: String)] = [
@@ -17,10 +16,22 @@ final class InWindowMenuBar: NSView {
     static let defaultsKey = "showInWindowMenuBar"
     static let changedNotification = Notification.Name("TeraMacInWindowMenuBarChanged")
 
+    /// 設定の PopupMenu (TermSettings.popupMenu。on = 隠す) を読む。メニューの「ウィンドウ > メニューバーを表示」で変える。
+    /// 前の版の "showInWindowMenuBar" しかなければ、それを使う
     static var isShown: Bool {
-        get { UserDefaults.standard.object(forKey: defaultsKey) == nil ? true : UserDefaults.standard.bool(forKey: defaultsKey) }
+        get {
+            let d = UserDefaults.standard
+            if d.object(forKey: "PopupMenu") != nil { return !d.bool(forKey: "PopupMenu") }
+            return d.object(forKey: defaultsKey) == nil ? true : d.bool(forKey: defaultsKey)
+        }
         set {
-            UserDefaults.standard.set(newValue, forKey: defaultsKey)
+            // 右クリックの「隠す」・Ctrl+クリックの「表示」から: 保存した設定と開いている全ウィンドウの設定をそろえる
+            var s = TermSettings.load()
+            s.popupMenu = !newValue
+            s.save()
+            for c in SessionWindowController.all {
+                var cs = c.settings; cs.popupMenu = !newValue; c.settings = cs
+            }
             NotificationCenter.default.post(name: changedNotification, object: nil)
         }
     }
@@ -76,6 +87,10 @@ final class InWindowMenuBar: NSView {
         backdrop.autoresizingMask = [.width, .height]
         backdrop.frame = bounds
         addSubview(backdrop, positioned: .below, relativeTo: nil)
+        highlight.wantsLayer = true
+        highlight.layer?.cornerRadius = 5
+        highlight.isHidden = true
+        addSubview(highlight)
         _ = overlay
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -131,8 +146,17 @@ final class InWindowMenuBar: NSView {
         return v
     }()
     private var rects: [NSRect] = []
-    private var hover: Int?
-    private var pressed: Int?
+    private var hover: Int? { didSet { updateHighlight() } }
+    private var pressed: Int? { didSet { updateHighlight() } }
+    /// 指している / 押している題の後ろの、角の丸い淡い地 (レイヤーで出すので確実に描き直される)
+    private let highlight = NSView()
+    private func updateHighlight() {
+        layoutTitles()
+        guard let i = pressed ?? hover, i < rects.count, rects[i] != .zero else { highlight.isHidden = true; return }
+        highlight.frame = rects[i].insetBy(dx: 1, dy: 2)
+        highlight.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(pressed != nil ? 0.2 : 0.12).cgColor
+        highlight.isHidden = false
+    }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -161,11 +185,6 @@ final class InWindowMenuBar: NSView {
         let active = window?.isKeyWindow ?? true
         let labels = Self.entries.map { $0.label } + [Self.overflowLabel]
         for (i, label) in labels.enumerated() where rects[i] != .zero {
-            let r = rects[i].insetBy(dx: 1, dy: 2)
-            if pressed == i || hover == i {
-                (pressed == i ? NSColor.labelColor.withAlphaComponent(0.16) : NSColor.labelColor.withAlphaComponent(0.08)).setFill()
-                NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
-            }
             let color: NSColor = active ? .labelColor : .secondaryLabelColor
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
             let s = label as NSString
@@ -189,7 +208,9 @@ final class InWindowMenuBar: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let i = index(at: event)
-        if i != hover { hover = i; needsDisplay = true }
+        if i != hover {
+            hover = i; needsDisplay = true
+        }
     }
     override func mouseExited(with event: NSEvent) {
         if hover != nil { hover = nil; needsDisplay = true }
@@ -260,7 +281,7 @@ final class InWindowMenuBar: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let m = NSMenu()
-        let it = m.addItem(withTitle: "メニューバーを隠す", action: #selector(hideBar(_:)), keyEquivalent: "")
+        let it = m.addItem(withTitle: "メニューバーを閉じる", action: #selector(hideBar(_:)), keyEquivalent: "")
         it.target = self
         return m
     }
@@ -281,7 +302,7 @@ final class InWindowMenuBar: NSView {
             m.addItem(top)
         }
         m.addItem(.separator())
-        let show = NSMenuItem(title: "メニューバーを表示", action: #selector(showBar(_:)), keyEquivalent: "")
+        let show = NSMenuItem(title: "メニューバーを開く", action: #selector(showBar(_:)), keyEquivalent: "")
         show.target = barActionTarget
         m.addItem(show)
         return m
@@ -311,19 +332,41 @@ private final class TitlesView: NSView {
     override func draw(_ dirtyRect: NSRect) { bar.drawTitles() }
 }
 
-/// TerminalView の frame はバーの分を除いた残りなので、cols/rows は TerminalView 自身の大きさから決まる
+/// ウィンドウの中身 (端末)。メニューバーはタイトルバーの下の飾り (NSTitlebarAccessoryViewController) に置く。
+/// タブが複数あるとき、タブの列はタイトルバーの飾りより下に出るので、メニューバーはタブより上になる
+/// (Windows 版のメニューバーと同じく、タブを切り替えてもメニューの位置は変わらない)
 final class TerminalContainerView: NSView {
     let bar = InWindowMenuBar(frame: .zero)
     let termView: TerminalView
+    private let accessory = NSTitlebarAccessoryViewController()
+    /// タイトルバーの右端のボタン。押すたびにメニューバーを出す / 隠す
+    private let menuButtonAccessory = NSTitlebarAccessoryViewController()
+    private lazy var menuButton: NSButton = {
+        let img = NSImage(systemSymbolName: "line.horizontal.3", accessibilityDescription: "メニュー") ?? NSImage()
+        let b = HoverButton(image: img, target: self, action: #selector(openMenuFromButton(_:)))
+        b.isBordered = false
+        b.bezelStyle = .regularSquare
+        b.toolTip = "メニュー"
+        b.frame = NSRect(x: 0, y: 0, width: 36, height: 22)
+        return b
+    }()
     private var observer: NSObjectProtocol?
 
     init(termView: TerminalView) {
         self.termView = termView
         super.init(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         autoresizesSubviews = false
-        addSubview(bar)
         addSubview(termView)
-        bar.isHidden = !InWindowMenuBar.isShown
+        bar.frame = NSRect(x: 0, y: 0, width: 600, height: InWindowMenuBar.barHeight(forWidth: 600))
+        accessory.view = bar
+        accessory.layoutAttribute = .bottom
+        accessory.isHidden = !InWindowMenuBar.isShown
+        let holder = NSView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
+        menuButton.frame.origin = NSPoint(x: 0, y: 0)
+        holder.addSubview(menuButton)
+        menuButtonAccessory.view = holder
+        menuButtonAccessory.layoutAttribute = .trailing
+        updateMenuButton()
         layoutChildren()
         observer = NotificationCenter.default.addObserver(forName: InWindowMenuBar.changedNotification, object: nil, queue: .main) { [weak self] _ in
             self?.barVisibilityChanged()
@@ -335,14 +378,29 @@ final class TerminalContainerView: NSView {
 
     override var isFlipped: Bool { true }
 
-    private var barHeight: CGFloat { bar.isHidden ? 0 : InWindowMenuBar.barHeight(forWidth: bounds.width) }
+    /// メニューバーを出しているか
+    var barShown: Bool { !accessory.isHidden }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let w = window, !w.titlebarAccessoryViewControllers.contains(accessory) else { return }
+        w.addTitlebarAccessoryViewController(accessory)
+        w.addTitlebarAccessoryViewController(menuButtonAccessory)
+    }
+
+    @objc private func openMenuFromButton(_ sender: NSButton) {
+        InWindowMenuBar.isShown.toggle()
+    }
+
+    /// 出しているときは色を付け、押すと隠すと分かるようにする
+    private func updateMenuButton() {
+        let shown = InWindowMenuBar.isShown
+        menuButton.contentTintColor = shown ? .controlAccentColor : .secondaryLabelColor
+        menuButton.toolTip = shown ? "メニューバーを閉じる" : "メニューバーを開く"
+    }
 
     private func layoutChildren() {
-        let h = barHeight
-        bar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: InWindowMenuBar.barHeight(forWidth: bounds.width))
-        bar.needsDisplay = true
-        let tf = NSRect(x: 0, y: h, width: bounds.width, height: max(0, bounds.height - h))
-        if termView.frame != tf { termView.frame = tf }
+        if termView.frame != bounds { termView.frame = bounds }
     }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) { layoutChildren() }
@@ -354,17 +412,23 @@ final class TerminalContainerView: NSView {
     /// 表示 / 非表示が変わったら、端末の大きさ (cols/rows) を保ったままウィンドウを伸び縮みさせる
     private func barVisibilityChanged() {
         let show = InWindowMenuBar.isShown
-        guard show == bar.isHidden else { return }
-        bar.isHidden = !show
-        guard let w = window else { layoutChildren(); return }
-        let top = w.frame.maxY
-        var size = w.contentRect(forFrameRect: w.frame).size
-        let bh = InWindowMenuBar.barHeight(forWidth: bounds.width)
-        size.height += show ? bh : -bh
-        w.setContentSize(size)
-        w.setFrameTopLeftPoint(NSPoint(x: w.frame.minX, y: top))
-        layoutChildren()
-        bar.needsDisplay = true
+        guard show != barShown else { return }
+        updateMenuButton()
+        guard let w = window, w.isVisible else { accessory.isHidden = !show; return }
+        // スライドして出し入れする。端末の大きさ (cols/rows) は変えず、ウィンドウの上端も動かさない
+        let bh = bar.frame.height
+        var target = w.frame
+        target.size.height += show ? bh : -bh
+        target.origin.y = w.frame.maxY - target.height
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2
+            ctx.allowsImplicitAnimation = true
+            accessory.animator().isHidden = !show
+            w.animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            self?.layoutChildren()
+            self?.bar.needsDisplay = true
+        })
     }
 
     // MARK: - Option+○ (Windows の Alt+○) と、隠したときの Ctrl+左クリック
@@ -374,7 +438,7 @@ final class TerminalContainerView: NSView {
         guard !monitorsInstalled else { return }
         monitorsInstalled = true
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { ev in
-            guard let c = ev.window?.contentView as? TerminalContainerView, !c.bar.isHidden,
+            guard let c = ev.window?.contentView as? TerminalContainerView, c.barShown,
                   ev.window?.firstResponder === c.termView,
                   ev.modifierFlags.intersection([.command, .control, .option, .shift]) == [.option],
                   !c.termView.settings.optionAsMeta, !c.termView.hasMarkedText(),
@@ -384,7 +448,7 @@ final class TerminalContainerView: NSView {
             return nil
         }
         NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { ev in
-            guard let w = ev.window, let c = w.contentView as? TerminalContainerView, c.bar.isHidden,
+            guard let w = ev.window, let c = w.contentView as? TerminalContainerView, !c.barShown,
                   ev.modifierFlags.intersection([.command, .control, .option, .shift]) == [.control] else { return ev }
             let p = c.termView.convert(ev.locationInWindow, from: nil)
             guard c.termView.bounds.contains(p) else { return ev }
@@ -392,5 +456,24 @@ final class TerminalContainerView: NSView {
             InWindowMenuBar.fullPopupMenu().popUp(positioning: nil, at: p, in: c.termView)
             return nil
         }
+    }
+}
+
+/// マウスが乗ると、角の丸い淡い背景を付けるボタン (メニューバーの題と同じ見た目)
+final class HoverButton: NSButton {
+    private var hovering = false { didSet { needsDisplay = true } }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func draw(_ dirtyRect: NSRect) {
+        if hovering || isHighlighted {
+            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.2 : 0.12).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 1), xRadius: 5, yRadius: 5).fill()
+        }
+        super.draw(dirtyRect)
     }
 }

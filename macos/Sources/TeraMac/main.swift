@@ -228,10 +228,49 @@ enum SelfTest {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
+    /// ウィンドウ全体 (タイトルバー・タブ・ウィンドウ内メニューバーを含む) を写す。自分のウィンドウなので許可はいらない
+    static func snapWindow(_ w: NSWindow, _ path: String) {
+        guard let img = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(w.windowNumber),
+                                                [.boundsIgnoreFraming, .bestResolution]) else { return }
+        let rep = NSBitmapImageRep(cgImage: img)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
     static func run(dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let c = SessionWindowController()
         c.showWindow(nil)
+        if ProcessInfo.processInfo.environment["TERAMAC_TABSNAP"] != nil {
+            // タブを 2 つにして、ウィンドウ全体を写す (メニューバーとタブの並びの確認用)
+            let c2 = SessionWindowController()
+            c.window?.addTabbedWindow(c2.window!, ordered: .above)
+            c2.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                snapWindow(c2.window!, dir + "/tabs.png")
+                // 設定 > ウィンドウ のシート (メニューバーの出し入れは保存した設定を書き換えるので、ここではしない)
+                c2.openSetupSheet(.window)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if let sh = SetupSheet.current?.panel { snapWindow(sh, dir + "/setup_window.png") }
+                    // その場の反映: フォントを大きくして端末を写し、キャンセルで戻るか写す
+                    c2.term.feed("preview test ABC 日本語\r\n")
+                    SetupSheet.current?.debugPreviewBiggerFont()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        snapWindow(c2.window!, dir + "/preview_font.png")
+                        SetupSheet.current?.bringToFront(page: .font)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            if let sh = SetupSheet.current?.panel { snapWindow(sh, dir + "/setup_font.png") }
+                            SetupSheet.current?.cancel()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                snapWindow(c2.window!, dir + "/preview_cancel.png")
+                                exit(0)
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         let demo = """
         \u{1B}[1mTeraMac\u{1B}[0m 表示テスト  \u{1B}[31m赤\u{1B}[32m緑\u{1B}[33m黄\u{1B}[34m青\u{1B}[35m紫\u{1B}[36m水\u{1B}[0m\r
         \u{1B}[7m反転\u{1B}[0m \u{1B}[4m下線\u{1B}[0m \u{1B}[38;5;208m256色\u{1B}[0m \u{1B}[38;2;255;105;180mTrueColor\u{1B}[0m \u{1B}[44;97m 背景 \u{1B}[0m\r

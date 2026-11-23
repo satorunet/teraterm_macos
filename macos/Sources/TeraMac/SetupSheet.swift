@@ -212,12 +212,25 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     /// 以前の SetupDialog(settings:) と同じ呼び方 (端末タブから)
     convenience init(settings: TermSettings) { self.init(settings: settings, session: nil, page: .terminal) }
 
+    /// 開いている設定画面 (アプリ全体で 1 つ)
+    static weak var current: SetupSheet?
+
+    /// 開いている設定画面を前に出し、ページを切り替える
+    func bringToFront(page: Page) {
+        selectPage(at: Page.allCases.firstIndex(of: page) ?? 0)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
     func begin(on w: NSWindow, completion: @escaping (TermSettings?) -> Void) {
         self.completion = completion
         panel.title = "Tera Term: その他の設定"
         build()
         selectPage(at: Page.allCases.firstIndex(of: startPage) ?? 0)
+        // 端末にくっつくシートではなく、別のウィンドウにする (動かして端末を見ながら設定できる)
+        presentsAsWindow = true
+        Self.current = self
         present(on: w)
+        previewReady = true
         if let dir = ProcessInfo.processInfo.environment["TERAMAC_SETUP_SNAPSHOT"] { snapshotTabs(dir) }
     }
 
@@ -370,6 +383,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
     // 依存する項目の有効・無効 (各タブの OnCommand にあたる)
     private func refresh() {
+        defer { livePreview() }
         termResizeCheck.isEnabled = termIsWinCheck.state == .off
         scrollField.isEnabled = scrollCheck.state == .on
         confirmRButton.isEnabled = disableRButton.state == .off
@@ -772,6 +786,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         return SetupUI.column([
             SetupUI.label("VTウィンドウフォント(&V)"),
             SetupUI.indent(SetupUI.row([fontField, SetupUI.button("選択(&S)...", target: self, action: #selector(chooseFont))])),
+            SetupUI.indent(resetFontButton),
             SetupUI.button("フォント設定/フォントフォルダ(\(fontsDir))を開く", target: self, action: #selector(openFontFolder)),
             cb("描画幅に合わせてリサイズしたフォントを描画(&W)", \.drawingResizedFont),
             SetupUI.box("文字間スペース", cross),
@@ -779,6 +794,21 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     }
     private func updateFontLabel() {
         fontField.stringValue = "\(s.font.displayName ?? s.fontName), \(Int(s.fontSize))pt"
+        // 既定と違うフォントのときだけ「戻す」ボタンを出す
+        let d = Self.defaultFont
+        resetFontButton.isHidden = s.fontName == d.name && s.fontSize == d.size
+        resetFontButton.title = "デフォルトのフォント (\(NSFont(name: d.name, size: d.size)?.displayName ?? d.name), \(Int(d.size))pt) に戻す"
+    }
+    /// 既定のフォント (初めて起動したときの設定 = 同梱の TERATERM.INI を重ねた初期値)
+    private static let defaultFont: (name: String, size: CGFloat) = {
+        let t = TermSettings.initial()
+        return (t.fontName, t.fontSize)
+    }()
+    private lazy var resetFontButton = SetupUI.button("デフォルトのフォントに戻す", target: self, action: #selector(resetFont))
+    @objc private func resetFont() {
+        s.fontName = Self.defaultFont.name
+        s.fontSize = Self.defaultFont.size
+        refresh()
     }
     @objc private func chooseFont() {
         let fm = NSFontManager.shared
@@ -1020,7 +1050,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             l.env2 = self.shellEnv2Field.stringValue
             l.loginShell = self.loginShellCheck.state == .on
             l.homeChdir = self.homeChdirCheck.state == .on
-            l.save()
+            if !self.previewing { l.save() }
         })
         let shellButton = SetupUI.button("...", target: self, action: #selector(chooseShell))
         let note = NSTextField(wrappingLabelWithString: "ファイル > ローカルシェル で開くシェルの設定です (新しく開くときから)。")
@@ -1310,8 +1340,64 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     }
 
     override func cancel() {
+        revertPreview()
         finish()
         completion?(nil)
+    }
+
+    // MARK: その場で反映 (見ながら設定できるように)
+
+    /// 変えた設定を、開いた端末のウィンドウにその場で当てる。保存はしない。キャンセルで元に戻す
+    private var previewReady = false
+    private var previewing = false
+    private var previewOriginal: (settings: TermSettings, theme: ThemeData?, themeEnabled: Bool)?
+    /// 開いたときの端末のウィンドウの位置と大きさ (キャンセルでそのまま戻す)
+    private var previewFrame: NSRect?
+
+    private func livePreview() {
+        guard previewReady, !previewing, let sess = session else { return }
+        previewing = true
+        defer { previewing = false }
+        if previewOriginal == nil {
+            // キャンセルで戻すのは、開いたときの設定と、そのときの桁数・行数
+            var o = sess.settings
+            o.cols = sess.term.cols; o.rows = sess.term.rows
+            previewOriginal = (o, ThemeRuntime.shared.current, ThemeRuntime.shared.enabled)
+            previewFrame = sess.window?.frame
+        }
+        // 画面の値を写しの設定に読み取る (self.s は変えない)
+        let keep = s
+        for b in binders { b.store() }
+        var p = s
+        s = keep
+        // 桁数・行数はそのまま (フォントを変えたときはウィンドウの大きさを合わせる)
+        p.cols = sess.term.cols; p.rows = sess.term.rows
+        // テーマ: 固定テーマなら色と背景を見せる。テーマを使わないなら、テーマの前の色に戻す
+        let themeOn = themeEnableCheck.state == .on && themeStartupPopup.indexOfSelectedItem != 0
+        if themeOn, let th = previewTheme {
+            th.colors.apply(to: &p)
+            ThemeRuntime.shared.enabled = true
+            ThemeRuntime.shared.set(th)
+        } else if !themeOn {
+            if let b = ThemeSettings.colorBackup { ThemeSettings.restore(b, to: &p) }
+            if ThemeRuntime.shared.current != nil { ThemeRuntime.shared.set(nil) }
+        }
+        sess.applySettings(p)
+        sess.updateWindowAlpha()   // 不透明度 (applyRuntimeSettings はスクロールバッファも変えるので呼ばない)
+    }
+
+    /// 自己テスト用: フォントを大きくしてその場の反映を起こす
+    func debugPreviewBiggerFont() { s.fontSize += 8; refresh() }
+
+    private func revertPreview() {
+        guard let o = previewOriginal, let sess = session else { return }
+        previewOriginal = nil
+        ThemeRuntime.shared.enabled = o.themeEnabled
+        ThemeRuntime.shared.set(o.theme)
+        sess.applySettings(o.settings)
+        if let f = previewFrame, let w = sess.window, w.frame != f { w.setFrame(f, display: true) }
+        previewFrame = nil
+        sess.updateWindowAlpha()
     }
 
     private func finish() {

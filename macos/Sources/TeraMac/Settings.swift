@@ -65,6 +65,7 @@ struct TermSettings {
     var urlColor = ColorPair(0x00FFFF, 0x000000)       // URLColor
     var underlineColor = ColorPair(0x00FF00, 0x000000) // VTUnderlineColor
     var useNormalBGColor = false                    // UseNormalBGColor
+    var popupMenu = false                           // PopupMenu (on = ウィンドウ内のメニューバーを隠す)
     // フォント
     var drawingResizedFont = true                   // DrawingResizedFont
     var fontDX = 0, fontDW = 0, fontDY = 0, fontDH = 0   // VTFontSpace=DX,DW,DY,DH
@@ -404,7 +405,7 @@ extension TermSettings {
     static let boolFields: [(String, WritableKeyPath<TermSettings, Bool>)] = [
         ("TermIsWin", \.termIsWin), ("AutoWinResize", \.autoWinResize), ("AutoWinSwitch", \.autoWinSwitch),
         ("PcBoldColor", \.pcBoldColor), ("Aixterm16Color", \.aixterm16Color), ("Xterm256Color", \.xterm256Color),
-        ("EnableScrollBuff", \.enableScrollBuff), ("EnableBold", \.enableBold), ("UseNormalBGColor", \.useNormalBGColor),
+        ("EnableScrollBuff", \.enableScrollBuff), ("EnableBold", \.enableBold), ("UseNormalBGColor", \.useNormalBGColor), ("PopupMenu", \.popupMenu),
         ("DrawingResizedFont", \.drawingResizedFont),
         ("DeleteKey", \.deleteKeySendsDel), ("DisableAppKeypad", \.disableAppKeypad), ("DisableAppCursor", \.disableAppCursor),
         ("HistoryList", \.historyList), ("Telnet", \.telnet), ("AutoWinClose", \.autoWinClose),

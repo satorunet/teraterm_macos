@@ -108,6 +108,7 @@ enum MenuBar {
             item("端末...", #selector(S.setupTerminal(_:)), ","),
             item("ウィンドウ...", #selector(S.setupWindow(_:))),
             item("フォント...", #selector(S.setupFont(_:))),
+            item("テーマ...", #selector(S.setupTheme(_:))),
             item("キーボード...", #selector(S.setupKeyboard(_:))),
             item("シリアルポート...", #selector(S.setupSerialPort(_:))),
             item("プロキシ...", #selector(S.proxySetup(_:))),
@@ -213,7 +214,15 @@ final class WindowMenuController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "拡大/縮小", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "前のタブ", action: #selector(NSWindow.selectPreviousTab(_:)), keyEquivalent: "{"))
         menu.addItem(NSMenuItem(title: "次のタブ", action: #selector(NSWindow.selectNextTab(_:)), keyEquivalent: "}"))
+        // ウィンドウ内のメニューバー (本家の「メニューバーを表示」/ PopupMenu)
+        menu.addItem(.separator())
+        let bar = NSMenuItem(title: InWindowMenuBar.isShown ? "メニューバーを閉じる" : "メニューバーを開く",
+                             action: #selector(toggleMenuBar(_:)), keyEquivalent: "")
+        bar.target = self
+        menu.addItem(bar)
     }
+
+    @objc private func toggleMenuBar(_ sender: Any?) { InWindowMenuBar.isShown.toggle() }
 
     /// SelectWin → ForegroundWin: 最小化なら戻して前へ
     static func bringToFront(_ c: SessionWindowController) {

@@ -266,8 +266,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     func fitWindow(cols: Int? = nil, rows: Int? = nil) {
         guard let w = window else { return }
-        var size = termView.contentSize(cols: cols ?? term.cols, rows: rows ?? term.rows)
-        size.height += InWindowMenuBar.currentHeight(forWidth: size.width)
+        let size = termView.contentSize(cols: cols ?? term.cols, rows: rows ?? term.rows)
+        // メニューバーはタイトルバーの飾りなので、中身の大きさには入らない
         let top = w.frame.maxY
         w.setContentSize(size)
         w.setFrameTopLeftPoint(NSPoint(x: w.frame.minX, y: top))
@@ -278,7 +278,13 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         term.aixterm16Color = s.aixterm16Color
         term.xterm256Color = s.xterm256Color
         let resize = s.cols != settings.cols || s.rows != settings.rows || s.fontName != settings.fontName || s.fontSize != settings.fontSize
+        let menuBarChanged = s.popupMenu != settings.popupMenu
         settings = s
+        // 「メニューバーを表示する」(PopupMenu) が変わったら、メニューバーを出し入れする (保存済みの値を各ウィンドウが読む)
+        // (設定画面は applySettings のあとで保存するので、保存が済んでから知らせる)
+        if menuBarChanged {
+            DispatchQueue.main.async { NotificationCenter.default.post(name: InWindowMenuBar.changedNotification, object: nil) }
+        }
         termView.settings = s
         decoder.encoding = s.encoding
         decoder.jis7Katakana = s.katakanaReceive7

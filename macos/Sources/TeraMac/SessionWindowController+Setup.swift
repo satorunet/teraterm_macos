@@ -9,6 +9,8 @@ extension SessionWindowController {
     @objc func setupTerminal(_ sender: Any?) { openSetupSheet(.terminal) }
     @objc func setupWindow(_ sender: Any?) { openSetupSheet(.window) }
     @objc func setupFont(_ sender: Any?) { openSetupSheet(.font) }
+    /// 設定 > テーマ... (本家にはないメニュー項目。設定画面のテーマのタブを開く)
+    @objc func setupTheme(_ sender: Any?) { openSetupSheet(.theme) }
     @objc func setupKeyboard(_ sender: Any?) { openSetupSheet(.keyboard) }
     @objc func setupSerialPort(_ sender: Any?) { openSetupSheet(.serial) }
     @objc func setupTCPIP(_ sender: Any?) { openSetupSheet(.tcpip) }
@@ -18,6 +20,8 @@ extension SessionWindowController {
     @objc func changeDirectory(_ sender: Any?) { openSetupSheet(.general) }
 
     func openSetupSheet(_ page: SetupSheet.Page) {
+        // 設定画面はアプリ全体で 1 つ。開いていれば前に出す
+        if let open = SetupSheet.current { open.bringToFront(page: page); return }
         guard let w = window, w.attachedSheet == nil else { NSSound.beep(); return }
         // 開いたときの端末の大きさ (ウインドウで変えたあとならそれ)
         var cur = settings

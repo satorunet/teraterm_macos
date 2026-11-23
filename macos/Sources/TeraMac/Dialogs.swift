@@ -21,10 +21,11 @@ private func field(_ s: String, width: CGFloat = 220) -> NSTextField {
     return f
 }
 
-/// シートの土台
-class SheetDialog: NSObject {
+/// シートの土台。presentsAsWindow なら、シートではなく端末とは別の (動かせる) ウィンドウで出す
+class SheetDialog: NSObject, NSWindowDelegate {
     let panel: NSPanel
     private var parentWindow: NSWindow?
+    var presentsAsWindow = false
     let okButton = NSButton(title: "OK", target: nil, action: nil)
     let cancelButton = NSButton(title: "キャンセル", target: nil, action: nil)
 
@@ -62,14 +63,38 @@ class SheetDialog: NSObject {
 
     func present(on w: NSWindow) {
         parentWindow = w
-        w.beginSheet(panel, completionHandler: nil)
         retainSelf = self
+        guard presentsAsWindow else { w.beginSheet(panel, completionHandler: nil); return }
+        panel.styleMask = [.titled, .closable]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
+        // 端末のウィンドウの真ん中あたりに出す (画面からはみ出すときは画面の中へ)
+        let f = panel.frame, pf = w.frame
+        var o = NSPoint(x: pf.midX - f.width / 2, y: pf.maxY - f.height - 60)
+        if let vis = (w.screen ?? NSScreen.main)?.visibleFrame {
+            o.x = min(max(o.x, vis.minX), vis.maxX - f.width)
+            o.y = min(max(o.y, vis.minY), vis.maxY - f.height)
+        }
+        panel.setFrameOrigin(o)
+        panel.makeKeyAndOrderFront(nil)
     }
     private var retainSelf: SheetDialog?
 
     func close() {
-        parentWindow?.endSheet(panel)
+        if presentsAsWindow {
+            panel.orderOut(nil)
+            parentWindow?.makeKeyAndOrderFront(nil)
+        } else {
+            parentWindow?.endSheet(panel)
+        }
         retainSelf = nil
+    }
+
+    /// 閉じるボタンはキャンセルと同じ
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        cancel()
+        return false
     }
 
     @objc func ok() {}
