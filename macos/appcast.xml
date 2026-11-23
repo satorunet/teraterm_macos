@@ -5,14 +5,14 @@
     <link>https://github.com/satorunet/teraterm_macos</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.4.1</title>
-      <pubDate>Sun, 22 Nov 2026 19:47:15 +0000</pubDate>
-      <sparkle:version>0.4.1</sparkle:version>
-      <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.4.2</title>
+      <pubDate>Mon, 23 Nov 2026 01:48:55 +0000</pubDate>
+      <sparkle:version>0.4.2</sparkle:version>
+      <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v0.4.1</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v0.4.2</sparkle:fullReleaseNotesLink>
       <description><![CDATA[]]></description>
-      <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.4.1/TeraTermMac-0.4.1.dmg" sparkle:edSignature="D5cW70t1LY4dmP6psBcUK/gChWaTUZ/VkkTyp3faAm2DxIuCII2S5cGi8aEcEhSq5Z8M+kVF8bpwuu4Ogf5KDQ==" length="9445695" type="application/octet-stream"/>
+      <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.4.2/TeraTermMac-0.4.2.dmg" sparkle:edSignature="u5T+PCf2rd8jvEj+A2etWapsTvD97Ra45PP/ZGJew9pHn8fkgaJPJxYNDm5pKAbEXUSH+AbHc3hCvBKnseQXBw==" length="9514110" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
