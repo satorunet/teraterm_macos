@@ -6,6 +6,7 @@
 
 > **非公式版です。** TeraTerm Project とは関係のない個人の移植で、TeraTerm Project の公認・支援を受けたものではありません。不具合や要望は本家ではなく、このリポジトリの Issues へお願いします。
 
+- 公式サイト: **https://teraterm-mac.github.io/**
 - ダウンロード: **[最新版 (クリックでダウンロード)](https://github.com/satorunet/teraterm_macos/releases/latest/download/TeraTermMac.dmg)** — `TeraTermMac.dmg` (過去の版は [Releases](https://github.com/satorunet/teraterm_macos/releases) から)
 - 更新情報: 各版で変わったことや更新状況は **[Releases の一覧](https://github.com/satorunet/teraterm_macos/releases)** にまとめています (アプリの「Tera Term Mac について」→「更新情報」からも開けます)
 - ソース: [`macos/`](macos/) (Swift / AppKit)

@@ -122,7 +122,7 @@ final class AboutWindowController: NSWindowController {
         let build = (info?["CFBundleVersion"] as? String) ?? ""
         let small = NSFont.systemFont(ofSize: 11)
 
-        let homepage = AboutWindowController.link(Lang.m("MENU_ABOUT_HOMEPAGE", "ホームページ (GitHub)"), #selector(openHomepage(_:)), self)
+        let homepage = AboutWindowController.link(Lang.m("MENU_ABOUT_HOMEPAGE", "ホームページ"), #selector(openHomepage(_:)), self)
         let credits = AboutWindowController.link(Lang.m("MENU_ABOUT_CREDITS", "謝辞とライセンス"), #selector(openCredits(_:)), self)
         let changes = AboutWindowController.link(Lang.m("MENU_ABOUT_CHANGES", "更新情報"), #selector(openChanges(_:)), self)
         let links = NSStackView(views: [homepage, label("・", small, .tertiaryLabelColor), changes,

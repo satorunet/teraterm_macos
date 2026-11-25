@@ -195,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         c.connect(.shell)
     }
 
-    static let homepage = URL(string: "https://github.com/satorunet/teraterm_macos")!
+    static let homepage = URL(string: "https://teraterm-mac.github.io/")!
 
     @objc func showAbout(_ sender: Any?) { AboutWindowController.shared.show() }
 
