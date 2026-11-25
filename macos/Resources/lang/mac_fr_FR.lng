@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Auteur de Tera Term : T. Teranishi
 MENU_CREDITS_DEVELOPER=Tera Term Mac développé par satorunet (code ajouté pour la version Mac : licence MIT)
 MENU_ABOUT_AUTHOR=Auteur de Tera Term : T. Teranishi
 MENU_ABOUT_DEVELOPER=Développé par satorunet
+; TABS
+MENU_WINDOW_TABS=Onglets
+MENU_TABS_SPLIT_SIDEBYSIDE=Diviser les onglets côte à côte
+MENU_TABS_SPLIT_STACKED=Diviser les onglets de haut en bas
+MENU_TABS_UNSPLIT=Annuler la division (revenir aux onglets)
+MENU_TABS_MERGE_ALL=Fusionner toutes les fenêtres
+MENU_TABS_MOVE_TO_NEW_WINDOW=Placer l’onglet dans une nouvelle fenêtre
+; FEEDBACK
+FEEDBACK_MENU=Envoyer un commentaire…
+FEEDBACK_TITLE=Envoyer un commentaire
+FEEDBACK_INTRO=Signalez anonymement au développeur ce que vous avez remarqué ou souhaitez voir. Il n’y a pas de réponse, mais votre message aide à améliorer l’app.
+FEEDBACK_PRIVACY=Aucun nom ni adresse e-mail n’est envoyé. Les messages vont vers un formulaire Google, qui reçoit votre adresse IP. N’indiquez pas de mot de passe ni d’autres informations privées.
+FEEDBACK_KIND=Type :
+FEEDBACK_KIND_REQUEST=Demande
+FEEDBACK_KIND_BUG=Bogue
+FEEDBACK_KIND_OTHER=Autre
+FEEDBACK_INCLUDE_ENV=Joindre les versions de l’app et de macOS
+FEEDBACK_SEND=Envoyer
+FEEDBACK_SENT=Envoyé. Merci !
+FEEDBACK_FAILED=Échec de l’envoi.
+FEEDBACK_FAILED_INFO=Vérifiez la connexion réseau et réessayez. Vous pouvez aussi utiliser le formulaire dans le navigateur.
+FEEDBACK_OPEN_BROWSER=Ouvrir dans le navigateur
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=Diviser ce volet côte à côte
+MENU_TABS_SPLIT_PANE_STACKED=Diviser ce volet de haut en bas
+MENU_TABS_MARK=Sélectionner cet onglet
+MENU_TABS_UNMARK=Désélectionner cet onglet
+MENU_TABS_UNMARK_ALL=Désélectionner tous les onglets
+MENU_TABS_CHECK_TIP=Sélectionner cet onglet pour la division

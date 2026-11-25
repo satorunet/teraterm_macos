@@ -156,6 +156,7 @@ enum MenuBar {
         let win = add(tt("MENU_WINDOW", "ウィンドウ"), [])
         win.delegate = WindowMenuController.shared
 
+
         // 漢字コード (TTXKanjiMenu。開くたびに作り直す)
         let kanji = add(Lang.t("TTXKanjiMenu", "MENU_KANJI", "漢字コード"), [])
         kanji.delegate = KanjiMenuController.shared
@@ -163,6 +164,8 @@ enum MenuBar {
         // ヘルプ
         let help = add(tt("MENU_HELP", "ヘルプ"), [
             item(tt("MENU_HELP_INDEX", "目次"), #selector(AppDelegate.openHelpIndex(_:))),
+            // Mac 版だけ: 匿名の要望・お知らせボックス (FeedbackPanel)
+            item(Lang.m("FEEDBACK_MENU", "要望・お知らせを送る…"), #selector(AppDelegate.openFeedback(_:))),
             .separator(),
             // TTProxy・TTSSH が「Tera Termについて」の前に入れる項目
             item(proxy("MENU_ABOUT", "TTProxyについて..."), #selector(AppDelegate.showAboutTTProxy(_:))),
@@ -190,10 +193,11 @@ final class WindowMenuController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         // 最初の 9 個のウインドウ: 番号 状態 タイトル (# 隠れている - 最小化 @ 最大化 + 通常)
+        // (分割中のペインは、分割しているウインドウの状態と、そのセッションのタイトル)
         for (i, c) in SessionWindowController.all.prefix(9).enumerated() {
-            guard let w = c.window else { continue }
+            guard let w = c.presentingWindow else { continue }
             let state = !w.isVisible && !w.isMiniaturized ? "#" : (w.isMiniaturized ? "-" : (w.isZoomed ? "@" : "+"))
-            let it = NSMenuItem(title: "\(i + 1) \(state) \(w.title)", action: #selector(selectWindow(_:)), keyEquivalent: "")
+            let it = NSMenuItem(title: "\(i + 1) \(state) \(c.displayTitle)", action: #selector(selectWindow(_:)), keyEquivalent: "")
             it.target = self
             it.tag = i
             menu.addItem(it)
@@ -237,11 +241,73 @@ final class WindowMenuController: NSObject, NSMenuDelegate {
 
     @objc private func toggleMenuBar(_ sender: Any?) { InWindowMenuBar.isShown.toggle() }
 
-    /// SelectWin → ForegroundWin: 最小化なら戻して前へ
+    // MARK: タブ (TabSplit.swift)
+
+    @objc func splitTabsSideBySide(_ sender: Any?) {
+        if let w = TabSplit.currentWindow { TabSplit.splitTabs(of: w, sideBySide: true) }
+    }
+    @objc func splitTabsStacked(_ sender: Any?) {
+        if let w = TabSplit.currentWindow { TabSplit.splitTabs(of: w, sideBySide: false) }
+    }
+    @objc func splitPaneSideBySide(_ sender: Any?) {
+        if let w = TabSplit.currentWindow { TabSplit.splitFocused(of: w, sideBySide: true) }
+    }
+    @objc func splitPaneStacked(_ sender: Any?) {
+        if let w = TabSplit.currentWindow { TabSplit.splitFocused(of: w, sideBySide: false) }
+    }
+    @objc func unsplitTabs(_ sender: Any?) { TabSplit.unsplitCurrent() }
+    @objc func toggleTabMark(_ sender: Any?) {
+        // 分割のペインなら「この画面を選ぶ」(ペインの ≡ メニューと同じ)
+        if let c = SessionWindowController.current, let sp = c.tabSplit { sp.togglePaneMark(c); return }
+        guard let c = SessionWindowController.current, TabMarks.canMark(c) else { return }
+        TabMarks.toggle(c)
+    }
+    @objc func clearTabMarks(_ sender: Any?) {
+        TabMarks.clearAll()
+        TabSplit.all.forEach { $0.clearPaneMarks() }
+    }
+    @objc func mergeAllWindows(_ sender: Any?) { TabSplit.mergeAllWindows() }
+    @objc func moveTabToNewWindow(_ sender: Any?) { TabSplit.moveCurrentTabToNewWindow() }
+
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // TTMado を切っているときは、タブ・窓割りの項目は使えない
+        let tabItems: [Selector] = [#selector(splitTabsSideBySide(_:)), #selector(splitTabsStacked(_:)), #selector(splitPaneSideBySide(_:)),
+                                    #selector(splitPaneStacked(_:)), #selector(unsplitTabs(_:)), #selector(toggleTabMark(_:)), #selector(clearTabMarks(_:))]
+        if !TTMado.isEnabled, let a = item.action, tabItems.contains(a) { return false }
+        let w = TabSplit.currentWindow
+        let sp = TabSplit.split(of: w)
+        switch item.action {
+        case #selector(splitTabsSideBySide(_:)):
+            item.state = sp?.isSideBySide == true ? .on : .off
+            return TabSplit.canSplit(w)
+        case #selector(splitTabsStacked(_:)):
+            item.state = sp != nil && sp?.isSideBySide == false ? .on : .off
+            return TabSplit.canSplit(w)
+        case #selector(splitPaneSideBySide(_:)), #selector(splitPaneStacked(_:)): return TabSplit.canSplitFocused(w)
+        case #selector(unsplitTabs(_:)): return sp != nil
+        case #selector(toggleTabMark(_:)):
+            let c = SessionWindowController.current
+            if let s = c, let ps = s.tabSplit {
+                item.title = s.paneMarked ? Lang.m("MENU_PANE_UNMARK", "この画面の選択を外す") : Lang.m("MENU_PANE_MARK", "この画面を選ぶ")
+                return ps.panes.count > 1
+            }
+            let on = c?.tabMarked == true
+            item.title = on ? Lang.m("MENU_TABS_UNMARK", "このタブの選択を外す") : Lang.m("MENU_TABS_MARK", "このタブを選ぶ")
+            guard let s = c, TabMarks.canMark(s) else { return false }
+            return (s.window?.tabGroup?.windows.count ?? 1) > 1 || on
+        case #selector(clearTabMarks(_:)): return TabMarks.any || TabSplit.all.contains { $0.sessions.contains { $0.paneMarked } }
+        case #selector(mergeAllWindows(_:)): return TabSplit.canMerge(w)
+        case #selector(moveTabToNewWindow(_:)): return TabSplit.canMoveToNewWindow(w)
+        default: return true
+        }
+    }
+
+    /// SelectWin → ForegroundWin: 最小化なら戻して前へ。分割中のペインなら、そのペインにフォーカスを移す
     static func bringToFront(_ c: SessionWindowController) {
-        guard let w = c.window else { return }
+        guard let w = c.presentingWindow else { return }
         if w.isMiniaturized { w.deminiaturize(nil) }
         w.makeKeyAndOrderFront(nil)
+        if c.tabSplit != nil { w.makeFirstResponder(c.termView) }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -252,16 +318,15 @@ final class WindowMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc func showWindowList(_ sender: Any?) {
-        WindowListDialog.run(current: NSApp.keyWindow?.windowController as? SessionWindowController)
+        WindowListDialog.run(current: SessionWindowController.current)
     }
 
     @objc private func minimizeAll(_ sender: Any?) {
-        SessionWindowController.all.forEach { $0.window?.miniaturize(nil) }
+        SessionWindowController.presentedWindows.forEach { $0.miniaturize(nil) }
     }
 
     @objc private func restoreAll(_ sender: Any?) {
-        for c in SessionWindowController.all {
-            guard let w = c.window else { continue }
+        for w in SessionWindowController.presentedWindows {
             if w.isMiniaturized { w.deminiaturize(nil) }
             if w.isZoomed { w.zoom(nil) }
             w.orderFront(nil)
@@ -271,7 +336,7 @@ final class WindowMenuController: NSObject, NSMenuDelegate {
     /// 並べる窓: 呼んだウインドウを先頭に、ほかは一覧の順
     private func targets() -> [SessionWindowController] {
         var list = SessionWindowController.all.filter { $0.window?.isVisible == true || $0.window?.isMiniaturized == true }
-        if let cur = NSApp.keyWindow?.windowController as? SessionWindowController, let i = list.firstIndex(where: { $0 === cur }) {
+        if let cur = SessionWindowController.current, let i = list.firstIndex(where: { $0 === cur }) {
             list.remove(at: i); list.insert(cur, at: 0)
         }
         return list
@@ -305,7 +370,10 @@ final class WindowMenuController: NSObject, NSMenuDelegate {
     }
 
     private func arrange(_ style: Arrange) {
-        let tabs = style == .cascade ? [] : untabAll()
+        // タブの分割表示はやめてから並べる (ペインはタブに戻る)。
+        // TTMado を切っているときは、TTMado の前と同じく見えているウインドウだけを並べる (タブはばらさない)
+        TabSplit.unsplitAll()
+        let tabs = style == .cascade || !TTMado.isEnabled ? [] : untabAll()
         let list = targets()
         guard !list.isEmpty, let screen = (list[0].window?.screen ?? NSScreen.main)?.visibleFrame else { return }
         memorize(style, list)
@@ -371,9 +439,9 @@ final class WindowListDialog: NSObject, NSTableViewDataSource, NSTableViewDelega
     }
 
     private func label(_ c: SessionWindowController) -> String {
-        guard let w = c.window else { return "" }
+        guard let w = c.presentingWindow else { return "" }
         let state = !w.isVisible && !w.isMiniaturized ? "#" : (w.isMiniaturized ? "-" : (w.isZoomed ? "@" : "+"))
-        return "\(state) \(w.title)"
+        return "\(state) \(c.displayTitle)"
     }
 
     private func show() {
@@ -441,12 +509,12 @@ final class WindowListDialog: NSObject, NSTableViewDataSource, NSTableViewDelega
         let c = items[r]
         if c === current {
             NSApp.stopModal()
-            DispatchQueue.main.async { c.window?.performClose(nil) }
+            DispatchQueue.main.async { c.performCloseSession() }
             return
         }
         items.remove(at: r)
         table.reloadData()
-        DispatchQueue.main.async { c.window?.performClose(nil) }
+        DispatchQueue.main.async { c.performCloseSession() }
     }
 }
 
@@ -503,7 +571,7 @@ final class KanjiMenuController: NSObject, NSMenuDelegate {
     }
     private func k(_ key: String, _ def: String) -> String { Lang.t("TTXKanjiMenu", key, def) }
 
-    private var session: SessionWindowController? { NSApp.keyWindow?.windowController as? SessionWindowController ?? NSApp.mainWindow?.windowController as? SessionWindowController }
+    private var session: SessionWindowController? { SessionWindowController.current }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()

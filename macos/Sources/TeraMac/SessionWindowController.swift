@@ -105,6 +105,52 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     static var all: [SessionWindowController] = []
 
+    // MARK: - タブの分割表示 (TabSplit.swift)
+
+    /// タブを分割して 1 つのウインドウに並べているとき、その分割 (ペインになっている間だけ)
+    weak var tabSplit: TabSplit?
+    /// ペインのときの、このセッションの次の応答者 (ペインのビュー → 分割のウインドウ)。
+    /// ペインの端末 → TerminalContainerView → このコントローラ → ペイン … の順にして、メニューの動作をこのセッションで受ける
+    weak var paneNextResponder: NSResponder?
+    override var nextResponder: NSResponder? {
+        get { paneNextResponder ?? super.nextResponder }
+        set { super.nextResponder = newValue }
+    }
+    /// 分割に使うタブとして選んだ印 (TabMarks)。タブの題の前に「✓ 」を付ける
+    var tabMarked = false
+    /// 印を付けたときのタブの組 (ほかの組に移ったら印を消す)
+    weak var tabMarkGroup: NSWindowTabGroup?
+    /// タブの右のチェックボックス (TabCheckAccessory)
+    var tabCheck: TabCheckAccessory?
+    /// 分割のペインで「この画面を選ぶ」の印 (次の「この画面を左右/上下に分割」で、その画面の隣に移す)
+    var paneMarked = false
+    /// タブの組から分けたときの元のウィンドウのセッション (TabTearOff。元のウィンドウのタブに戻す)
+    weak var tearOffOrigin: SessionWindowController?
+    /// 前に見たときの、同じタブの組のほかのウインドウ (タブを引き出したかを見分ける)
+    var tabSiblings: [WeakWindow] = []
+    /// 前に見たときのウインドウの位置 (2 つのタブの組が分かれたとき、動いた方を見分ける)
+    var tabFrame: NSRect = .zero
+    /// シート・アラート・パネルを出すウインドウ。分割中は (このセッションのウインドウは隠れているので) 分割しているウインドウ
+    var presentingWindow: NSWindow? { tabSplit?.hostWindow ?? window }
+    /// このセッションのタイトル (分割中は、ホストのウインドウのタイトルはフォーカスのあるペインのもの)
+    private(set) var displayTitle = ""
+
+    /// 今のセッション: キーウインドウ (なければメインウインドウ) のセッション。分割中はフォーカスのあるペイン
+    static var current: SessionWindowController? { session(for: NSApp.keyWindow) ?? session(for: NSApp.mainWindow) }
+
+    /// ウインドウに出ているセッション (分割中のウインドウならフォーカスのあるペイン)
+    static func session(for w: NSWindow?) -> SessionWindowController? {
+        guard let w = w else { return nil }
+        if let r = w.contentView as? TabSplitRootView { return r.split?.focused }
+        return w.windowController as? SessionWindowController
+    }
+
+    /// 画面に出ているセッションのウインドウ (分割で隠しているペインのウインドウは除き、分割中のウインドウは 1 回だけ)
+    static var presentedWindows: [NSWindow] {
+        var seen = Set<ObjectIdentifier>()
+        return all.compactMap { $0.presentingWindow }.filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
     init(settings initial: TermSettings = TermSettings.load()) {
         var settings = CommandLineSession.applyOnce(to: initial)   // 起動時の /B /KR /KT (最初のウインドウだけ)
         // 起動時のテーマ (BGLoadThemeFile): テーマの色を設定に写してから画面を作る
@@ -131,6 +177,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             win.setFrameTopLeftPoint(NSPoint(x: last.frame.minX + 24, y: last.frame.maxY - 24))
         }
         win.makeFirstResponder(termView)
+        termView.owner = self
+        // 分割中: クリックなどで端末がファーストレスポンダになったら、そのペインにフォーカスを移す
+        termView.onFocus = { [weak self] in
+            guard let self = self else { return }
+            self.tabSplit?.paneFocused(self)
+        }
 
         // 応答はバイト列のまま送る (Answerback・タイトル報告は UTF-8 とは限らない)
         term.onResponseBytes = { [weak self] b in self?.sendBytes(b, echo: false, reconnect: false) }
@@ -169,7 +221,11 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             guard let self = self else { return }
             // ウインドウの大きさをドラッグで変えている間は相手に知らせず、終わったときに 1 回だけ知らせる
             // (知らせるたびにシェルがプロンプトを描き直し、古い行が何度も残るため)
-            if self.window?.inLiveResize == true {
+            if let sp = self.tabSplit {
+                // 分割中: 区切りのドラッグ・ウインドウの大きさの変更が落ち着いてから知らせる
+                self.pendingResize = (c, r)
+                if self.presentingWindow?.inLiveResize != true { sp.scheduleResizeFlush() }
+            } else if self.window?.inLiveResize == true {
                 self.pendingResize = (c, r)
             } else {
                 self.conn?.resize(cols: c, rows: r)
@@ -198,11 +254,11 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// スクリーンの左上を原点にした座標 (Windows と同じ向き) と Mac の座標を変える
-    private var screenTop: CGFloat { (window?.screen ?? NSScreen.main)?.frame.maxY ?? 0 }
+    private var screenTop: CGFloat { (presentingWindow?.screen ?? NSScreen.main)?.frame.maxY ?? 0 }
 
     /// CSI Ps t (vtwin.cpp / vtdisp.c DispWindowOp)
     private func windowOperation(_ op: WindowOp) {
-        guard let w = window else { return }
+        guard let w = presentingWindow else { return }
         switch op {
         case .deiconify: w.deminiaturize(nil)
         case .iconify: w.miniaturize(nil)
@@ -234,7 +290,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     private func currentWindowInfo() -> WindowInfo {
         var i = WindowInfo()
-        guard let w = window else { return i }
+        guard let w = presentingWindow else { return i }
         let top = screenTop
         i.iconified = w.isMiniaturized
         i.windowX = Int(w.frame.minX); i.windowY = Int(top - w.frame.maxY)
@@ -252,7 +308,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// OSC 52 の通知 (NotifyClipboardAccess)。止めないようにシートで出す
     private func showClipboardNotice(_ n: ClipboardNotice) {
-        guard let w = window, w.attachedSheet == nil else { return }
+        guard let w = presentingWindow, w.attachedSheet == nil else { return }
         let a = NSAlert()
         a.alertStyle = .informational
         a.messageText = n.title
@@ -282,6 +338,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     func fitWindow(cols: Int? = nil, rows: Int? = nil) {
         guard let w = window else { return }
+        if tabSplit != nil {
+            // 分割中はウインドウ (ほかのペインと共有) の大きさを変えない。フォントが変わったときのために、
+            // 今のペインの大きさで桁数・行数を決め直す
+            termView.setFrameSize(termView.frame.size)
+            return
+        }
         let size = termView.contentSize(cols: cols ?? term.cols, rows: rows ?? term.rows)
         // メニューバーはタイトルバーの飾りなので、中身の大きさには入らない
         let top = w.frame.maxY
@@ -331,9 +393,17 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     /// ChangeTitle (ttwinman.c): Title / TitleFormat / AcceptTitleChangeRequest と接続の状態から
     func updateTitle() {
         let t = WindowTitle.make(titleInput)
+        displayTitle = t
         guard let w = window else { return }
+        if let sp = tabSplit {
+            // 分割中: 隠しているウインドウには自分のタイトル、分割しているウインドウはフォーカスのあるペインのタイトル
+            if w !== sp.hostWindow { w.title = t; w.tab.title = t }
+            sp.titlesChanged()
+            return
+        }
         w.title = t
-        w.tab.title = t
+        w.tab.title = tabMarked ? TabMarks.prefix + t : t   // 分割に使うタブとして選んだ印 (Shift+クリック / タブメニュー)
+        tabCheck?.refresh()
         // Windows と同じくタイトルバーにアプリのアイコン
         if w.representedURL == nil {
             w.representedURL = Bundle.main.bundleURL
@@ -368,7 +438,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - 接続
 
     func showConnectDialog(onEnd: (() -> Void)? = nil) {
-        guard let w = window else { onEnd?(); return }
+        guard let w = presentingWindow else { onEnd?(); return }
         let dlg = ConnectDialog()
         dlg.settings = settings
         dlg.begin(on: w) { [weak self, weak dlg] spec, password in
@@ -402,7 +472,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         if let o = proxyOverride, o.isSSL, spec.isNetwork {
             let m = Lang.m("CONN2_PROXY_SSL_UNSUPPORTED", "SSL を使うプロキシ (ssl / http+ssl など) には対応していません")
             notice(m)
-            if !quiet, let w = window {
+            if !quiet, let w = presentingWindow {
                 let a = NSAlert()
                 a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
                 a.informativeText = m
@@ -428,7 +498,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             self.conn = nil
             self.transferConnectionLost()
             self.notice(msg.map { wasConnecting ? $0 : Lang.m("MENU_DISCONNECTED_REASON", "切断されました: %s", $0) } ?? Lang.m("MENU_DISCONNECTED", "切断されました"))
-            if wasConnecting && !quiet, let m = msg, let w = self.window {
+            if wasConnecting && !quiet, let m = msg, let w = self.presentingWindow {
                 // cv.NoMsg (マクロの connect) のときは出さない
                 let a = NSAlert()
                 a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
@@ -467,7 +537,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
                 let a = NSAlert()
                 a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
                 a.informativeText = error.localizedDescription
-                if let w = window { a.beginSheetModal(for: w) } else { a.runModal() }
+                if let w = presentingWindow { a.beginSheetModal(for: w) } else { a.runModal() }
             }
             updateTitle()
             macro?.connectionChanged()
@@ -737,7 +807,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         let panel = NSOpenPanel()
         panel.allowedFileTypes = ["ttl", "txt"]
         panel.allowsOtherFileTypes = true
-        panel.beginSheetModal(for: window!) { [weak self] r in
+        panel.beginSheetModal(for: presentingWindow!) { [weak self] r in
             guard r == .OK, let url = panel.url else { return }
             self?.runMacro(url: url)
         }
@@ -754,7 +824,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             let a = NSAlert()
             a.messageText = Lang.m("MENU_MACRO_LOAD_FAILED", "マクロを読めませんでした")
             a.informativeText = "\(error)"
-            a.beginSheetModal(for: window!)
+            a.beginSheetModal(for: presentingWindow!)
         }
     }
 
@@ -921,7 +991,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         panel.onCancel = { [weak job] in job?.finish() }
         let title = Lang.t("Tera Term", "DLG_FILETRANS_TITLE", "ファイル送信")
         let proto = binary ? title + " (" + Lang.t("Tera Term", "DLG_SENDFILE_BINARY", "バイナリ") + ")" : title
-        if !transferExtra.ftHideDialog { panel.show(title: title, over: window) }   // FTHideDialog
+        if !transferExtra.ftHideDialog { panel.show(title: title, over: presentingWindow) }   // FTHideDialog
         panel.set(proto: proto, file: name, detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", 0, job.totalBytes), percent: 0)
         job.onProgress = { [weak panel] sent, total in
             panel?.set(proto: proto, file: name,
@@ -958,7 +1028,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
         guard job.start() else { panel.close(); scpPanels.removeAll { $0 === panel }; return false }
         scpJobs.append(job)
-        panel.show(title: label, over: window)
+        panel.show(title: label, over: presentingWindow)
         panel.set(proto: label, file: name, detail: Lang.m("MENU_CONNECTING", "接続しています…"), percent: nil)
         let originalDone = job.onFinish
         job.onFinish = { [weak self, weak job] ok in
@@ -1007,7 +1077,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             let a = NSAlert()
             a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: Error")
             a.informativeText = m
-            if let w = self.window { a.beginSheetModal(for: w) } else { a.runModal() }
+            if let w = self.presentingWindow { a.beginSheetModal(for: w) } else { a.runModal() }
         }
         t.onProgress = { [weak self] p in self?.transferPanel?.update(p) }
         t.onFinish = { [weak self, weak t] ok in
@@ -1044,7 +1114,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         let panel = transferPanel ?? TransferProgressPanel()
         transferPanel = panel
         panel.onCancel = { [weak self] in self?.cancelTransfer() }
-        panel.show(title: SessionWindowController.transferTitle(t.kind), over: window)
+        panel.show(title: SessionWindowController.transferTitle(t.kind), over: presentingWindow)
     }
 
     /// 転送ダイアログの題 (本家の FILEDLG_TRANS_TITLE_*)
@@ -1135,7 +1205,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
                     if !buffered.isEmpty { self.received(buffered) }
                 }
             }
-            if let w = window { p.beginSheetModal(for: w, completionHandler: finish) } else { finish(p.runModal()) }
+            if let w = presentingWindow { p.beginSheetModal(for: w, completionHandler: finish) } else { finish(p.runModal()) }
         }
     }
 
@@ -1180,7 +1250,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             50123: { if let p = self.logPath { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } },
             50130: { self.sendFile(nil) },
             50190: { self.macroDisconnect(confirm: true) }, 50009: { self.macroDisconnect(confirm: true) },
-            50199: { self.window?.performClose(nil) }, 50005: { self.window?.performClose(nil) },
+            50199: { self.performCloseSession() }, 50005: { self.performCloseSession() },
             50200: { NSApp.terminate(nil) },
             50210: { self.termView.copy(nil) }, 50002: { self.termView.copy(nil) },
             50230: { self.termView.paste(nil) }, 50008: { self.termView.paste(nil) },
@@ -1307,12 +1377,16 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// OnClose: 接続中の TCP/IP で ConfirmDisconnect なら「切断しますか？」(キャンセルが既定)。シリアル・未接続は聞かない
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // 分割中のウインドウの閉じるボタン: すべてのペインを閉じる (確認は 1 回)
+        if let sp = tabSplit, sender === sp.hostWindow { return sp.windowShouldCloseAll() }
         if skipCloseConfirm { return true }
         guard connected, isTCPIP, confirmDisconnectSetting else { return true }
         return SessionWindowController.confirmDisconnect(sender)
     }
 
     func windowWillClose(_ notification: Notification) {
+        // 分割のペインなら外す (残りが 1 つなら分割をやめる)
+        tabSplit?.remove(self)
         replayTimer?.invalidate()
         pasteJob?.finish()
         // OnClose(): FileSendEnd(); ProtoEnd() → 転送中のマクロの result は 0
@@ -1329,8 +1403,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) { updateTitle() }
 
+    /// タイトルバーのドラッグが始まった: 引き出したウインドウなら、元のウインドウに寄せたらタブに戻す (TabTearOff)
+    func windowWillMove(_ notification: Notification) { if TTMado.isEnabled { TabTearOff.dragBegan(self) } }
+
     /// ドラッグで大きさを変え終わった: 最後の大きさだけ相手に知らせる
     func windowDidEndLiveResize(_ notification: Notification) {
+        if let sp = tabSplit { sp.flushResizes(); return }
         if let (c, r) = pendingResize {
             pendingResize = nil
             conn?.resize(cols: c, rows: r)

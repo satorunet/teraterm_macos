@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Autor von Tera Term: T. Teranishi
 MENU_CREDITS_DEVELOPER=Tera Term Mac entwickelt von satorunet (für die Mac-Version hinzugefügter Code: MIT-Lizenz)
 MENU_ABOUT_AUTHOR=Autor von Tera Term: T. Teranishi
 MENU_ABOUT_DEVELOPER=Entwickelt von satorunet
+; TABS
+MENU_WINDOW_TABS=Tabs
+MENU_TABS_SPLIT_SIDEBYSIDE=Tabs nebeneinander teilen
+MENU_TABS_SPLIT_STACKED=Tabs übereinander teilen
+MENU_TABS_UNSPLIT=Teilung aufheben (zurück zu Tabs)
+MENU_TABS_MERGE_ALL=Alle Fenster zusammenführen
+MENU_TABS_MOVE_TO_NEW_WINDOW=Tab in neues Fenster bewegen
+; FEEDBACK
+FEEDBACK_MENU=Feedback senden…
+FEEDBACK_TITLE=Feedback senden
+FEEDBACK_INTRO=Teilen Sie dem Entwickler anonym mit, was Ihnen aufgefallen ist oder was Sie sich wünschen. Es gibt keine Antwort, aber Ihre Nachricht hilft, die App zu verbessern.
+FEEDBACK_PRIVACY=Name und E-Mail-Adresse werden nicht gesendet. Nachrichten gehen an ein Google-Formular; Google erhält Ihre IP-Adresse. Bitte keine Passwörter oder andere private Daten angeben.
+FEEDBACK_KIND=Art:
+FEEDBACK_KIND_REQUEST=Wunsch
+FEEDBACK_KIND_BUG=Fehler
+FEEDBACK_KIND_OTHER=Sonstiges
+FEEDBACK_INCLUDE_ENV=App- und macOS-Version mitsenden
+FEEDBACK_SEND=Senden
+FEEDBACK_SENT=Gesendet. Vielen Dank!
+FEEDBACK_FAILED=Senden fehlgeschlagen.
+FEEDBACK_FAILED_INFO=Prüfen Sie die Netzwerkverbindung und versuchen Sie es erneut. Sie können auch das Formular im Browser verwenden.
+FEEDBACK_OPEN_BROWSER=Im Browser öffnen
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=Diesen Bereich nebeneinander teilen
+MENU_TABS_SPLIT_PANE_STACKED=Diesen Bereich übereinander teilen
+MENU_TABS_MARK=Diesen Tab auswählen
+MENU_TABS_UNMARK=Auswahl dieses Tabs aufheben
+MENU_TABS_UNMARK_ALL=Auswahl aller Tabs aufheben
+MENU_TABS_CHECK_TIP=Diesen Tab zum Teilen auswählen

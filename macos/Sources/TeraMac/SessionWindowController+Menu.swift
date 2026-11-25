@@ -44,12 +44,50 @@ extension SessionWindowController {
     /// 新しい接続 (OnFileNewConnection): つながっていなければこのウインドウで、つながっていれば新しいウインドウで
     @objc func newConnectionMenu(_ sender: Any?) {
         if isConnecting { return }
-        if connected || isReplay {
+        if connected || isReplay || (TTMado.isEnabled && tabSplit != nil) {
+            guard let place = askOpenPlace() else { return }
             let c = SessionWindowController(settings: settings)
-            c.showWindow(nil)
+            open(c, place)
             c.showConnectDialog()
         } else {
             showConnectDialog()
+        }
+    }
+
+    /// 新しいセッションを開く場所 (分割している窓から開くときに選ぶ)
+    enum OpenPlace { case split, tab, window }
+
+    /// 分割中なら「この分割の中 / 新しいタブ / 新しいウィンドウ」を聞く (分割していなければ新しいタブ)。やめたら nil
+    func askOpenPlace() -> OpenPlace? {
+        guard TTMado.isEnabled, tabSplit != nil else { return .tab }
+        let a = NSAlert()
+        a.messageText = Lang.m("OPEN_PLACE_TITLE", "新しいセッションをどこに開きますか?")
+        a.informativeText = Lang.m("OPEN_PLACE_INFO", "このウィンドウは画面を分割しています。")
+        a.addButton(withTitle: Lang.m("OPEN_PLACE_SPLIT", "窓内で開く"))
+        a.addButton(withTitle: Lang.m("OPEN_PLACE_TAB", "タブで開く"))
+        a.addButton(withTitle: Lang.m("OPEN_PLACE_WINDOW", "新しいウィンドウで開く"))
+        let cancel = a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
+        cancel.keyEquivalent = "\u{1b}"
+        switch a.runModal() {
+        case .alertFirstButtonReturn: return .split
+        case .alertSecondButtonReturn: return .tab
+        case .alertThirdButtonReturn: return .window
+        default: return nil
+        }
+    }
+
+    /// 新しいセッション c を place に開く (まだ接続はしない)
+    func open(_ c: SessionWindowController, _ place: OpenPlace) {
+        switch place {
+        case .split:
+            if !openInSplit(c) { c.showWindow(nil) }
+        case .tab:
+            c.showWindow(nil)
+        case .window:
+            // タブにまとめずに別のウインドウで開く
+            c.window?.tabbingMode = .disallowed
+            c.showWindow(nil)
+            c.window?.tabbingMode = .preferred
         }
     }
 
@@ -57,28 +95,42 @@ extension SessionWindowController {
     @objc func duplicateSessionMenu(_ sender: Any?) {
         guard let s = spec else { return }
         switch s {
-        case .ssh, .telnet:
+        case .ssh, .telnet, .shell:
+            // 分割中なら「窓内で開く / タブで開く / 新しいウィンドウで開く」を選ぶ (分割していなければタブ)
+            guard let place = askOpenPlace() else { return }
             let c = SessionWindowController(settings: settings)
             c.transferOptions = transferOptions
-            c.showWindow(nil)
+            open(c, place)
             c.connect(s)
-        case .shell:
-            localShellConnection(nil)
         case .rawTCP, .serial:
             break
         }
     }
 
+    /// 分割中のとき、新しいセッション c をこの画面の隣に入れる (横長なら右、縦長なら下)。入れたら true
+    func openInSplit(_ c: SessionWindowController) -> Bool {
+        guard TTMado.isEnabled, let sp = tabSplit, let pane = sp.panes.first(where: { $0.session === self }) else { return false }
+        let side: TabSplit.DropSide = pane.bounds.width >= pane.bounds.height ? .right : .below
+        sp.insert(c, at: pane, side: side)
+        guard c.tabSplit === sp else { return false }
+        sp.focus(c)
+        return true
+    }
+
     /// Cygwin 接続 (OnCygwinConnection) の Mac 版: 新しいウインドウでこの Mac のシェル
     @objc func localShellConnection(_ sender: Any?) {
-        SessionWindowController.openLocalShell(settings: settings)
+        guard TTMado.isEnabled, tabSplit != nil else { return SessionWindowController.openLocalShell(settings: settings) }
+        guard let place = askOpenPlace() else { return }
+        let c = SessionWindowController(settings: settings)
+        open(c, place)
+        c.connect(.shell)
     }
 
     /// 接続断 (Disconnect(TRUE)): TCP/IP は「切断しますか？」(ConfirmDisconnect)。シリアルは聞かない
     @objc func disconnectMenu(_ sender: Any?) {
         guard connected || isConnecting else { return }
         if isTCPIP && connected && confirmDisconnectSetting {
-            guard SessionWindowController.confirmDisconnect(window) else { return }
+            guard SessionWindowController.confirmDisconnect(presentingWindow) else { return }
         }
         closedByMenu = true
         disconnect()
@@ -105,11 +157,29 @@ extension SessionWindowController {
     }
 
     /// 終了 (OnFileExit → OnClose): 接続中の TCP/IP は「切断しますか？」
-    @objc func exitMenu(_ sender: Any?) { window?.performClose(sender) }
+    @objc func exitMenu(_ sender: Any?) { performCloseSession(sender) }
+
+    /// このセッションを閉じる (⌘W・callmenu・ウィンドウのリストの「閉じる」)。
+    /// 分割中は このペインだけ閉じる (確かめるのはこのセッションだけ。残りが 1 つになったら分割をやめる)
+    func performCloseSession(_ sender: Any? = nil) {
+        guard let sp = tabSplit else { window?.performClose(sender); return }
+        if !skipCloseConfirm && connected && isTCPIP && confirmDisconnectSetting {
+            guard SessionWindowController.confirmDisconnect(presentingWindow) else { return }
+        }
+        skipCloseConfirm = true
+        sp.remove(self)
+        window?.close()
+    }
 
     /// 確認なしで閉じる (全終了・自動で閉じる)
     func closeWithoutConfirm() {
         skipCloseConfirm = true
+        if let sp = tabSplit {
+            // 分割中: ペインを外してから、このセッションのウインドウ (隠れている) を閉じる
+            sp.remove(self)
+            window?.close()
+            return
+        }
         window?.performClose(nil)
         if window?.isVisible == true { window?.close() }
     }
@@ -190,7 +260,7 @@ extension SessionWindowController {
         view.backgroundColor = .white
         view.string = selection ?? screen
         let op = NSPrintOperation(view: view, printInfo: info)
-        op.jobTitle = window?.title ?? "Tera Term"
+        op.jobTitle = displayTitle.isEmpty ? "Tera Term" : displayTitle
         op.printPanel.options.insert(.showsPrintSelection)
         if selection != nil { info.isSelectionOnly = true }
         op.run()
@@ -247,7 +317,7 @@ extension SessionWindowController {
         panel.title = Lang.t("Tera Term", "FILEDLG_OPEN_MACRO_TITLE", "MACRO: マクロを開く")
         panel.allowedFileTypes = ["ttl"]
         panel.allowsOtherFileTypes = true
-        panel.beginSheetModal(for: window!) { [weak self] r in
+        panel.beginSheetModal(for: presentingWindow!) { [weak self] r in
             guard r == .OK, let url = panel.url else { return }
             self?.runMacro(url: url)
         }
@@ -255,7 +325,7 @@ extension SessionWindowController {
 
     /// 常に最前面に表示 (TTXAlwaysOnTop): このウインドウだけ。保存はしない
     @objc func toggleAlwaysOnTop(_ sender: Any?) {
-        guard let w = window else { return }
+        guard let w = presentingWindow else { return }
         w.level = w.level == .floating ? .normal : .floating
     }
 
@@ -284,7 +354,7 @@ extension SessionWindowController {
         case #selector(areYouThere(_:)):
             return ready && (conn as? TCPConnection)?.isTelnet == true && transfer == nil
         case #selector(toggleAlwaysOnTop(_:)):
-            item.state = window?.level == .floating ? .on : .off
+            item.state = presentingWindow?.level == .floating ? .on : .off
             return true
         case #selector(openTEK(_:)):
             return true

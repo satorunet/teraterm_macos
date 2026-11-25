@@ -71,7 +71,7 @@ final class MacroRunner: NSObject, TTLHost {
             for v in [file, line] { v.widthAnchor.constraint(equalToConstant: 350).isActive = true }
             p.contentView = stack
             p.setContentSize(stack.fittingSize)
-            if let w = session?.window { p.setFrameTopLeftPoint(NSPoint(x: w.frame.minX + 20, y: w.frame.maxY - 20)) } else { p.center() }
+            if let w = session?.presentingWindow { p.setFrameTopLeftPoint(NSPoint(x: w.frame.minX + 20, y: w.frame.maxY - 20)) } else { p.center() }
             macroWindow = p; fileLabel = file; lineLabel = line; pauseButton = pause
             macroWindowTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.refreshWindow() }
         }
@@ -282,7 +282,8 @@ final class MacroRunner: NSObject, TTLHost {
             detach()
             DispatchQueue.main.async {
                 s.disconnect(silent: true)
-                s.window?.close()
+                // 分割のペインならペインを外してから閉じる
+                if s.tabSplit != nil { s.closeWithoutConfirm() } else { s.window?.close() }
             }
         }
     }
@@ -293,7 +294,7 @@ final class MacroRunner: NSObject, TTLHost {
 
     func ttlShowTT(_ mode: Int) {
         onMain {
-            guard let sess = session, let w = sess.window else { return }
+            guard let sess = session, let w = sess.presentingWindow else { return }
             let tek = sess.tekWindow?.window
             let log = sess.logProgressWindow?.window
             switch mode {
@@ -332,7 +333,7 @@ final class MacroRunner: NSObject, TTLHost {
 
     func ttlGetTTPos() -> [Int]? {
         onMain {
-            guard let w = session?.window, let v = session?.termView else { return nil }
+            guard let w = session?.presentingWindow, let v = session?.termView else { return nil }
             let screenH = (w.screen ?? NSScreen.main)?.frame.maxY ?? 0
             let state = !w.isVisible ? 3 : (w.isMiniaturized ? 1 : (w.isZoomed ? 2 : 0))
             let f = w.frame

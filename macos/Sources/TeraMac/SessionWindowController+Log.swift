@@ -37,7 +37,7 @@ extension SessionWindowController {
 
     /// ログ(L)... (OnFileLog)
     @objc func openLogDialog(_ sender: Any?) {
-        guard teraLog == nil, let w = window else { return }
+        guard teraLog == nil, let w = presentingWindow else { return }
         let dlg = LogDialog(session: self)
         dlg.begin(on: w) { [weak self] r in
             guard let self = self, let r = r else { return }
@@ -80,7 +80,7 @@ extension SessionWindowController {
 
     /// ログにコメントを付加... (OnCommentToLog)
     @objc func commentToLog(_ sender: Any?) {
-        guard let w = window else { return }
+        guard let w = presentingWindow else { return }
         guard teraLog != nil else {
             // 選択できないので呼ばれないはず
             let a = NSAlert()
@@ -108,7 +108,7 @@ extension SessionWindowController {
                 a.alertStyle = .warning
                 a.messageText = Lang.t("Tera Term", "MSG_ERROR", "エラー")
                 a.informativeText = Lang.t("Tera Term", "MSG_VIEW_LOGFILE_ERROR", "ログファイルを表示できません (%d)", code)
-                if let w = self?.window { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
+                if let w = self?.presentingWindow { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
             }
         }
         let editor = (settings.viewlogEditor.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
@@ -153,7 +153,7 @@ extension SessionWindowController {
         a.alertStyle = .critical
         a.messageText = Lang.t("Tera Term", "MSG_TT_FILE_OPEN_ERROR", "Tera Term: ファイル オープン エラー")
         a.informativeText = Lang.t("Tera Term", "MSG_LOGFILE_WRITE_ERROR", "ログファイルに書き込めません。\n%s", path)
-        if let w = window { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
+        if let w = presentingWindow { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
     }
 
     /// ログ記録中ダイアログを表示 (OnShowLogDialog / FLogShowDlg)

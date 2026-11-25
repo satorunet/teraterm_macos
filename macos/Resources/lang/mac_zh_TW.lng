@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Tera Term 作者：T. Teranishi（寺西 高）
 MENU_CREDITS_DEVELOPER=Tera Term Mac 開發：satorunet（為 Mac 版新增的程式碼採用 MIT 授權）
 MENU_ABOUT_AUTHOR=Tera Term 作者：T. Teranishi（寺西 高）
 MENU_ABOUT_DEVELOPER=開發：satorunet
+; TABS
+MENU_WINDOW_TABS=標籤頁
+MENU_TABS_SPLIT_SIDEBYSIDE=左右分割顯示標籤頁
+MENU_TABS_SPLIT_STACKED=上下分割顯示標籤頁
+MENU_TABS_UNSPLIT=取消分割 (恢復為標籤頁)
+MENU_TABS_MERGE_ALL=合併所有視窗
+MENU_TABS_MOVE_TO_NEW_WINDOW=將標籤頁移至新視窗
+; FEEDBACK
+FEEDBACK_MENU=傳送意見…
+FEEDBACK_TITLE=傳送意見
+FEEDBACK_INTRO=您可以匿名告訴開發者您注意到的問題或希望的功能。不會回覆，但會作為日後改進的參考。
+FEEDBACK_PRIVACY=不會傳送姓名和電子郵件地址。訊息會傳送到 Google 表單，Google 會收到您的 IP 位址。請不要填寫密碼等重要資訊。
+FEEDBACK_KIND=類型：
+FEEDBACK_KIND_REQUEST=建議
+FEEDBACK_KIND_BUG=錯誤
+FEEDBACK_KIND_OTHER=其他
+FEEDBACK_INCLUDE_ENV=附上 App 與 macOS 的版本
+FEEDBACK_SEND=傳送
+FEEDBACK_SENT=已傳送。謝謝！
+FEEDBACK_FAILED=無法傳送。
+FEEDBACK_FAILED_INFO=請檢查網路連線後再試一次。也可以透過瀏覽器中的表單傳送。
+FEEDBACK_OPEN_BROWSER=在瀏覽器中開啟
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=左右分割此畫面
+MENU_TABS_SPLIT_PANE_STACKED=上下分割此畫面
+MENU_TABS_MARK=選取此標籤頁
+MENU_TABS_UNMARK=取消選取此標籤頁
+MENU_TABS_UNMARK_ALL=取消選取所有標籤頁
+MENU_TABS_CHECK_TIP=選取此分頁用於分割

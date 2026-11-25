@@ -7,8 +7,8 @@
     "p": "easy/index.html"
    },
    {
-    "t": "ダウンロードとインストール",
-    "p": "easy/install.html"
+    "t": "起動と終了、アップデート",
+    "p": "easy/start.html"
    },
    {
     "t": "SSH でサーバーにつなぐ",
@@ -21,6 +21,10 @@
    {
     "t": "画面の基本",
     "p": "easy/terminal.html"
+   },
+   {
+    "t": "1 つのウィンドウに画面を並べる",
+    "p": "easy/mado.html"
    },
    {
     "t": "ログを取る",
@@ -45,6 +49,10 @@
    {
     "t": "困ったとき",
     "p": "easy/trouble.html"
+   },
+   {
+    "t": "要望・お知らせを送る",
+    "p": "about/feedback.html"
    }
   ]
  },
@@ -70,6 +78,10 @@
    {
     "t": "アンインストール",
     "p": "uninstall.html"
+   },
+   {
+    "t": "Mac 版だけの機能",
+    "p": "about/mac-features.html"
    },
    {
     "t": "Windows 版との違い",
@@ -1520,6 +1532,10 @@
  {
   "t": "情報",
   "items": [
+   {
+    "t": "要望・お知らせを送る",
+    "p": "about/feedback.html"
+   },
    {
     "t": "ヘルプメニュー",
     "p": "menu/help.html"

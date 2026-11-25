@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Tera Term yazarı: T. Teranishi
 MENU_CREDITS_DEVELOPER=Tera Term Mac geliştiricisi: satorunet (Mac sürümü için eklenen kod: MIT Lisansı)
 MENU_ABOUT_AUTHOR=Tera Term yazarı: T. Teranishi
 MENU_ABOUT_DEVELOPER=Geliştirici: satorunet
+; TABS
+MENU_WINDOW_TABS=Sekmeler
+MENU_TABS_SPLIT_SIDEBYSIDE=Sekmeleri Yan Yana Böl
+MENU_TABS_SPLIT_STACKED=Sekmeleri Üst Üste Böl
+MENU_TABS_UNSPLIT=Bölmeyi Kaldır (Sekmelere Dön)
+MENU_TABS_MERGE_ALL=Tüm Pencereleri Birleştir
+MENU_TABS_MOVE_TO_NEW_WINDOW=Sekmeyi Yeni Pencereye Taşı
+; FEEDBACK
+FEEDBACK_MENU=Geri bildirim gönder…
+FEEDBACK_TITLE=Geri bildirim gönder
+FEEDBACK_INTRO=Fark ettiklerinizi veya istediklerinizi geliştiriciye anonim olarak iletebilirsiniz. Yanıt verilmez, ancak mesajınız uygulamanın gelişmesine yardımcı olur.
+FEEDBACK_PRIVACY=Ad ve e-posta adresi gönderilmez. Mesajlar bir Google Formuna gider ve Google IP adresinizi alır. Parola veya başka özel bilgi yazmayın.
+FEEDBACK_KIND=Tür:
+FEEDBACK_KIND_REQUEST=İstek
+FEEDBACK_KIND_BUG=Hata
+FEEDBACK_KIND_OTHER=Diğer
+FEEDBACK_INCLUDE_ENV=Uygulama ve macOS sürümlerini ekle
+FEEDBACK_SEND=Gönder
+FEEDBACK_SENT=Gönderildi. Teşekkürler!
+FEEDBACK_FAILED=Gönderilemedi.
+FEEDBACK_FAILED_INFO=Ağ bağlantınızı kontrol edip yeniden deneyin. Tarayıcıdaki formdan da gönderebilirsiniz.
+FEEDBACK_OPEN_BROWSER=Tarayıcıda aç
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=Bu Bölmeyi Yan Yana Böl
+MENU_TABS_SPLIT_PANE_STACKED=Bu Bölmeyi Üst Üste Böl
+MENU_TABS_MARK=Bu Sekmeyi Seç
+MENU_TABS_UNMARK=Bu Sekmenin Seçimini Kaldır
+MENU_TABS_UNMARK_ALL=Tüm Sekme Seçimlerini Kaldır
+MENU_TABS_CHECK_TIP=Bu sekmeyi bölmek için seç

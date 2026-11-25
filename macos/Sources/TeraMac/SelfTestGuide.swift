@@ -43,7 +43,7 @@ extension SelfTest {
     }
 
     /// 例の値を引数のドメイン (保存されない) に入れる
-    private static func guideDefaults() {
+    static func guideDefaults() {
         let d = UserDefaults.standard
         var a = d.volatileDomain(forName: UserDefaults.argumentDomain)
         let ja = Lang.isJapanese

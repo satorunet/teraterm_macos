@@ -162,9 +162,10 @@ final class IniDocument {
 // MARK: - その他の設定シート
 
 final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
-    /// タブ (addsetting.cpp の順。Cygwin の場所は Mac のローカルシェル。Plugin / Debug / TEK は無い)
+    /// タブ (addsetting.cpp の順。Cygwin の場所は Mac のローカルシェル。Debug / TEK は無い。
+    /// Plugin は Mac の組み込みプラグインの一覧 (TTMado の入/切) で、いちばん後ろ)
     enum Page: Int, CaseIterable {
-        case general, ui, sequence, copyPaste, visual, log, localShell, encoding, font, theme, keyboard, mouse, tcpip, terminal, serial, window
+        case general, ui, sequence, copyPaste, visual, log, localShell, encoding, font, theme, keyboard, mouse, tcpip, terminal, serial, window, plugins
         var title: String {
             switch self {
             case .general: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_GENERAL", "全般")
@@ -183,6 +184,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             case .terminal: return Lang.t("Tera Term", "DLG_TERM_TITLE", "端末")
             case .serial: return Lang.t("Tera Term", "DLG_SERIAL_TITLE", "シリアルポート")
             case .window: return Lang.t("Tera Term", "DLG_WIN_TITLE", "ウィンドウ")
+            case .plugins: return Lang.m("SETUP_TAB_PLUGINS", "プラグイン")
             }
         }
     }
@@ -435,7 +437,49 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .terminal: return terminalPage()
         case .serial: return serialPage()
         case .window: return windowPage()
+        case .plugins: return pluginsPage()
         }
+    }
+
+    // MARK: プラグイン (Mac 版の組み込みプラグイン)
+
+    /// TTMado (タブ・窓割り) を使う
+    private let ttMadoCheck = NSButton(checkboxWithTitle: TTMado.title, target: nil, action: nil)
+
+    /// 本家の「プラグイン」タブの代わり: Mac 版はプラグインをアプリに組み込んでいるので、一覧と TTMado の入/切だけ
+    private func pluginsPage() -> NSView {
+        custom(load: { [unowned self] in self.ttMadoCheck.state = TTMado.isEnabled ? .on : .off }, store: {})
+        func note(_ s: String) -> NSTextField {
+            let l = NSTextField(wrappingLabelWithString: s)
+            l.font = .systemFont(ofSize: 11)
+            l.textColor = .secondaryLabelColor
+            l.preferredMaxLayoutWidth = 520
+            return l
+        }
+        func info(_ name: String, _ desc: String) -> NSView {
+            let n = SetupUI.label(name)
+            n.font = .boldSystemFont(ofSize: 12)
+            n.translatesAutoresizingMaskIntoConstraints = false
+            n.widthAnchor.constraint(equalToConstant: 130).isActive = true
+            let d = SetupUI.label(desc)
+            d.textColor = .secondaryLabelColor
+            return SetupUI.row([n, d], align: .firstBaseline)
+        }
+        ttMadoCheck.font = .boldSystemFont(ofSize: 12)
+        let mado = SetupUI.column([
+            SetupUI.row([ttMadoCheck, SetupUI.label(TTMado.summary)], align: .firstBaseline),
+            SetupUI.indent(note(Lang.m("PLUGIN_TTMADO_NOTE", "切ると、分割している画面はタブに戻り、macOS のふつうのタブと同じ動きになります。すぐに効きます (再起動はいりません)。"))),
+        ])
+        let always = SetupUI.column([
+            info("TTProxy", Lang.m("PLUGIN_TTPROXY_DESC", "プロキシ経由の接続 (HTTP / SOCKS / TELNET)")),
+            info("TTXKanjiMenu", Lang.m("PLUGIN_TTXKANJIMENU_DESC", "漢字コードのメニュー")),
+            info("TTXAlwaysOnTop", Lang.m("PLUGIN_TTXALWAYSONTOP_DESC", "常に手前に表示")),
+            info("TeraTerm Menu", Lang.m("PLUGIN_TERATERMMENU_DESC", "メニューバーに常駐するランチャー")),
+        ])
+        return SetupUI.column([
+            SetupUI.box(Lang.m("PLUGIN_SWITCHABLE", "入/切できるプラグイン"), mado),
+            SetupUI.box(Lang.m("PLUGIN_BUILTIN", "いつも使うプラグイン (アプリに組み込み)"), always),
+        ], spacing: 12)
     }
 
     // 全般 (general_pp.cpp)
@@ -1427,6 +1471,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         }
         for b in binders { b.store() }
         applyThemeTab()
+        // TTMado (タブ・窓割り) の入/切 (すぐに効く)
+        TTMado.setEnabled(ttMadoCheck.state == .on)
         s.optionAsMeta = s.metaKey.lowercased() != "off"
         // シリアルポート
         if portPopup.isEnabled, let p = portPopup.titleOfSelectedItem { serial.path = p }

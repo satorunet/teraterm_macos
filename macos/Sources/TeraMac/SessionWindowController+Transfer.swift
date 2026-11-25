@@ -75,7 +75,7 @@ extension SessionWindowController {
                                             delayTick: o.sendfileDelayTick, sendSize: o.sendfileSize,
                                             sequential: ex.sendfileSequential)
         guard let v = SendFileDialog.run(values: initial, initialDir: dir, skipDialog: ex.sendfileSkipOptionDialog,
-                                         filter: ex.fileSendFilter, over: window) else { return }
+                                         filter: ex.fileSendFilter, over: presentingWindow) else { return }
         // ts に書き戻す
         dropSettings.transBin = v.binary
         transferOptions.sendfileDelayType = v.delayType
@@ -124,7 +124,7 @@ extension SessionWindowController {
         let proto = binary ? sendTitle + " (" + Lang.t("Tera Term", "DLG_SENDFILE_BINARY", "バイナリ") + ")" : sendTitle
         panel.onCancel = { [weak job] in job?.finish() }
         // FTHideDialog: 進み具合のダイアログを出さない
-        if !transferExtra.ftHideDialog { panel.show(title: Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_SENDFILE", "ファイル送信中"), over: window) }
+        if !transferExtra.ftHideDialog { panel.show(title: Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_SENDFILE", "ファイル送信中"), over: presentingWindow) }
         panel.set(proto: proto, file: name, detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", 0, job.totalBytes), percent: 0)
         job.onProgress = { [weak panel] sent, total in
             panel?.set(proto: proto, file: name, detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", sent, total),
@@ -147,7 +147,7 @@ extension SessionWindowController {
         let ex = transferExtra
         let initial = ReceiveFileDialog.Values(filename: "", autoStopSec: transferOptions.receiveFileAutoStopWaitTime)
         guard let v = ReceiveFileDialog.run(values: initial, initialDir: dir, skipDialog: ex.receivefileSkipOptionDialog,
-                                            filter: ex.fileReceiveFilter, over: window) else { return }
+                                            filter: ex.fileReceiveFilter, over: presentingWindow) else { return }
         dropSettings.transBin = true   // ts.TransBin = data.binary (いつも TRUE)
         // RawStartReceive(filename, ts.ReceivefileAutoStopWaitTime)
         _ = startTransfer(.rawRecv, files: [v.filename], binaryFlag: 1, xmodemOption: 0,
@@ -168,7 +168,7 @@ extension SessionWindowController {
     @objc func kermitGet(_ sender: Any?) {
         guard !transferBusy else { NSSound.beep(); return }
         let d = KermitGetDialog()
-        guard d.run(over: window) else { return }
+        guard d.run(over: presentingWindow) else { return }
         startMenuTransfer(.kermitGet, files: [d.filename])
     }
 
@@ -185,7 +185,7 @@ extension SessionWindowController {
         let opt = transferOptions.xmodemOpt
         let crc = opt == XmodemOption.crc || opt == XmodemOption.oneKCRC
         TransferFilePanels.xmodemReceive(fileDir: transferFileDir, crc: crc, binary: transferOptions.xmodemBin,
-                                         over: window) { [weak self] r in
+                                         over: presentingWindow) { [weak self] r in
             guard let self = self, let r = r else { return }
             // ts.XmodemOpt は 1K のビットを残して チェックサム / CRC を、ts.XmodemBin はダイアログの値に
             self.startMenuTransfer(.xmodemRecv, files: [r.file], binaryFlag: r.binary ? 1 : 0,
@@ -198,7 +198,7 @@ extension SessionWindowController {
         let opt = transferOptions.xmodemOpt
         let oneK = opt == XmodemOption.oneKCRC || opt == XmodemOption.oneKCksum
         TransferFilePanels.xmodemSend(fileDir: transferFileDir, filter: transferExtra.fileSendFilter, oneK: oneK,
-                                      over: window) { [weak self] r in
+                                      over: presentingWindow) { [weak self] r in
             guard let self = self, let r = r else { return }
             // 1K なら Xopt1kCRC、でなければ XoptCRC を渡し、CRC / チェックサムは ts.XmodemOpt のまま
             self.startMenuTransfer(.xmodemSend, files: [r.file],
@@ -221,7 +221,7 @@ extension SessionWindowController {
     @objc func zmodemSend(_ sender: Any?) {
         guard !transferBusy else { NSSound.beep(); return }
         TransferFilePanels.zmodemSend(fileDir: transferFileDir, filter: transferExtra.fileSendFilter,
-                                      binary: transferOptions.xmodemBin, over: window) { [weak self] r in
+                                      binary: transferOptions.xmodemBin, over: presentingWindow) { [weak self] r in
             guard let self = self, let r = r else { return }
             // ts.XmodemBin = Opt。この転送もダイアログの値で
             self.transferOptions.xmodemBin = r.binary
@@ -254,7 +254,7 @@ extension SessionWindowController {
     private func chooseSend(_ title: String, multi: Bool, start: @escaping ([String]) -> Void) {
         guard !transferBusy else { NSSound.beep(); return }
         TransferFilePanels.chooseSendFiles(title: title, multi: multi, filter: transferExtra.fileSendFilter,
-                                           fileDir: transferFileDir, over: window) { files in
+                                           fileDir: transferFileDir, over: presentingWindow) { files in
             if let f = files { start(f) }
         }
     }
@@ -264,7 +264,7 @@ extension SessionWindowController {
     @objc func sshScp(_ sender: Any?) {
         guard case .ssh? = spec, connected else { NSSound.beep(); return }
         let d = ScpDialog(scpSendDir: dropSettings.scpSendDir, recvDir: transferFileDir)
-        _ = d.run(over: window)
+        _ = d.run(over: presentingWindow)
         dropSettings.scpSendDir = d.savedSendDir   // ts.ScpSendDir
         switch d.action {
         case .send(let file, let toDir)?: scpDialogSend(file: file, toDir: toDir)

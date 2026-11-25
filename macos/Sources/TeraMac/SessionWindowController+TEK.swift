@@ -44,7 +44,7 @@ extension SessionWindowController {
     /// VTActivate: ActiveWin = IdVT にして VT ウインドウを前へ
     func tekActivateVT(focus: Bool = true) {
         tekWindow?.isActiveWin = false
-        guard focus, let w = window else { return }
+        guard focus, let w = presentingWindow else { return }
         if w.isMiniaturized { w.deminiaturize(nil) }
         w.makeKeyAndOrderFront(nil)
     }

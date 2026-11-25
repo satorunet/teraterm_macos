@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Tera Term 저작자: T. Teranishi (寺西 高)
 MENU_CREDITS_DEVELOPER=Tera Term Mac 개발: satorunet (Mac 버전에 추가한 코드는 MIT 라이선스)
 MENU_ABOUT_AUTHOR=Tera Term 저작자: T. Teranishi (寺西 高)
 MENU_ABOUT_DEVELOPER=개발: satorunet
+; TABS
+MENU_WINDOW_TABS=탭
+MENU_TABS_SPLIT_SIDEBYSIDE=탭을 좌우로 분할하여 보기
+MENU_TABS_SPLIT_STACKED=탭을 상하로 분할하여 보기
+MENU_TABS_UNSPLIT=분할 해제 (탭으로 되돌리기)
+MENU_TABS_MERGE_ALL=모든 윈도우 병합
+MENU_TABS_MOVE_TO_NEW_WINDOW=탭을 새로운 윈도우로 이동
+; FEEDBACK
+FEEDBACK_MENU=의견 보내기…
+FEEDBACK_TITLE=의견 보내기
+FEEDBACK_INTRO=알게 된 점이나 바라는 점을 익명으로 개발자에게 전할 수 있습니다. 답장은 없지만 앞으로의 개선에 참고합니다.
+FEEDBACK_PRIVACY=이름이나 이메일 주소는 보내지 않습니다. 보낸 곳은 Google 설문지이며, 사용하는 기기의 IP 주소는 Google에 전달됩니다. 비밀번호 등 중요한 정보는 쓰지 마십시오.
+FEEDBACK_KIND=종류:
+FEEDBACK_KIND_REQUEST=요청
+FEEDBACK_KIND_BUG=버그
+FEEDBACK_KIND_OTHER=기타
+FEEDBACK_INCLUDE_ENV=앱과 macOS 버전 포함
+FEEDBACK_SEND=보내기
+FEEDBACK_SENT=보냈습니다. 감사합니다.
+FEEDBACK_FAILED=보내지 못했습니다.
+FEEDBACK_FAILED_INFO=네트워크 연결을 확인한 후 다시 보내십시오. 브라우저의 설문지에서 보낼 수도 있습니다.
+FEEDBACK_OPEN_BROWSER=브라우저에서 열기
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=이 화면을 좌우로 분할
+MENU_TABS_SPLIT_PANE_STACKED=이 화면을 상하로 분할
+MENU_TABS_MARK=이 탭 선택
+MENU_TABS_UNMARK=이 탭 선택 해제
+MENU_TABS_UNMARK_ALL=탭 선택 모두 해제
+MENU_TABS_CHECK_TIP=분할에 쓸 탭으로 선택

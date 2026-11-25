@@ -282,6 +282,12 @@ final class HelpWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// ヘルプの外 (http など) は既定のブラウザで開く
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // ヘルプの中の「要望・お知らせを送る」ボタン
+        if let u = action.request.url, u.scheme == "tthelp-feedback" {
+            decisionHandler(.cancel)
+            FeedbackPanel.show()
+            return
+        }
         if let u = action.request.url, !u.isFileURL, u.scheme != "about" {
             NSWorkspace.shared.open(u)
             decisionHandler(.cancel)

@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Tera Term 作者：T. Teranishi（寺西 高）
 MENU_CREDITS_DEVELOPER=Tera Term Mac 开发：satorunet（为 Mac 版添加的代码采用 MIT 许可证）
 MENU_ABOUT_AUTHOR=Tera Term 作者：T. Teranishi（寺西 高）
 MENU_ABOUT_DEVELOPER=开发：satorunet
+; TABS
+MENU_WINDOW_TABS=标签页
+MENU_TABS_SPLIT_SIDEBYSIDE=左右分割显示标签页
+MENU_TABS_SPLIT_STACKED=上下分割显示标签页
+MENU_TABS_UNSPLIT=取消分割 (恢复为标签页)
+MENU_TABS_MERGE_ALL=合并所有窗口
+MENU_TABS_MOVE_TO_NEW_WINDOW=将标签页移到新窗口
+; FEEDBACK
+FEEDBACK_MENU=发送意见…
+FEEDBACK_TITLE=发送意见
+FEEDBACK_INTRO=您可以匿名告诉开发者您注意到的问题或希望的功能。不会回复，但会作为今后改进的参考。
+FEEDBACK_PRIVACY=不会发送姓名和电子邮件地址。消息会发送到 Google 表单，Google 会收到您的 IP 地址。请不要填写密码等重要信息。
+FEEDBACK_KIND=类型：
+FEEDBACK_KIND_REQUEST=建议
+FEEDBACK_KIND_BUG=错误
+FEEDBACK_KIND_OTHER=其他
+FEEDBACK_INCLUDE_ENV=附带应用和 macOS 的版本
+FEEDBACK_SEND=发送
+FEEDBACK_SENT=已发送。谢谢！
+FEEDBACK_FAILED=无法发送。
+FEEDBACK_FAILED_INFO=请检查网络连接后重试。也可以通过浏览器中的表单发送。
+FEEDBACK_OPEN_BROWSER=在浏览器中打开
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=左右分割此画面
+MENU_TABS_SPLIT_PANE_STACKED=上下分割此画面
+MENU_TABS_MARK=选择此标签页
+MENU_TABS_UNMARK=取消选择此标签页
+MENU_TABS_UNMARK_ALL=取消选择所有标签页
+MENU_TABS_CHECK_TIP=选择此标签页用于分割

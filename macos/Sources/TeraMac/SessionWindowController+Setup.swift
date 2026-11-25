@@ -22,7 +22,7 @@ extension SessionWindowController {
     func openSetupSheet(_ page: SetupSheet.Page) {
         // 設定画面はアプリ全体で 1 つ。開いていれば前に出す
         if let open = SetupSheet.current { open.bringToFront(page: page); return }
-        guard let w = window, w.attachedSheet == nil else { NSSound.beep(); return }
+        guard let w = presentingWindow, w.attachedSheet == nil else { NSSound.beep(); return }
         // 開いたときの端末の大きさ (ウインドウで変えたあとならそれ)
         var cur = settings
         cur.cols = term.cols
@@ -113,7 +113,7 @@ extension SessionWindowController {
     @objc func proxySetup(_ sender: Any?) { if let w = sheetWindow() { ProxySetupDialog().begin(on: w) } }
 
     private func sheetWindow() -> NSWindow? {
-        guard let w = window, w.attachedSheet == nil else { NSSound.beep(); return nil }
+        guard let w = presentingWindow, w.attachedSheet == nil else { NSSound.beep(); return nil }
         return w
     }
 

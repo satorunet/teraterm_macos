@@ -327,3 +327,32 @@ MENU_CREDITS_AUTHOR=Tera Term ஆசிரியர்: T. Teranishi
 MENU_CREDITS_DEVELOPER=Tera Term Mac உருவாக்கியவர்: satorunet (Mac பதிப்புக்குச் சேர்த்த குறியீடு: MIT உரிமம்)
 MENU_ABOUT_AUTHOR=Tera Term ஆசிரியர்: T. Teranishi
 MENU_ABOUT_DEVELOPER=உருவாக்கியவர்: satorunet
+; TABS
+MENU_WINDOW_TABS=தாவல்கள்
+MENU_TABS_SPLIT_SIDEBYSIDE=தாவல்களை இடது-வலமாகப் பிரித்துக் காட்டு
+MENU_TABS_SPLIT_STACKED=தாவல்களை மேல்-கீழாகப் பிரித்துக் காட்டு
+MENU_TABS_UNSPLIT=பிரிப்பை நீக்கு (தாவல்களுக்குத் திரும்பு)
+MENU_TABS_MERGE_ALL=எல்லா சாளரங்களையும் ஒன்றிணை
+MENU_TABS_MOVE_TO_NEW_WINDOW=தாவலைப் புதிய சாளரத்திற்கு நகர்த்து
+; FEEDBACK
+FEEDBACK_MENU=கருத்தை அனுப்பு…
+FEEDBACK_TITLE=கருத்தை அனுப்பு
+FEEDBACK_INTRO=நீங்கள் கவனித்தவற்றையும் விரும்புவதையும் உருவாக்குநருக்கு அநாமதேயமாகத் தெரிவிக்கலாம். பதில் வராது; ஆனால் மேம்படுத்த உதவும்.
+FEEDBACK_PRIVACY=பெயரோ மின்னஞ்சலோ அனுப்பப்படாது. செய்திகள் Google படிவத்துக்குச் செல்லும்; உங்கள் IP முகவரி Google-க்குச் செல்லும். கடவுச்சொல் போன்ற தனிப்பட்ட தகவல்களை எழுத வேண்டாம்.
+FEEDBACK_KIND=வகை:
+FEEDBACK_KIND_REQUEST=கோரிக்கை
+FEEDBACK_KIND_BUG=பிழை
+FEEDBACK_KIND_OTHER=பிற
+FEEDBACK_INCLUDE_ENV=பயன்பாடு, macOS பதிப்புகளைச் சேர்
+FEEDBACK_SEND=அனுப்பு
+FEEDBACK_SENT=அனுப்பப்பட்டது. நன்றி!
+FEEDBACK_FAILED=அனுப்ப முடியவில்லை.
+FEEDBACK_FAILED_INFO=பிணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயலவும். உலாவியில் உள்ள படிவம் மூலமும் அனுப்பலாம்.
+FEEDBACK_OPEN_BROWSER=உலாவியில் திற
+; TABS2
+MENU_TABS_SPLIT_PANE_SIDEBYSIDE=இந்தத் திரையை இடது-வலமாகப் பிரி
+MENU_TABS_SPLIT_PANE_STACKED=இந்தத் திரையை மேல்-கீழாகப் பிரி
+MENU_TABS_MARK=இந்தத் தாவலைத் தேர்ந்தெடு
+MENU_TABS_UNMARK=இந்தத் தாவலின் தேர்வை நீக்கு
+MENU_TABS_UNMARK_ALL=எல்லாத் தாவல்களின் தேர்வையும் நீக்கு
+MENU_TABS_CHECK_TIP=பிரிப்பதற்கு இந்தத் தாவலைத் தேர்ந்தெடு

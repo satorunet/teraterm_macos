@@ -13,7 +13,8 @@ final class InWindowMenuBar: NSView {
         let list: [(String, String, String, String)] = [
             ("Tera Term", "MENU_FILE", "ファイル", "f"), ("Tera Term", "MENU_EDIT", "編集", "e"),
             ("Tera Term", "MENU_SETUP", "設定", "s"), ("Tera Term", "MENU_CONTROL", "コントロール", "o"),
-            ("Tera Term", "MENU_WINDOW", "ウィンドウ", "w"), ("TTXKanjiMenu", "MENU_KANJI", "漢字コード", "k"),
+            ("Tera Term", "MENU_WINDOW", "ウィンドウ", "w"),
+            ("TTXKanjiMenu", "MENU_KANJI", "漢字コード", "k"),
             ("Tera Term", "MENU_HELP", "ヘルプ", "h"),
         ]
         return list.map { sec, key, def, k in
@@ -407,8 +408,30 @@ final class TerminalContainerView: NSView {
     /// メニューバーを出しているか
     var barShown: Bool { !accessory.isHidden }
 
+    /// タブの分割表示のペインのとき、端末の次の応答者 (そのセッションの SessionWindowController)。
+    /// 分割しているウインドウのコントローラより先に、ペインのセッションがメニューの動作を受ける
+    weak var paneResponder: NSResponder?
+    override var nextResponder: NSResponder? {
+        get { paneResponder ?? super.nextResponder }
+        set { super.nextResponder = newValue }
+    }
+
+    /// このビューのメニューバーを今のウインドウのタイトルバーに付けているか
+    /// (分割のペインとしてほかのウインドウに入っているときは false。メニューバーは分割しているウインドウのものを 1 つだけ出す)
+    var ownsTitlebar: Bool { window?.titlebarAccessoryViewControllers.contains(accessory) ?? false }
+
+    /// ウインドウのタイトルバーにメニューバーを付けている中身 (分割中のウインドウなら、分割しているセッションのもの)
+    static func titlebarOwner(of w: NSWindow?) -> TerminalContainerView? {
+        guard let w = w else { return nil }
+        if let c = w.contentView as? TerminalContainerView { return c }
+        if let r = w.contentView as? TabSplitRootView { return r.split?.hostContainer }
+        return nil
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // 分割のペインとして入ったときは付けない (自分のウインドウには付けたまま)
+        guard !(superview is TabPaneView) else { return }
         guard let w = window, !w.titlebarAccessoryViewControllers.contains(accessory) else { return }
         w.addTitlebarAccessoryViewController(accessory)
         w.addTitlebarAccessoryViewController(menuButtonAccessory)
@@ -440,7 +463,7 @@ final class TerminalContainerView: NSView {
         let show = InWindowMenuBar.isShown
         guard show != barShown else { return }
         updateMenuButton()
-        guard let w = window, w.isVisible else { accessory.isHidden = !show; return }
+        guard let w = window, w.isVisible, ownsTitlebar else { accessory.isHidden = !show; return }
         // スライドして出し入れする。端末の大きさ (cols/rows) は変えず、ウィンドウの上端も動かさない
         let bh = bar.frame.height
         var target = w.frame
@@ -464,22 +487,29 @@ final class TerminalContainerView: NSView {
         guard !monitorsInstalled else { return }
         monitorsInstalled = true
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { ev in
-            guard let c = ev.window?.contentView as? TerminalContainerView, c.barShown,
-                  ev.window?.firstResponder === c.termView,
+            // 分割中は フォーカスのあるペインの端末で、メニューバーは分割しているウインドウのもの
+            guard let c = TerminalContainerView.titlebarOwner(of: ev.window), c.barShown,
+                  let tv = ev.window?.firstResponder as? TerminalView,
                   ev.modifierFlags.intersection([.command, .control, .option, .shift]) == [.option],
-                  !c.termView.settings.optionAsMeta, !c.termView.hasMarkedText(),
+                  !tv.settings.optionAsMeta, !tv.hasMarkedText(),
                   let ch = ev.charactersIgnoringModifiers?.lowercased(),
                   let i = InWindowMenuBar.entries.firstIndex(where: { $0.key == ch }) else { return ev }
             DispatchQueue.main.async { c.bar.open(i) }
             return nil
         }
         NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { ev in
-            guard let w = ev.window, let c = w.contentView as? TerminalContainerView, !c.barShown,
-                  ev.modifierFlags.intersection([.command, .control, .option, .shift]) == [.control] else { return ev }
-            let p = c.termView.convert(ev.locationInWindow, from: nil)
-            guard c.termView.bounds.contains(p) else { return ev }
+            guard let w = ev.window, let c = TerminalContainerView.titlebarOwner(of: w), !c.barShown,
+                  ev.modifierFlags.intersection([.command, .control, .option, .shift]) == [.control],
+                  let content = w.contentView else { return ev }
+            // クリックした端末 (分割中はそのペインの端末。フォーカスも移す)
+            var hit = content.hitTest(content.superview?.convert(ev.locationInWindow, from: nil) ?? ev.locationInWindow)
+            while let h = hit, !(h is TerminalView) { hit = h.superview }
+            guard let tv = hit as? TerminalView else { return ev }
+            let p = tv.convert(ev.locationInWindow, from: nil)
+            guard tv.bounds.contains(p) else { return ev }
             w.makeKeyAndOrderFront(nil)
-            InWindowMenuBar.fullPopupMenu().popUp(positioning: nil, at: p, in: c.termView)
+            if w.firstResponder !== tv { w.makeFirstResponder(tv) }
+            InWindowMenuBar.fullPopupMenu().popUp(positioning: nil, at: p, in: tv)
             return nil
         }
     }

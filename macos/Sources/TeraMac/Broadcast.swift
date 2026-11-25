@@ -50,7 +50,7 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel.delegate = self
         build()
         // 親ウインドウのすぐ上 (左をそろえる)
-        if let w = parent.window, let screen = w.screen?.visibleFrame {
+        if let w = parent.presentingWindow, let screen = w.screen?.visibleFrame {
             var y = w.frame.maxY
             if y + panel.frame.height > screen.maxY { y = screen.maxY - panel.frame.height }
             panel.setFrameOrigin(NSPoint(x: w.frame.minX, y: y))
@@ -173,7 +173,7 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
     func numberOfRows(in tableView: NSTableView) -> Int { windows.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let l = NSTextField(labelWithString: windows[row].window?.title ?? "")
+        let l = NSTextField(labelWithString: windows[row].displayTitle)
         l.lineBreakMode = .byTruncatingTail
         return l
     }
@@ -186,8 +186,8 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         table.selectedRowIndexes.compactMap { $0 < windows.count ? windows[$0] : nil }
     }
 
-    @objc private func bringFront() { targets.forEach { $0.window?.orderFront(nil) }; panel.makeFirstResponder(combo) }
-    @objc private func minimizeSelected() { targets.forEach { $0.window?.miniaturize(nil) } }
+    @objc private func bringFront() { targets.forEach { $0.presentingWindow?.orderFront(nil) }; panel.makeFirstResponder(combo) }
+    @objc private func minimizeSelected() { Set(targets.compactMap { $0.presentingWindow }).forEach { $0.miniaturize(nil) } }
     @objc private func toggleAll() {
         if table.selectedRowIndexes.isEmpty { table.selectAll(nil) } else { table.deselectAll(nil) }
     }

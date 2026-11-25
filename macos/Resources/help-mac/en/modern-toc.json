@@ -7,8 +7,8 @@
     "p": "easy/index.html"
    },
    {
-    "t": "Download and install",
-    "p": "easy/install.html"
+    "t": "Launching, quitting and updates",
+    "p": "easy/start.html"
    },
    {
     "t": "Connect to a server with SSH",
@@ -21,6 +21,10 @@
    {
     "t": "Terminal basics",
     "p": "easy/terminal.html"
+   },
+   {
+    "t": "Show several sessions in one window",
+    "p": "easy/mado.html"
    },
    {
     "t": "Record a log",
@@ -45,6 +49,10 @@
    {
     "t": "Troubleshooting",
     "p": "easy/trouble.html"
+   },
+   {
+    "t": "Send feedback",
+    "p": "about/feedback.html"
    }
   ]
  },
@@ -70,6 +78,10 @@
    {
     "t": "Uninstalling",
     "p": "uninstall.html"
+   },
+   {
+    "t": "Features only in the Mac version",
+    "p": "about/mac-features.html"
    },
    {
     "t": "Differences from Windows",
@@ -1504,6 +1516,10 @@
  {
   "t": "About",
   "items": [
+   {
+    "t": "Send feedback",
+    "p": "about/feedback.html"
+   },
    {
     "t": "Help and Tera Term Mac menus",
     "p": "menu/help.html"

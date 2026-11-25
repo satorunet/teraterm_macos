@@ -138,7 +138,7 @@ enum AboutPlugins {
 extension AppDelegate {
     @objc func showAboutTTProxy(_ sender: Any?) { AboutPlugins.showTTProxy() }
     @objc func showAboutTTSSH(_ sender: Any?) {
-        let s = (NSApp.keyWindow?.windowController ?? NSApp.mainWindow?.windowController) as? SessionWindowController
+        let s = SessionWindowController.current
         AboutPlugins.showTTSSH(session: s)
     }
 }

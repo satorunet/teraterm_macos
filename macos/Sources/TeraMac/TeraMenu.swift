@@ -295,7 +295,7 @@ enum TeraMenuLauncher {
                 let a = NSAlert()
                 a.messageText = Lang.m("CONN_MACRO_NOT_FOUND", "マクロファイルが見つかりません")
                 a.informativeText = path
-                a.beginSheetModal(for: c.window!)
+                a.beginSheetModal(for: c.presentingWindow!)
             } else {
                 c.runMacro(url: URL(fileURLWithPath: path))
             }

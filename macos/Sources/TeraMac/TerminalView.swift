@@ -21,6 +21,8 @@ final class TerminalView: NSView, NSTextInputClient {
     /// マクロの enablekeyb 0 で false (キー入力を送らない)
     var keyboardEnabled = true
     var onResize: ((Int, Int) -> Void)?
+    /// ファーストレスポンダになった (タブの分割表示でフォーカスのあるペインを決める)
+    var onFocus: (() -> Void)?
 
     private(set) var cellW: CGFloat = 8
     private(set) var cellH: CGFloat = 16
@@ -116,7 +118,7 @@ final class TerminalView: NSView, NSTextInputClient {
     /// SelectOnActivate: ウインドウを選んだクリックで文字の選択を始めるか (vtwin.cpp OnMouseActivate)
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { settings.selectOnActivate }
 
-    override func becomeFirstResponder() -> Bool { focused = true; blinkOn = true; needsDisplay = true; return true }
+    override func becomeFirstResponder() -> Bool { focused = true; blinkOn = true; needsDisplay = true; onFocus?(); return true }
     override func resignFirstResponder() -> Bool { focused = false; needsDisplay = true; return true }
 
     private func startBlink() {
@@ -196,7 +198,9 @@ final class TerminalView: NSView, NSTextInputClient {
         return true
     }
 
-    private var session: SessionWindowController? { window?.windowController as? SessionWindowController }
+    /// この端末のセッション (分割中はウインドウのコントローラとは限らないので、セッションが自分を入れる)
+    weak var owner: SessionWindowController?
+    private var session: SessionWindowController? { owner ?? window?.windowController as? SessionWindowController }
 
     // MARK: - フォントと大きさ
 
@@ -891,16 +895,16 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     /// ttcmn SelectNextWin: Tera Term のウインドウを順に切り替える。shownOnly なら最小化したものは飛ばす
+    /// (分割中のペインも 1 つのウインドウとして順に選ぶ)
     private func selectNextWindow(_ dir: Int, shownOnly: Bool) {
-        let all = SessionWindowController.all.compactMap { $0.window }
-        guard let me = window, let i = all.firstIndex(of: me), all.count > 1 else { return }
+        let all = SessionWindowController.all
+        guard let me = session, let i = all.firstIndex(where: { $0 === me }), all.count > 1 else { return }
         var j = i
         for _ in 0..<all.count {
             j = (j + dir + all.count) % all.count
-            let w = all[j]
-            if shownOnly && w.isMiniaturized { continue }
-            if w.isMiniaturized { w.deminiaturize(nil) }
-            w.makeKeyAndOrderFront(nil)
+            let c = all[j]
+            if shownOnly && c.presentingWindow?.isMiniaturized == true { continue }
+            WindowMenuController.bringToFront(c)
             return
         }
     }

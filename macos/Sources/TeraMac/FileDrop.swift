@@ -169,7 +169,7 @@ extension SessionWindowController {
         a.alertStyle = .critical
         a.messageText = "Tera Term: error"
         a.informativeText = msg
-        if let w = window { a.beginSheetModal(for: w) } else { a.runModal() }
+        if let w = presentingWindow { a.beginSheetModal(for: w) } else { a.runModal() }
     }
 
     /// TermSendStartBracket / TermPasteStringNoBracket / TermSendEndBracket

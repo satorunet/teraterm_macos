@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         AppUpdater.shared.start()
         buildMenu()
+        // TTMado (タブ・窓割り): 入のときだけ、タブの Shift+クリック・タブやウインドウのドラッグを見張る (TTMado/)
+        if TTMado.isEnabled { TTMado.install() }
         // 言語を変えたら メニューを作り直し、ウインドウの題 ([未接続] など) も付け直す
         NotificationCenter.default.addObserver(self, selector: #selector(languageDidChange(_:)), name: Lang.didChange, object: nil)
         // TERAMAC_INI_DRYRUN=<ini>: 読み込み結果を書き出して終わる (設定は変えない。確認用)
@@ -220,6 +222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HelpViewer.openIndex()
     }
 
+    @objc func openFeedback(_ sender: Any?) { FeedbackPanel.show() }
+
     // 端末のウインドウがないときのメニュー
     @objc func newConnectionMenu(_ sender: Any?) { newWindow(sender) }
     @objc func localShellConnection(_ sender: Any?) { newShellWindow(sender) }
@@ -246,12 +250,332 @@ enum SelfTest {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
+    /// TERAMAC_SPLITSNAP: タブの分割表示 (TabSplit) の確認。3 つのタブを左右に分割して写し、
+    /// メニューの動作の届き先・タイトル・シートを出すウインドウを split.txt に書いて、上下・取り出し・閉じるを試す
+    static func splitTest(_ c: SessionWindowController, dir: String) {
+        var log: [String] = []
+        func note(_ s: String) { log.append(s) }
+        let c2 = SessionWindowController(), c3 = SessionWindowController()
+        c.window?.addTabbedWindow(c2.window!, ordered: .above)
+        c2.window?.addTabbedWindow(c3.window!, ordered: .above)
+        for (i, x) in [c, c2, c3].enumerated() {
+            x.macroTitle = "pane\(i + 1)"
+            x.term.feed("\u{1B}[1mpane \(i + 1)\u{1B}[0m split test\r\n")
+            x.termView.dataArrived()
+        }
+        c2.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        /// 端末から応答者をたどって、アクションを受けるもの
+        func target(_ w: NSWindow, _ sel: Selector) -> String {
+            var r: NSResponder? = w.firstResponder
+            while let x = r {
+                if x.responds(to: sel) { return (x as? SessionWindowController)?.displayTitle ?? String(describing: type(of: x)) }
+                r = x.nextResponder
+            }
+            return "nil"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            guard let host = c2.window else { exit(1) }
+            note("tabs=\(host.tabGroup?.windows.count ?? 0) canSplit=\(TabSplit.canSplit(host))")
+            TabSplit.splitTabs(of: host, sideBySide: true)
+            let sp = TabSplit.split(of: host)
+            note("split panes=\(sp?.panes.count ?? 0) visibleWindows=\(NSApp.windows.filter { $0.isVisible && $0.windowController is SessionWindowController }.count) title=\(host.title)")
+            host.makeFirstResponder(c3.termView)
+            note("focus pane3: title=\(host.title) current=\(SessionWindowController.current?.displayTitle ?? "nil") clearScreen->\(target(host, #selector(SessionWindowController.clearScreen(_:)))) presenting3=\(c3.presentingWindow === host)")
+            host.makeFirstResponder(c.termView)
+            note("focus pane1: title=\(host.title) exitMenu->\(target(host, #selector(SessionWindowController.exitMenu(_:)))) cols=\(c.term.cols)/\(c2.term.cols)/\(c3.term.cols)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                snapWindow(host, dir + "/split_side.png")
+                TabSplit.splitTabs(of: host, sideBySide: false)
+                note("stacked: vertical=\(sp?.isSideBySide ?? true) rows=\(c.term.rows)/\(c2.term.rows)/\(c3.term.rows)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    snapWindow(host, dir + "/split_stacked.png")
+                    // ホストのセッション (pane2) を閉じる → 分割は残りのウインドウへ移る
+                    c2.performCloseSession()
+                    let w2 = c.presentingWindow
+                    note("closed pane2: panes=\(TabSplit.split(of: w2)?.panes.count ?? 0) all=\(SessionWindowController.all.count) hostIsPane=\(w2 === c.window || w2 === c3.window) title=\(w2?.title ?? "")")
+                    // フォーカスのあるペインを新しいウインドウへ → 残り 1 つで分割をやめる
+                    w2?.makeFirstResponder(c3.termView)
+                    TabSplit.moveCurrentTabToNewWindow()
+                    note("moved pane3: splits=\(TabSplit.all.count) c.tabSplit=\(c.tabSplit == nil ? "nil" : "set") c3visible=\(c3.window?.isVisible ?? false) c.content=\(type(of: c.window?.contentView)) c3.content=\(type(of: c3.window?.contentView)) separate=\(c3.window?.tabGroup?.windows.contains(c.window!) == false)")
+                    TabSplit.mergeAllWindows()
+                    note("merged: tabs=\(c.window?.tabGroup?.windows.count ?? 0)")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        if let w = c.window { snapWindow(w, dir + "/split_after.png") }
+                        // 選んだタブだけの分割と、入れ子の分割
+                        splitTestMarks(dir: dir, note: note) {
+                            splitMergeTests(dir: dir, note: note) {
+                                splitRemoveTests(dir: dir, note: note) {
+                                    try? log.joined(separator: "\n").write(toFile: dir + "/split.txt", atomically: true, encoding: .utf8)
+                                    exit(0)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// TERAMAC_SPLITSNAP の続き: タブ A,B,C,D で、B だけ選んで (Shift+クリックと同じ処理) 左右に分割 → C・D はタブのまま (split_marked.png)。
+    /// B にフォーカスして C を選び「この画面を上下に分割」→ A | (B / C) (split_nested.png)。B を閉じて木が縮むか、
+    /// 選ばずに「この画面を左右に分割」で次のタブ D が入るか、分割をやめてタブに戻るかを見る
+    static func splitTestMarks(dir: String, note: @escaping (String) -> Void, done: @escaping () -> Void) {
+        guard let first = SessionWindowController.current?.window, let g = first.tabGroup,
+              g.windows.count >= 2,
+              let a = g.windows[0].windowController as? SessionWindowController,
+              let b = g.windows[1].windowController as? SessionWindowController else { done(); return }
+        let cc = SessionWindowController(), dd = SessionWindowController()
+        g.windows[1].addTabbedWindow(cc.window!, ordered: .above)
+        cc.window!.addTabbedWindow(dd.window!, ordered: .above)
+        for (x, n) in [(a, "A"), (b, "B"), (cc, "C"), (dd, "D")] {
+            x.macroTitle = n
+            x.term.feed("\u{1B}[2J\u{1B}[H\u{1B}[1mtab \(n)\u{1B}[0m nested split test\r\n")
+            x.termView.dataArrived()
+        }
+        func name(_ x: SessionWindowController) -> String { x.macroTitle ?? "?" }
+        func tabs(_ w: NSWindow?) -> String { (w?.tabGroup?.windows ?? []).map { $0.tab.title }.joined(separator: "|") }
+        a.window?.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            guard let aw = a.window, let bw = b.window, let cw = cc.window else { done(); return }
+            // タブ B の Shift+クリック: B のタブが選ばれ、印を付けて A に戻る
+            bw.makeKeyAndOrderFront(nil)
+            let ok = TabMarks.tabClicked(bw, previous: aw)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                note("shift-click B: handled=\(ok) marked=\(TabMarks.marked(in: aw).map(name)) selected=\(aw.tabGroup?.selectedWindow === aw) key=\(NSApp.keyWindow === aw) tabs=\(tabs(aw))")
+                // メニューの「このタブを選ぶ」と同じ: D を付けて外す
+                TabMarks.toggle(dd); let on = dd.tabMarked; TabMarks.toggle(dd)
+                note("toggle D: on=\(on) off=\(!dd.tabMarked) canSplitFocused=\(TabSplit.canSplitFocused(aw)) partners=\(TabSplit.partners(for: aw).map(name))")
+                snapWindow(aw, dir + "/split_marks.png")
+                // (a) 選んだタブ (B) だけを左右に分割。C・D はタブのまま
+                TabSplit.splitTabs(of: aw, sideBySide: true)
+                let sp = TabSplit.split(of: aw)
+                note("split marked: layout=\(sp?.layoutDescription(name) ?? "nil") tabs=\(tabs(aw)) bHidden=\(!bw.isVisible) bInGroup=\(aw.tabGroup?.windows.contains(bw) == true) marks=\(TabMarks.any) cols=\(a.term.cols)/\(b.term.cols)/\(cc.term.cols)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    snapWindow(aw, dir + "/split_marked.png")
+                    // ほかのタブ (C) に切り替えて、分割のタブに戻る
+                    cw.makeKeyAndOrderFront(nil)
+                    note("switch to C: current=\(SessionWindowController.current.map(name) ?? "nil") selected=\(cw.tabGroup?.selectedWindow === cw) cContent=\(cw.contentView.map { "\(type(of: $0))" } ?? "nil")")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        aw.makeKeyAndOrderFront(nil)
+                        aw.makeFirstResponder(b.termView)
+                        note("back to split, focus B: current=\(SessionWindowController.current.map(name) ?? "nil") title=\(aw.title)")
+                        // タブ C の Shift+クリック (分割のタブにいるとき) → 「この画面を上下に分割」
+                        cw.makeKeyAndOrderFront(nil)
+                        let ok2 = TabMarks.tabClicked(cw, previous: aw)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            note("shift-click C: handled=\(ok2) marked=\(TabMarks.marked(in: aw).map(name)) back=\(NSApp.keyWindow === aw) current=\(SessionWindowController.current.map(name) ?? "nil")")
+                            TabSplit.splitFocused(of: aw, sideBySide: false)
+                            note("nested: layout=\(sp?.layoutDescription(name) ?? "nil") tabs=\(tabs(aw)) focused=\(SessionWindowController.current.map(name) ?? "nil") size A=\(a.term.cols)x\(a.term.rows) B=\(b.term.cols)x\(b.term.rows) C=\(cc.term.cols)x\(cc.term.rows)")
+                            let clear = target(aw, #selector(SessionWindowController.clearScreen(_:)))
+                            aw.makeFirstResponder(cc.termView)
+                            note("focus C: current=\(SessionWindowController.current.map(name) ?? "nil") clearScreen(B)->\(clear) clearScreen->\(target(aw, #selector(SessionWindowController.clearScreen(_:)))) presentingC=\(cc.presentingWindow === aw)")
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                snapWindow(aw, dir + "/split_nested.png")
+                                // B を閉じる → 節 (B / C) は C だけになって消え、A | C
+                                b.performCloseSession()
+                                note("closed B: layout=\(sp?.layoutDescription(name) ?? "nil") current=\(SessionWindowController.current.map(name) ?? "nil") C=\(cc.term.cols)x\(cc.term.rows)")
+                                // 選ばずに「この画面を左右に分割」→ 次のタブ D
+                                aw.makeFirstResponder(cc.termView)
+                                TabSplit.splitFocused(of: aw, sideBySide: true)
+                                note("split C with next tab: layout=\(sp?.layoutDescription(name) ?? "nil") tabs=\(tabs(aw)) canSplitFocused=\(TabSplit.canSplitFocused(aw))")
+                                // 外側の向きだけ変える
+                                TabSplit.splitTabs(of: aw, sideBySide: false)
+                                note("root stacked: layout=\(sp?.layoutDescription(name) ?? "nil")")
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                    snapWindow(aw, dir + "/split_nested2.png")
+                                    sp?.unsplit()
+                                    let w = a.window
+                                    note("unsplit: splits=\(TabSplit.all.count) tabs=\(tabs(w)) contents=\((w?.tabGroup?.windows ?? []).map { "\(type(of: $0.contentView!))" }.joined(separator: ","))")
+                                    done()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// TERAMAC_SPLITSNAP の続き: 分割しているウインドウ W (A | B) に、ほかのセッション C を入れる (タブのドラッグ・ウインドウのドラッグ)。
+    /// C は W のタブ (選んでいる / いない) か、別のウインドウ。入れたあとの各ウインドウの状態を書き、見えなくなったものを探す
+    /// TERAMAC_SPLITSNAP の続き: TB(LR(P1..P5), Q) から、下の Q を新しいウインドウに分ける (Q がホスト / ホストでない / タブのドラッグの経路で入れた)。
+    /// 残ったウインドウの根・節・ペイン・端末の大きさと、ウインドウの見え方を書いて写す
+    static func splitRemoveTests(dir: String, note: @escaping (String) -> Void, done: @escaping () -> Void) {
+        // (名前, Q をホストにするか, Q をタブのドラッグの経路 (HiddenHandoff) で入れるか)
+        let cases: [(String, Bool, Bool)] = [("q-not-host", false, false), ("q-host", true, false), ("q-handoff", false, true)]
+        func showAlone(_ x: SessionWindowController) {
+            guard let xw = x.window else { return }
+            let mode = xw.tabbingMode
+            xw.tabbingMode = .disallowed
+            x.showWindow(nil)
+            xw.tabbingMode = mode
+        }
+        func frames(_ v: NSView, _ depth: Int = 0) -> String {
+            let f = v.frame
+            let fs = "\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))"
+            if let p = v as? TabPaneView {
+                let tv = p.container.termView
+                return "\(p.session?.macroTitle ?? "?")[\(fs) hidden=\(p.isHidden ? 1 : 0) term=\(Int(tv.frame.width))x\(Int(tv.frame.height)) cont=\(Int(p.container.frame.width))x\(Int(p.container.frame.height))]"
+            }
+            if let n = v as? TabSplitNodeView {
+                return (n.isVertical ? "LR" : "TB") + "[\(fs)](" + n.arrangedSubviews.map { frames($0, depth + 1) }.joined(separator: ", ") + ")"
+            }
+            return "?"
+        }
+        func run(_ i: Int) {
+            guard i < cases.count else { done(); return }
+            let (label, qHost, handoff) = cases[i]
+            let ps = (1...5).map { _ in SessionWindowController() }
+            let q = SessionWindowController()
+            for (k, x) in ps.enumerated() { x.macroTitle = "P\(k + 1)" }
+            q.macroTitle = "Q"
+            for x in ps + [q] {
+                x.term.feed("\u{1B}[1m\(x.macroTitle ?? "")\u{1B}[0m remove test\r\n")
+                x.termView.dataArrived()
+            }
+            showAlone(ps[0])
+            guard let w1 = ps[0].window else { done(); return }
+            for x in ps.dropFirst() + [q] { (w1.tabGroup?.windows.last ?? w1).addTabbedWindow(x.window!, ordered: .above) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                if handoff {
+                    // P1 だけのウインドウに、Q をタブのドラッグと同じ経路で下に入れる
+                    w1.makeKeyAndOrderFront(nil)
+                    TabBarDrag.dropForTest(q, into: w1, pane: nil, side: .below, partner: nil, tearOff: false)
+                } else {
+                    TabMarks.set(qHost ? ps[0] : q, true)
+                    let hw = qHost ? q.window! : w1
+                    hw.makeKeyAndOrderFront(nil)
+                    TabSplit.splitTabs(of: hw, sideBySide: false)   // TB(P1, Q)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                    guard let sp = q.tabSplit else { note("remove \(label): no split"); run(i + 1); return }
+                    var prev = sp.panes.first { $0.session === ps[0] }
+                    for x in ps.dropFirst() {
+                        if let t = prev { sp.insert(x, at: t, side: .right) }
+                        prev = sp.panes.first { $0.session === x }
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        let hw0 = sp.hostWindow
+                        note("remove \(label): before layout=\(sp.layoutDescription { $0.macroTitle ?? "?" }) host=\(sp.host.macroTitle ?? "?") \(frames(sp.root))")
+                        TabSplit.moveToNewWindow(q)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                            let sp2 = ps[0].tabSplit
+                            let hw = sp2?.hostWindow
+                            note("remove \(label): after layout=\(sp2?.layoutDescription { $0.macroTitle ?? "?" } ?? "nil") host=\(sp2?.host.macroTitle ?? "nil") hostChanged=\(hw !== hw0) win vis=\(hw?.isVisible == true ? 1 : 0) a=\(hw?.alphaValue ?? -1) key=\(hw?.isKeyWindow == true ? 1 : 0) content=\(hw?.contentView.map { "\(type(of: $0))" } ?? "nil") frame=\(hw.map { "\(Int($0.frame.width))x\(Int($0.frame.height))" } ?? "") \(sp2.map { frames($0.root) } ?? "") qWin vis=\(q.window?.isVisible == true ? 1 : 0) a=\(q.window?.alphaValue ?? -1) rootWin=\(sp2?.root.window === hw ? 1 : 0) hiddenAnc=\(sp2?.root.isHiddenOrHasHiddenAncestor == true ? 1 : 0) rootAlpha=\(sp2?.root.alphaValue ?? -1) layer=\(sp2?.root.layer != nil ? 1 : 0) wantsLayer=\(sp2?.root.wantsLayer == true ? 1 : 0) superview=\(sp2?.root.superview.map { "\(type(of: $0))" } ?? "nil") paneAlpha=\(sp2?.panes.map { "\($0.alphaValue)/\($0.container.alphaValue)/\($0.container.isHidden ? 1 : 0)" }.joined(separator: ",") ?? "") winOcc=\(hw?.occlusionState.contains(.visible) == true ? 1 : 0) winNum=\(hw?.windowNumber ?? 0) onScreen=\(hw?.isOnActiveSpace == true ? 1 : 0)")
+                            if let h = hw { snapWindow(h, dir + "/remove_\(label).png") }
+                            for x in [q] + ps { x.closeWithoutConfirm() }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { run(i + 1) }
+                        }
+                    }
+                }
+            }
+        }
+        run(0)
+    }
+
+    static func splitMergeTests(dir: String, note: @escaping (String) -> Void, done: @escaping () -> Void) {
+        // (名前, タブのドラッグか, C は W のタブか, C を選ぶか, AppKit の引き出しをまねるか, AppKit がタブを組に戻すのをまねるか)
+        // snapBack: タブを中身の上に落としても AppKit が受け付けないと、タブは元の組に戻って選ばれる (分割に入れたあとに起きることがある)
+        let cases: [(String, Bool, Bool, Bool, Bool, Bool)] = [
+            ("tabbar-tab", true, true, false, false, false),
+            ("tabbar-tab-selected", true, true, true, false, false),
+            ("tabbar-tab-selected-tearoff", true, true, true, true, false),
+            ("tabbar-tab-tearoff", true, true, false, true, false),
+            ("tabbar-tab-selected-snapback", true, true, true, false, true),
+            ("window-own", false, false, false, false, false),
+            ("window-tab", false, true, false, false, false),
+            ("window-tab-selected", false, true, true, false, false),
+        ]
+        /// ほかのウインドウのタブに自動で入らないように出す
+        func showAlone(_ x: SessionWindowController) {
+            guard let xw = x.window else { return }
+            let mode = xw.tabbingMode
+            xw.tabbingMode = .disallowed
+            x.showWindow(nil)
+            xw.tabbingMode = mode
+        }
+        func run(_ i: Int) {
+            guard i < cases.count else { done(); return }
+            let (label, tabBar, cAsTab, cSel, tear, snapBack) = cases[i]
+            let a = SessionWindowController(), b = SessionWindowController()
+            a.macroTitle = "A"; b.macroTitle = "B"
+            showAlone(a)
+            a.window?.addTabbedWindow(b.window!, ordered: .above)
+            a.window?.makeKeyAndOrderFront(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard let w = a.window else { done(); return }
+                TabSplit.splitTabs(of: w, sideBySide: true)
+                let c = SessionWindowController()
+                c.macroTitle = "C"
+                if cAsTab { w.addTabbedWindow(c.window!, ordered: .above) } else { showAlone(c) }
+                if cSel { c.window?.makeKeyAndOrderFront(nil) } else { w.makeKeyAndOrderFront(nil) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let sp = TabSplit.split(of: w)
+                    let before = state([a, b, c], w)
+                    guard let pane = sp?.panes.last, let cw = c.window else { note("merge \(label): no split"); run(i + 1); return }
+                    if tabBar {
+                        TabBarDrag.dropForTest(c, into: w, pane: pane, side: .right, partner: nil, tearOff: tear)
+                        if snapBack {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                                w.addTabbedWindow(cw, ordered: .above)
+                                cw.makeKeyAndOrderFront(nil)
+                            }
+                        }
+                    } else {
+                        TabTearOff.finishRelease(c, cw, near: nil, zoneWindow: w, pane: pane, side: .right)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        let host = a.presentingWindow
+                        note("merge \(label): before[\(before)] after[\(state([a, b, c], host))] layout=\(TabSplit.split(of: host)?.layoutDescription { $0.macroTitle ?? "?" } ?? "nil")")
+                        if let h = host { snapWindow(h, dir + "/merge_\(label).png") }
+                        for x in [c, b, a] { x.closeWithoutConfirm() }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { run(i + 1) }
+                    }
+                }
+            }
+        }
+        /// 各セッションのウインドウの状態
+        func state(_ list: [SessionWindowController], _ host: NSWindow?) -> String {
+            let ws = list.map { x -> String in
+                guard let xw = x.window else { return "\(x.macroTitle ?? "?"):nowin" }
+                let g = xw.tabGroup?.windows ?? [xw]
+                return "\(x.macroTitle ?? "?"):vis=\(xw.isVisible ? 1 : 0) a=\(xw.alphaValue) cv=\(xw.contentView.map { "\(type(of: $0))" } ?? "nil") grp=\(g.count) sel=\(xw.tabGroup?.selectedWindow === xw ? 1 : 0) split=\(x.tabSplit == nil ? "-" : (x.tabSplit?.hostWindow === host ? "W" : "other"))"
+            }
+            return ws.joined(separator: " ") + " hostVis=\(host?.isVisible == true ? 1 : 0) hostA=\(host?.alphaValue ?? -1) key=\(NSApp.keyWindow.flatMap { ($0.windowController as? SessionWindowController)?.macroTitle } ?? "nil")"
+        }
+        run(0)
+    }
+
+    /// 端末から応答者をたどって、アクションを受けるもの
+    static func target(_ w: NSWindow, _ sel: Selector) -> String {
+        var r: NSResponder? = w.firstResponder
+        while let x = r {
+            if x.responds(to: sel) { return (x as? SessionWindowController)?.macroTitle ?? String(describing: type(of: x)) }
+            r = x.nextResponder
+        }
+        return "nil"
+    }
+
     static func run(dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         // TERAMAC_GUIDESNAP: かんたんマニュアルの画面写真 (SelfTestGuide.swift)
         if ProcessInfo.processInfo.environment["TERAMAC_GUIDESNAP"] != nil { guide(dir: dir); return }
+        // TERAMAC_MADOSNAP: かんたんマニュアルの窓割り (TTMado) の写真 (SelfTestMado.swift)
+        if ProcessInfo.processInfo.environment["TERAMAC_MADOSNAP"] != nil { madoGuide(dir: dir); return }
         let c = SessionWindowController()
         c.showWindow(nil)
+        if ProcessInfo.processInfo.environment["TERAMAC_SPLITSNAP"] == "remove" {
+            // 分けるところだけ (時間を短くする)
+            var log: [String] = []
+            c.window?.orderOut(nil)
+            splitRemoveTests(dir: dir, note: { log.append($0) }) {
+                try? log.joined(separator: "\n").write(toFile: dir + "/split.txt", atomically: true, encoding: .utf8)
+                exit(0)
+            }
+            return
+        }
+        if ProcessInfo.processInfo.environment["TERAMAC_SPLITSNAP"] != nil { splitTest(c, dir: dir); return }
         if ProcessInfo.processInfo.environment["TERAMAC_TABSNAP"] != nil {
             // タブを 2 つにして、ウィンドウ全体を写す (メニューバーとタブの並びの確認用)
             let c2 = SessionWindowController()
