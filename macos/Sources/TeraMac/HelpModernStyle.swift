@@ -18,8 +18,20 @@ enum HelpModernStyle {
         let html = URL(fileURLWithPath: (helpRoot as NSString).appendingPathComponent("html"), isDirectory: true)
         if let d = FileManager.default.contents(atPath: (helpRoot as NSString).appendingPathComponent("modern-toc.json")),
            let groups = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] {
+            // マクロの章は概要だけにして「マクロ リファレンス」(文法・資料・コマンド。scripts/site_docs.py --app で作る) へ。
+            // コマンドの章 (数百項目) は目次に出さない
+            let hasRef = FileManager.default.fileExists(atPath: html.appendingPathComponent("macro-reference.html").path)
+            let overview: Set<String> = ["macro/index.html", "macro/howtorun.html", "macro/howtoassoc.html", "macro/syntax/index.html"]
             return groups.compactMap { g in
-                guard let t = g["t"] as? String, let items = g["items"] as? [[String: String]] else { return nil }
+                guard let t = g["t"] as? String, var items = g["items"] as? [[String: String]] else { return nil }
+                if hasRef {
+                    if ["マクロのコマンド", "Macro commands"].contains(t) { return nil }
+                    if ["マクロ", "Macros"].contains(t) {
+                        items = items.filter { overview.contains($0["p"] ?? "") }
+                        items.append(["t": (helpRoot as NSString).lastPathComponent != "en" ? "マクロ リファレンス (文法・資料・コマンド)" : "Macro reference (language, appendixes, commands)",
+                                      "p": "macro-reference.html"])
+                    }
+                }
                 let list: [[String: String]] = items.compactMap { it in
                     guard let title = it["t"], let p = it["p"], let u = URL(string: p, relativeTo: html)?.absoluteURL else { return nil }
                     return ["t": title, "u": u.absoluteString]

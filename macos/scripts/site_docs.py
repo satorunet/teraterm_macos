@@ -189,5 +189,54 @@ def build(site):
     print('docs:', os.path.join(site, 'docs'))
 
 
+def app_reference():
+    """アプリのヘルプ用の「マクロ リファレンス」(help-mac/<言語>/html/macro-reference.html) を modern-toc.json から作る。
+    アプリの目次 (HelpModernStyle.toc) は、マクロの章を概要 + このページだけにし、コマンドの章を出さない"""
+    OVERVIEW = ('macro/index.html', 'macro/howtorun.html', 'macro/howtoassoc.html', 'macro/syntax/index.html')
+    for lang in ('ja', 'en'):
+        t = L[lang]
+        toc = json.load(open(os.path.join(HELP, lang, 'modern-toc.json'), encoding='utf-8'))
+        cmds = next(g['items'] for g in toc if g['t'] in ('マクロのコマンド', 'Macro commands'))
+        macro = next(g['items'] for g in toc if g['t'] in ('マクロ', 'Macros'))
+        syn = [it for it in macro if it['p'] not in OVERVIEW and it['p'].startswith('macro/syntax/')]
+        doc = [it for it in macro if it['p'] not in OVERVIEW and not it['p'].startswith('macro/syntax/')]
+        by = {}
+        for it in sorted(cmds, key=lambda it: it['t'].lower()):
+            by.setdefault(it['t'][:1].upper(), []).append(it)
+        li = lambda items, code=False: ''.join(f'<li><a href="{html.escape(it["p"])}">{"<code>" if code else ""}{html.escape(it["t"])}{"</code>" if code else ""}</a></li>' for it in items)
+        letters = ' '.join(f'<a href="#k-{k}">{k}</a>' for k in by)
+        body = (f'<h2 id="syntax">{t["refsyn"]}</h2><ul class="mr">{li(syn)}</ul>'
+                f'<h2 id="appendix">{t["refdoc"]}</h2><ul class="mr">{li(doc)}</ul>'
+                f'<h2 id="commands">{t["refcmd"]}</h2><p class="mr-letters">{letters}</p>'
+                + ''.join(f'<h3 id="k-{k}">{k}</h3><ul class="mr mr-cmd">{li(v, True)}</ul>' for k, v in by.items()))
+        page = f'''<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<title>{t['ref']}</title>
+<link rel="stylesheet" href="style.css" type="text/css">
+<style>
+ul.mr{{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 16px}}
+ul.mr-cmd{{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}}
+.mr-letters a{{display:inline-block;min-width:1.6em;text-align:center}}
+input.mr-filter{{width:100%;font:inherit;padding:6px 10px;margin:4px 0 8px;box-sizing:border-box}}
+</style>
+</head>
+<body>
+<h1>{t['ref']}</h1>
+<p>{t['reflead']}</p>
+<input class="mr-filter" type="search" placeholder="{t['refsearch']}" oninput="var q=this.value.toLowerCase();document.querySelectorAll('ul.mr li').forEach(function(li){{li.style.display=li.textContent.toLowerCase().indexOf(q)<0?'none':''}})">
+{body}
+</body>
+</html>
+'''
+        open(os.path.join(HELP, lang, 'html', 'macro-reference.html'), 'w', encoding='utf-8').write(page)
+    print('app reference: help-mac/{ja,en}/html/macro-reference.html')
+
+
 if __name__ == '__main__':
-    build(os.path.abspath(sys.argv[1]))
+    if sys.argv[1:] == ['--app']:
+        app_reference()
+    else:
+        app_reference()
+        build(os.path.abspath(sys.argv[1]))
