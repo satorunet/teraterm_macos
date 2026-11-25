@@ -45,3 +45,5 @@ Tera Term Mac のメニュー →「Tera Term Mac をアンインストール…
   - 元の README は [README.teraterm.md](README.teraterm.md) にあります
 
 アイコンは Tera Term (© T. Teranishi / TeraTerm Project, BSD License) のものを使っています。
+
+かつて Macintosh 用の Tera Term Mac (Ver 1.6) があり、その著作者は T. Teranishi (寺西 高) 氏です。このリポジトリの Tera Term Mac は、それとは別に今の Tera Term をもとに作り直したものです。
