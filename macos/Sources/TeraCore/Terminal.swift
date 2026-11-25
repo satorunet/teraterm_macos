@@ -1022,8 +1022,9 @@ public final class Terminal {
         macroOut(sc.value)
 
         // 特殊フォントの文字はいつも半角
+        // UnicodeAmbiguousWidth / 絵文字幅の設定は受信が UTF-8 のときだけ使う (#1127, termCharWidth 内で判断)
         let w = special ? 1 : termCharWidth(sc, ambiguousWide: ambiguousWide,
-                                            emojiWidth: receiveEncoding == .utf8 ? emojiWidthOverride : nil)
+                                            emojiWidth: emojiWidthOverride, kanjiCode: receiveEncoding)
         if w == 0 {
             // 直前の文字にくっつける
             var x = wrapPending ? cx : cx - 1

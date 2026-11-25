@@ -1857,6 +1857,13 @@ public final class TTLInterpreter {
     }
 
     /// 相対パスを現在のフォルダ基準にする (GetAbsPath)
+    /// Tera Term 側で解くパス: 区切りと ~ だけ直し、相対パスはそのまま渡す (どこから解くかは受け取る側が決める)
+    func hostPath(_ s: [UInt8]) -> String {
+        var p = TTLInterpreter.windowsPath(s.u8)
+        if p.hasPrefix("~") { p = (p as NSString).expandingTildeInPath }
+        return p
+    }
+
     func absPath(_ s: [UInt8]) -> String {
         var p = s.u8
         if p.isEmpty { return p }

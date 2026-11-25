@@ -349,6 +349,43 @@ final class TerminalSettingsTests: XCTestCase {
         XCTAssertEqual(t.cx, 2)
     }
 
+    // MARK: 文字幅テーブル (unicode_*.tbl, #844 #1568) と受信漢字コード (#1127)
+
+    func testCharWidthTables() {
+        XCTAssertEqual(unicodeWidthProperty(0x1AFF0), UInt8(ascii: "W"))
+        XCTAssertEqual(termCharWidth("\u{1AFF0}"), 2)                     // 旧手書きの表になかった W
+        XCTAssertEqual(termCharWidth("\u{4E00}"), 2)
+        XCTAssertEqual(termCharWidth("\u{FF61}"), 1)                      // 半角カナ (H)
+        XCTAssertEqual(termCharWidth("\u{0301}"), 0)                      // Mn
+        XCTAssertEqual(termCharWidth("\u{FE0F}"), 0)                      // 異体字セレクタ
+        XCTAssertEqual(termCharWidth("\u{200D}"), 0)                      // ZWJ
+        XCTAssertEqual(termCharWidth("\u{FEFF}"), 0)
+        XCTAssertEqual(termCharWidth("\u{0903}"), 1)                      // Mc はカーソル +1
+        XCTAssertEqual(unicodeCombiningType(0x0903), 2)
+    }
+
+    func testAmbiguousWidthByKanjiCode() {
+        // UTF-8 では UnicodeAmbiguousWidth に従う
+        XCTAssertEqual(termCharWidth("\u{25CB}", ambiguousWide: false), 1) // ○
+        XCTAssertEqual(termCharWidth("\u{25CB}", ambiguousWide: true), 2)
+        // SJIS / EUC / JIS では設定にかかわらず全角
+        for k in [TermEncoding.sjis, .eucjp, .jis] {
+            XCTAssertEqual(termCharWidth("\u{25CB}", ambiguousWide: false, kanjiCode: k), 2)
+            XCTAssertEqual(termCharWidth("\u{25CB}", ambiguousWide: true, kanjiCode: k), 2)
+            // 絵文字もいつも全角 (オーバーライドは効かない)
+            XCTAssertEqual(termCharWidth("\u{A9}", kanjiCode: k), 2)
+            XCTAssertEqual(termCharWidth("\u{2614}", emojiWidth: 1, kanjiCode: k), 2)
+            XCTAssertEqual(termCharWidth("A", kanjiCode: k), 1)
+        }
+        let t = Terminal(cols: 10, rows: 1)
+        t.ambiguousWide = false
+        t.feed("\u{25CB}")
+        XCTAssertEqual(t.cx, 1)
+        t.receiveEncoding = .sjis
+        t.feed("\r\u{25CB}")
+        XCTAssertEqual(t.cx, 2)
+    }
+
     // MARK: JIS
 
     func testJISSendOptions() {

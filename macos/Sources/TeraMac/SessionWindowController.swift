@@ -1169,6 +1169,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// restoresetup: TERATERM.INI を読み込んでこのウインドウに使う
     func macroRestoreSetup(_ path: String) {
+        // 相対パスは設定フォルダから (本家 ttdde.c: GetFullPathW(ts.HomeDirW, …))
+        let path = path.hasPrefix("/") ? path : ((AppPaths.setupDirectory as NSString).appendingPathComponent(path) as NSString).standardizingPath
         guard let d = FileManager.default.contents(atPath: path), let ini = IniFile(data: d) else { return }
         let r = TeraTermIniImport.read(ini, base: settings)
         applySettings(r.settings)

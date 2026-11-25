@@ -141,7 +141,8 @@ extension TTLInterpreter {
         case .recvFile: return cmdRecvFile()
         case .reDim: return cmdReDim()
         case .regexOption: return cmdRegexOption()
-        case .restoreSetup: return commCmdStr { self.host?.ttlRestoreSetup(self.absPath($0)) }
+        // 相対パスはマクロのフォルダではなく、Tera Term の設定フォルダから解く (本家 #706: ttdde.c で ts.HomeDir から GetFullPath)
+        case .restoreSetup: return commCmdStr { self.host?.ttlRestoreSetup(self.hostPath($0)) }
         case .return: return cmdReturn()
         case .rotateL: return cmdRotate(left: true)
         case .rotateR: return cmdRotate(left: false)

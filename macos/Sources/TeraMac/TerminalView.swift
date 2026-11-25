@@ -52,6 +52,9 @@ final class TerminalView: NSView, NSTextInputClient {
     private var selAnchor: Pos?
     private var selHead: Pos?
     private var selMode = 1  // 1 = 文字, 2 = 単語, 3 = 行
+    /// ダブルクリックで選んだ単語の範囲 (buffer.c DblClkStart / DblClkEnd)
+    private var dblClkStart: Pos?
+    private var dblClkEnd: Pos?
     /// マウスのボタンを端末に送っている (押したボタン 0 = 左, 1 = 中, 2 = 右)
     private var mouseReporting = false
     private var reportButton = 0
@@ -1017,10 +1020,31 @@ final class TerminalView: NSView, NSTextInputClient {
         return (row, col, fx - CGFloat(col) > 0.5)
     }
 
+    /// 選択の始点・終点にする文字の境目 (buffer.c GetCharCell)。
+    /// 全角 (2 セル) の文字は、文字全体のどちらの半分を押したかで文字の先頭か次の文字にし、全角を途中で分けない
     private func posAt(_ e: NSEvent) -> Pos {
         let c = cellAt(e)
-        let col = c.half ? min(term.cols, c.col + 1) : c.col
-        return Pos(line: lineBase + firstLineIndex + c.row, col: col)
+        let idx = firstLineIndex + c.row
+        var col = c.col
+        let cells = idx >= 0 && idx < term.totalLines ? term.line(at: idx).cells : []
+        if col < cells.count && col < term.cols {
+            var xChar = col                                  // 文字の先頭
+            while xChar > 0 && cells[xChar].width == 0 { xChar -= 1 }
+            let cell = max(1, Int(cells[xChar].width))
+            if cell % 2 == 0 {
+                // 偶数長 cell の文字 (全角): 文字の中央より右なら次の文字
+                col = col - xChar >= cell / 2 ? xChar + cell : xChar
+            } else {
+                // 奇数長 cell の文字 (半角): 真ん中の cell なら、その cell のどちらの半分か
+                let xTh = xChar + (cell + 1) / 2 - 1
+                if col == xTh { col = c.half ? xChar + cell : xChar }
+                else { col = col < xTh ? xChar : xChar + cell }
+            }
+            col = min(term.cols, col)
+        } else {
+            col = c.half ? min(term.cols, c.col + 1) : c.col
+        }
+        return Pos(line: lineBase + idx, col: col)
     }
 
     /// 押したセル (半分より右でも次の桁にしない)
@@ -1099,6 +1123,7 @@ final class TerminalView: NSView, NSTextInputClient {
         } else if selMode == 2 {
             let (s, e) = wordBounds(cellPosAt(event))
             selAnchor = s; selHead = e
+            dblClkStart = s; dblClkEnd = e
         } else {
             selAnchor = Pos(line: p.line, col: 0); selHead = Pos(line: p.line, col: term.cols)
         }
@@ -1109,9 +1134,17 @@ final class TerminalView: NSView, NSTextInputClient {
         let p = convert(event.locationInWindow, from: nil)
         if p.y < 0 { scrollBy(1) } else if p.y > bounds.height { scrollBy(-1) }
         var pos = posAt(event)
-        if selMode == 2, let a = selAnchor {
-            let (s, e) = wordBounds(cellPosAt(event))
-            pos = pos < a ? s : e
+        if selMode == 2, let ds = dblClkStart, let de = dblClkEnd {
+            // ダブルクリック後のドラッグ (buffer.c BuffChangeSelect NClick == 2):
+            // 単語より前なら単語の終わりを、後ろなら単語の始まりを起点にし、動く側は単語の境目まで広げる
+            let cp = cellPosAt(event)
+            if cp < ds {
+                selAnchor = de; pos = wordBounds(cp).0
+            } else if !(cp < de) {
+                selAnchor = ds; pos = wordBounds(cp).1
+            } else {
+                selAnchor = ds; pos = de
+            }
         } else if selMode == 3 {
             pos.col = pos < (selAnchor ?? pos) ? 0 : term.cols
         }

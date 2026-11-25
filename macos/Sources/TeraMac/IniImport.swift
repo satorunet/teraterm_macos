@@ -269,7 +269,8 @@ enum TeraTermIniImport {
         for (k, p) in TermSettings.colorPairFields { if let v = ini.string(T, k), let c = ColorPair(iniString: v) { s[keyPath: p] = c; n += 1 } }
         if ini.string(T, "AlphaBlendActive") == nil, let v = ini.int(T, "AlphaBlend") { s.alphaBlendActive = v }
         if let v = ini.string(T, "Answerback") { s.answerback = v }
-        if let v = ini.ints(T, "VTFontSpace"), v.count >= 4 { (s.fontDX, s.fontDW, s.fontDY, s.fontDH) = (v[0], v[1], v[2], v[3]) }
+        // VTFontSpace=左,右,上,下。内部の fontDW / fontDH は 左+右 / 上+下 (ttset.c: FontDW += FontDX, FontDH += FontDY)
+        if let v = ini.ints(T, "VTFontSpace"), v.count >= 4 { (s.fontDX, s.fontDW, s.fontDY, s.fontDH) = (v[0], v[1] + v[0], v[2], v[3] + v[2]) }
         if let v = ini.string(T, "KatakanaReceive") { s.katakanaReceive7 = v.trimmingCharacters(in: .whitespaces) == "7" }
         if let v = ini.string(T, "KatakanaSend") { s.katakanaSend7 = v.trimmingCharacters(in: .whitespaces) == "7" }
         if let v = ini.string(T, "Port") { s.portType = v.lowercased() == "serial" ? "serial" : "tcpip" }
@@ -379,7 +380,7 @@ enum TeraTermIniExport {
         set("ANSIColor", tt.enumerated().map { "\($0.offset)," + TermSettings.rgbString($0.element) }.joined(separator: ", "))
         // フォントの高さはピクセル (負 = 文字の高さ)。読み込み (pt = |h| * 72/96) の逆
         set("VTFont", "\(s.fontName),0,-\(Int((s.fontSize * 96 / 72).rounded())),1")
-        set("VTFontSpace", "\(s.fontDX),\(s.fontDW),\(s.fontDY),\(s.fontDH)")
+        set("VTFontSpace", "\(s.fontDX),\(s.fontDW - s.fontDX),\(s.fontDY),\(s.fontDH - s.fontDY)")   // 書くときは 右 / 下 に戻す
         for (k, p) in TermSettings.boolFields { set(k, onOff(s[keyPath: p])) }
         for (k, p) in TermSettings.intFields { set(k, String(s[keyPath: p])) }
         for (k, p) in TermSettings.stringFields where k != "TeraMacThemeName" { set(k, s[keyPath: p]) }

@@ -68,7 +68,7 @@ struct TermSettings {
     var popupMenu = false                           // PopupMenu (on = ウィンドウ内のメニューバーを隠す)
     // フォント
     var drawingResizedFont = true                   // DrawingResizedFont
-    var fontDX = 0, fontDW = 0, fontDY = 0, fontDH = 0   // VTFontSpace=DX,DW,DY,DH
+    var fontDX = 0, fontDW = 0, fontDY = 0, fontDH = 0   // VTFontSpace (左, 左+右, 上, 上+下。本家 ts.FontDX〜FontDH と同じ持ち方)
     // キーボード
     var deleteKeySendsDel = false                   // DeleteKey
     var metaKey = "on"                              // MetaKey off/on/left/right (optionAsMeta と連動)
