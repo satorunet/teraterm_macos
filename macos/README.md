@@ -134,6 +134,6 @@ swift test                   # 端末エミュレータとマクロのテスト
 
 ## ライセンス
 
-MIT License ([LICENSE](LICENSE))。ホームページ: https://github.com/satorunet/teraterm_macos
+MIT License ([LICENSE](LICENSE))。ホームページ: https://github.com/teraterm-mac/teraterm-mac
 
 アイコン・マクロの処理系・ファイル転送は Tera Term (BSD 3-Clause, © T. Teranishi / TeraTerm Project) を、正規表現は鬼車 (BSD 2-Clause)、自動アップデートは Sparkle (MIT) を使っています。全文は LICENSE と、アプリのメニューの「謝辞とライセンス…」にあります。

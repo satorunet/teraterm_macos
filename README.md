@@ -7,8 +7,8 @@
 > **Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受けた Mac 版のプロジェクトで、Windows 版を開発している TeraTerm Project とは別のチームで開発しています。** 不具合や要望は TeraTerm Project ではなく、このリポジトリの Issues へお願いします。
 
 - 公式サイト: **https://teraterm-mac.github.io/**
-- ダウンロード: **[最新版 (クリックでダウンロード)](https://github.com/satorunet/teraterm_macos/releases/latest/download/TeraTermMac.dmg)** — `TeraTermMac.dmg` (過去の版は [Releases](https://github.com/satorunet/teraterm_macos/releases) から)
-- 更新情報: 各版で変わったことや更新状況は **[Releases の一覧](https://github.com/satorunet/teraterm_macos/releases)** にまとめています (アプリの「Tera Term Mac について」→「更新情報」からも開けます)
+- ダウンロード: **[最新版 (クリックでダウンロード)](https://github.com/teraterm-mac/teraterm-mac/releases/latest/download/TeraTermMac.dmg)** — `TeraTermMac.dmg` (過去の版は [Releases](https://github.com/teraterm-mac/teraterm-mac/releases) から)
+- 更新情報: 各版で変わったことや更新状況は **[Releases の一覧](https://github.com/teraterm-mac/teraterm-mac/releases)** にまとめています (アプリの「Tera Term Mac について」→「更新情報」からも開けます)
 - ソース: [`macos/`](macos/) (Swift / AppKit)
 - ライセンス: **MIT** ([macos/LICENSE](macos/LICENSE))
 - 対応: macOS 11 以降 (Apple Silicon / Intel)

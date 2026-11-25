@@ -20,7 +20,7 @@ KEY="${SPARKLE_KEY:-$HOME/.config/teramac/sparkle_ed25519_private.txt}"
 [ -f "$KEY" ] || { echo "署名の鍵がありません: $KEY" >&2; exit 1; }
 # 出力例: sparkle:edSignature="..." length="12345"
 SIG=$("$SIGN_UPDATE" --ed-key-file "$KEY" "$DMG")
-URL="https://github.com/satorunet/teraterm_macos/releases/download/v${VER}/TeraTermMac-${VER}.dmg"
+URL="https://github.com/teraterm-mac/teraterm-mac/releases/download/v${VER}/TeraTermMac-${VER}.dmg"
 DATE=$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")
 DESC=""
 if [ -n "$NOTES" ]; then
@@ -36,7 +36,7 @@ cat > appcast.xml <<XML
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>Tera Term Mac</title>
-    <link>https://github.com/satorunet/teraterm_macos</link>
+    <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
       <title>Tera Term Mac ${VER}</title>
@@ -44,7 +44,7 @@ cat > appcast.xml <<XML
       <sparkle:version>${VER}</sparkle:version>
       <sparkle:shortVersionString>${VER}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v${VER}</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v${VER}</sparkle:fullReleaseNotesLink>
       <description><![CDATA[${DESC}]]></description>
       <enclosure url="${URL}" ${SIG} type="application/octet-stream"/>
     </item>

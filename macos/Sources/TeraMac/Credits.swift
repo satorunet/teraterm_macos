@@ -177,7 +177,7 @@ final class AboutWindowController: NSWindowController {
     @objc private func openCredits(_ sender: Any?) { CreditsWindowController.shared.show() }
     /// GitHub のリリースの一覧 (各版の更新情報)
     @objc private func openChanges(_ sender: Any?) {
-        NSWorkspace.shared.open(URL(string: "https://github.com/satorunet/teraterm_macos/releases")!)
+        NSWorkspace.shared.open(URL(string: "https://github.com/teraterm-mac/teraterm-mac/releases")!)
     }
 }
 

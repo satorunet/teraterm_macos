@@ -11,9 +11,9 @@ Tera Term Mac は、Tera Term の macOS 版を作る **個人のプロジェク�
 
 Tera Term Mac についての連絡は、本家ではなく次のところへお願いします。
 
-- 不具合の報告・要望: [Issues](https://github.com/satorunet/teraterm_macos/issues)
-- 質問・相談・「手伝いたい」という連絡: [Discussions](https://github.com/satorunet/teraterm_macos/discussions)
-- 修正の提案: [Pull Request](https://github.com/satorunet/teraterm_macos/pulls)
+- 不具合の報告・要望: [Issues](https://github.com/teraterm-mac/teraterm-mac/issues)
+- 質問・相談・「手伝いたい」という連絡: [Discussions](https://github.com/teraterm-mac/teraterm-mac/discussions)
+- 修正の提案: [Pull Request](https://github.com/teraterm-mac/teraterm-mac/pulls)
 
 本家の連絡先 (TeraTerm Project のメーリングリストや Discord) には、Mac 版のことは送らないでください。
 
@@ -26,7 +26,7 @@ Tera Term Mac についての連絡は、本家ではなく次のところへお
 | ソース | 本家のリポジトリ | [`macos/`](macos/) (Swift / AppKit) |
 | ライセンス | BSD 3-Clause | MIT |
 
-- Mac 版の不具合や要望は、本家ではなく **このリポジトリの [Issues](https://github.com/satorunet/teraterm_macos/issues)** へお願いします。
+- Mac 版の不具合や要望は、本家ではなく **このリポジトリの [Issues](https://github.com/teraterm-mac/teraterm-mac/issues)** へお願いします。
 - Windows 版の不具合や要望は、本家へお願いします。
 - このリポジトリの `macos/` 以外は、本家のソースの写しです。ここで直しても本家には入りません。本家を直したいときは、本家に送ってください。
 

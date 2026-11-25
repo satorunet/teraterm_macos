@@ -52,7 +52,7 @@ plist() {
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>NSHumanReadableCopyright</key><string>© 2026 satorunet. MIT License. https://github.com/satorunet/teraterm_macos</string>
+    <key>NSHumanReadableCopyright</key><string>© 2026 satorunet. MIT License. https://github.com/teraterm-mac/teraterm-mac</string>
 $6
 </dict>
 </plist>
@@ -114,7 +114,7 @@ plist "$APP/Contents/Info.plist" TeraMac "$BUNDLE_ID" "$NAME" AppIcon '    <key>
             <key>LSHandlerRank</key><string>Owner</string>
         </dict>
     </array>
-    <key>SUFeedURL</key><string>https://raw.githubusercontent.com/satorunet/teraterm_macos/main/macos/appcast.xml</string>
+    <key>SUFeedURL</key><string>https://raw.githubusercontent.com/teraterm-mac/teraterm-mac/main/macos/appcast.xml</string>
     <key>SUPublicEDKey</key><string>OZ6nZ4BU5/VBISm4VmPh16mCWj7BNw6+yOfTtAhYDH0=</string>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>SUEnableSystemProfiling</key><false/>
