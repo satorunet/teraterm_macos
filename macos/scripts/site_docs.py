@@ -17,12 +17,12 @@ UPSTREAM = 'https://teratermproject.github.io/manual/5/{lang}/'
 
 L = {
     'ja': dict(site='Tera Term Mac', docs='ドキュメント', toc='目次', prev='前へ', next='次へ', other='English',
-               title='Tera Term Mac ドキュメント', search='目次を絞り込む', ref='マクロコマンド リファレンス', refsearch='コマンドを絞り込む',
-               reflead='TTL マクロで使えるコマンドの一覧です (ABC 順)。マクロの書き方は、目次の「マクロ」の章を見てください。', refcount='{n} 個のコマンド',
+               title='Tera Term Mac ドキュメント', search='目次を絞り込む', ref='マクロ リファレンス', refsearch='絞り込む', refsyn='文法', refdoc='資料', refcmd='コマンド (ABC 順)', reflink='文法・資料・コマンドの一覧',
+               reflead='TTL マクロの文法、資料、コマンドの一覧です。はじめての方は、目次の「マクロ」の章から読んでください。', refcount='{n} 個のコマンド',
                lead='Tera Term Mac の使い方です。はじめての方は「かんたんマニュアル」から読んでください。アプリの [ヘルプ] メニューからも同じものが読めます。'),
     'en': dict(site='Tera Term Mac', docs='Documentation', toc='Contents', prev='Previous', next='Next', other='日本語',
-               title='Tera Term Mac documentation', search='Filter the contents', ref='Macro command reference', refsearch='Filter commands',
-               reflead='All commands available in TTL macros, in alphabetical order. For how to write macros, see the "Macros" chapter of the contents.', refcount='{n} commands',
+               title='Tera Term Mac documentation', search='Filter the contents', ref='Macro reference', refsearch='Filter', refsyn='Language', refdoc='Appendixes', refcmd='Commands (A–Z)', reflink='Language, appendixes and all commands',
+               reflead='The TTL language, appendixes, and every macro command. If you are new to macros, start with the "Macros" chapter of the contents.', refcount='{n} commands',
                lead='How to use Tera Term Mac. If you are new, start with the quick guide. The same pages are in the app\'s [Help] menu.'),
 }
 
@@ -62,21 +62,38 @@ def build(site):
                     order.append(p)
 
         # 目次。マクロのコマンド (数百項目) は別のリファレンスのページにまとめ、目次には 1 行だけ出す
-        REF_GROUPS = ('マクロのコマンド', 'Macro commands')
-        groups, ref_items = [], []
-        for i, g in enumerate(toc, 1):
-            if g['t'] in REF_GROUPS:
+        # マクロの章は概要だけを目次に出し、文法・資料・コマンド (数百項目) は別のリファレンスのページにまとめる
+        CMD_GROUPS = ('マクロのコマンド', 'Macro commands')
+        MACRO_GROUPS = ('マクロ', 'Macros')
+        OVERVIEW = ('macro/index.html', 'macro/howtorun.html', 'macro/howtoassoc.html', 'macro/syntax/index.html')
+        groups, ref_items, syn_items, doc_items = [], [], [], []
+        n = 0
+        for g in toc:
+            if g['t'] in CMD_GROUPS:
                 ref_items = g['items']
-                lis = f'<li><a href="macro-reference.html"><b>{t["ref"]}</b></a> <small>({t["refcount"].format(n=len(ref_items))})</small></li>'
-            else:
-                lis = ''.join(f'<li><a href="{html.escape(it["p"])}">{html.escape(it["t"])}</a></li>' for it in g['items'])
-            groups.append(f'<section class="tg"><h2><span>{i}.</span> {html.escape(g["t"])}</h2><ul>{lis}</ul></section>')
+                continue
+            n += 1
+            items = g['items']
+            extra = ''
+            if g['t'] in MACRO_GROUPS:
+                for it in items:
+                    if it['p'] in OVERVIEW:
+                        continue
+                    (syn_items if it['p'].startswith('macro/syntax/') else doc_items).append(it)
+                items = [it for it in items if it['p'] in OVERVIEW]
+                extra = f'<li class="tref"><a href="macro-reference.html"><b>{t["ref"]} ›</b></a><br><small>{t["reflink"]}</small></li>'
+            lis = ''.join(f'<li><a href="{html.escape(it["p"])}">{html.escape(it["t"])}</a></li>' for it in items) + extra
+            groups.append(f'<section class="tg"><h2><span>{n}.</span> {html.escape(g["t"])}</h2><ul>{lis}</ul></section>')
+        all_ref = ref_items + syn_items + doc_items
         if ref_items:
             by = {}
             for it in sorted(ref_items, key=lambda it: it['t'].lower()):
                 by.setdefault(it['t'][:1].upper(), []).append(it)
             letters = ''.join(f'<a href="#k-{k}">{k}</a>' for k in by)
-            blocks = ''.join(f'<section class="rk" id="k-{k}"><h2>{k}</h2><ul>' + ''.join(f'<li><a href="{html.escape(it["p"])}"><code>{html.escape(it["t"])}</code></a></li>' for it in v) + '</ul></section>' for k, v in by.items())
+            def plain(title, items, hid):
+                return f'<section class="rk rk-wide" id="{hid}"><h2>{title}</h2><ul>' + ''.join(f'<li><a href="{html.escape(it["p"])}">{html.escape(it["t"])}</a></li>' for it in items) + '</ul></section>'
+            blocks = plain(t['refsyn'], syn_items, 'syntax') + plain(t['refdoc'], doc_items, 'appendix') + f'<h2 class="rk-head" id="commands">{t["refcmd"]}</h2><nav class="rk-letters">{letters}</nav>' + ''.join(f'<section class="rk" id="k-{k}"><h2>{k}</h2><ul>' + ''.join(f'<li><a href="{html.escape(it["p"])}"><code>{html.escape(it["t"])}</code></a></li>' for it in v) + '</ul></section>' for k, v in by.items())
+            letters = f'<a href="#syntax">{t["refsyn"]}</a><a href="#appendix">{t["refdoc"]}</a><a href="#commands">{t["refcmd"]}</a>'
             ref = f'''<!DOCTYPE html>
 <html lang="{lang}">
 <head>
@@ -151,7 +168,7 @@ def build(site):
                 other = 'en' if lang == 'ja' else 'ja'
                 other_href = f'{up}../{other}/{rel}' if os.path.exists(os.path.join(HELP, other, 'html', rel)) else f'{up}../{other}/'
                 crumb = f'<a href="{up}../../{"" if lang == "ja" else "en/"}">{t["site"]}</a> › <a href="{up}index.html">{t["docs"]}</a>'
-                if ref_items and any(it['p'].split('#')[0] == rel for it in ref_items):
+                if all_ref and any(it['p'].split('#')[0] == rel for it in all_ref):
                     crumb += f' › <a href="{up}macro-reference.html">{t["ref"]}</a>'
                 if rel in title_of:
                     crumb += f' › <span>{html.escape(title_of[rel])}</span>'
