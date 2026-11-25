@@ -109,6 +109,8 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     var settings = TermSettings.load()
     /// OK で決まった ts.HistoryList (IDC_HISTORY)
     private(set) var historyList = false
+    /// /B (Telnet バイナリ): ホスト欄に "host /B" と書いたか、/B 付きの履歴を選んだ
+    private(set) var telnetBinary = false
     private let historyCheck = NSButton(checkboxWithTitle: "ホストリストへ追加", target: nil, action: nil)
     private var completion: ((ConnectionSpec?, String?) -> Void)?
 
@@ -238,13 +240,16 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         serviceChanged()
     }
 
-    func controlTextDidChange(_ obj: Notification) {}
+    func controlTextDidChange(_ obj: Notification) {
+        if (obj.object as AnyObject?) === hostBox { telnetBinary = false }
+    }
 
     func comboBoxSelectionDidChange(_ notification: Notification) {
         // 履歴の "user@host:port /telnet" を各欄に戻す
         DispatchQueue.main.async {
             let v = self.hostBox.stringValue
             guard let s = ConnectionSpec.parse(v) else { return }
+            self.telnetBinary = TTCommandLine.parse(v).telBin == true
             switch s {
             case .ssh(let h, let p, let u, let k):
                 self.hostBox.stringValue = h; self.portField.stringValue = String(p)
@@ -316,6 +321,11 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
             spec = .serial(s)
         } else {
             var host = hostBox.stringValue.trimmingCharacters(in: .whitespaces)
+            // "host /B" のようにオプションを書いたとき: ホストは最初の語、/B は Telnet バイナリ
+            if let sp = host.firstIndex(where: { $0 == " " || $0 == "\t" }) {
+                if TTCommandLine.parse(host).telBin == true { telnetBinary = true }
+                host = String(host[..<sp])
+            }
             guard !host.isEmpty else { NSSound.beep(); panel.makeFirstResponder(hostBox); return }
             var user = userField.stringValue.trimmingCharacters(in: .whitespaces)
             if let at = host.firstIndex(of: "@") {
@@ -340,7 +350,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
             } else if telnetRadio.state == .on {
                 spec = .telnet(host: host, port: port)
                 ConnHistory.lastService = "telnet"
-                history = port == 23 ? "\(host) /telnet" : "\(host):\(port) /telnet"
+                history = (port == 23 ? "\(host) /telnet" : "\(host):\(port) /telnet") + (telnetBinary ? " /B" : "")
             } else {
                 spec = .rawTCP(host: host, port: port)
                 ConnHistory.lastService = "raw"

@@ -879,6 +879,7 @@ extension TTLInterpreter {
             guard host.ttlLinkNewWindow() else { return E.cantConnect }
             recv.lock()
             linked = true
+            linkLost = false
             comReady = false
             ringStart = 0; ringCount = 0
             recv.unlock()
@@ -920,6 +921,7 @@ extension TTLInterpreter {
         // EndDDE: リンクだけ外す (マクロは続く)
         recv.lock()
         linked = false
+        linkLost = false
         recv.unlock()
         return 0
     }
@@ -938,6 +940,7 @@ extension TTLInterpreter {
         recv.lock()
         let was = linked
         linked = false
+        linkLost = false
         recv.unlock()
         if was { host?.ttlUnlink() }
         return 0

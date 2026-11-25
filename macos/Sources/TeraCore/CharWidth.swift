@@ -15,7 +15,7 @@ public func termCharWidth(_ s: Unicode.Scalar, ambiguousWide: Bool = false, emoj
     case .nonspacingMark, .enclosingMark: return 0
     default: break
     }
-    if v == 0x200B || v == 0x200C || v == 0x200D || v == 0x2060 { return 0 }
+    if v == 0x200B || v == 0x200C || v == 0x200D || v == 0x2060 || v == 0xFEFF { return 0 }
     if (0xFE00...0xFE0F).contains(v) || (0xE0100...0xE01EF).contains(v) { return 0 }
     if (0x1160...0x11FF).contains(v) { return 0 } // ハングル字母の中声・終声
 

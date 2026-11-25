@@ -22,7 +22,7 @@ public struct IniFile {
             guard let eq = line.firstIndex(of: "=") else { continue }
             let k = line[..<eq].trimmingCharacters(in: .whitespaces)
             let v = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-            sections[current, default: []].append((k, v))
+            sections[current, default: []].append((k, IniFile.dequote(v)))
         }
     }
 
@@ -37,6 +37,19 @@ public struct IniFile {
         guard var t = text else { return nil }
         if t.hasPrefix("\u{FEFF}") { t.removeFirst() }
         self.init(text: t)
+    }
+
+    /// GetPrivateProfileString と同じく、前後の空白を除いたあと "..." か '...' で囲まれていれば 1 組だけ外す (#1557)
+    public static func dequote(_ v: String) -> String {
+        guard v.count >= 2, let f = v.first, f == "\"" || f == "'", v.last == f else { return v }
+        return String(v.dropFirst().dropLast())
+    }
+
+    /// 書くときの値: 読み直して同じになるように、前後に空白があるか引用符で囲まれた形なら "..." で囲む
+    public static func quoteIfNeeded(_ v: String) -> String {
+        let trimmed = v.trimmingCharacters(in: .whitespaces)
+        if trimmed != v || dequote(v) != v { return "\"" + v + "\"" }
+        return v
     }
 
     public func string(_ section: String, _ key: String) -> String? {

@@ -31,6 +31,7 @@ final class TerminalView: NSView, NSTextInputClient {
     private var font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
     private var italicFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    private var boldItalicFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
     let pad: CGFloat = 4
 
     /// 何行ぶん過去にさかのぼって表示しているか
@@ -196,6 +197,7 @@ final class TerminalView: NSView, NSTextInputClient {
         let fm = NSFontManager.shared
         boldFont = fm.convert(font, toHaveTrait: .boldFontMask)
         italicFont = fm.convert(font, toHaveTrait: .italicFontMask)
+        boldItalicFont = fm.convert(boldFont, toHaveTrait: .italicFontMask)
         let adv = ("M" as NSString).size(withAttributes: [.font: font]).width
         // vtdisp.c ChangeFont: CellWidth = FontWidth + FontDW, CellHeight = FontHeight + FontDH
         cellW = max(1, round(adv * 2) / 2 + CGFloat(settings.fontDW))
@@ -461,7 +463,7 @@ final class TerminalView: NSView, NSTextInputClient {
                 let underline = (settings.underlineAttrFont && a.underline) || (settings.urlUnderline && isURL)
                 if cell.ch != " " {
                     var attrs: [NSAttributedString.Key: Any] = [
-                        .font: a.bold && settings.enableBold ? boldFont : (a.italic ? italicFont : font),
+                        .font: a.bold && settings.enableBold ? (a.italic ? boldItalicFont : boldFont) : (a.italic ? italicFont : font),
                         .foregroundColor: fg,
                     ]
                     if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
@@ -695,7 +697,10 @@ final class TerminalView: NSView, NSTextInputClient {
                 switch a {
                 case .binary(let s) where s.unicodeScalars.count == 1: a = .binary("\u{1B}" + s)
                 case .text(let s) where s.unicodeScalars.count == 1: a = .text("\u{1B}" + s)
-                default: break
+                default:
+                    // Mac 版の追加 (#106): Option+矢印・編集キー・ファンクションキーは
+                    // Meta がオンでも xterm の修飾付き (ESC[1;3D など) で送る。本家は修飾なしで送ってしまう
+                    if alt && xtermModifiedKey(event) { return true }
                 }
             }
             perform(a)

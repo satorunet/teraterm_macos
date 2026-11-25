@@ -101,7 +101,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     static var all: [SessionWindowController] = []
 
     init(settings initial: TermSettings = TermSettings.load()) {
-        var settings = initial
+        var settings = CommandLineSession.applyOnce(to: initial)   // 起動時の /B (最初のウインドウだけ)
         // 起動時のテーマ (BGLoadThemeFile): テーマの色を設定に写してから画面を作る
         if let t = ThemeFile.startupTheme(base: settings) {
             t.colors.apply(to: &settings)
@@ -357,6 +357,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             case .rawTCP(_, let p): self.settings.telnet = false; self.settings.tcpPort = p; self.settings.historyList = dlg?.historyList ?? self.settings.historyList
             default: break
             }
+            if dlg?.telnetBinary == true { self.settings.telBin = true }   // /B
             self.connect(spec, password: password)
         }
     }
@@ -374,7 +375,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         var sshEnv = SSHSetupArgs.environment(spec)
         if !settings.termType.isEmpty { sshEnv["TERM"] = settings.termType }
         let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs + SSHSetupArgs.forConnection(spec),
-                               sshEnv: sshEnv, timeout: timeout, telnetBinary: telnetBinary, termType: settings.termType,
+                               sshEnv: sshEnv, timeout: timeout, telnetBinary: telnetBinary || settings.telBin, termType: settings.termType,
                                keepAlive: settings.telKeepAliveInterval, proxy: ProxySettings.load().config)
         if let sc = c as? SerialConnection { sc.charDelayMs = settings.charDelayMs; sc.lineDelayMs = settings.lineDelayMs; sc.breakMs = settings.sendBreakTime }
         c.onData = { [weak self] b in self?.received(b) }

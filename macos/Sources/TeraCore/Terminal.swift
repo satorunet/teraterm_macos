@@ -427,6 +427,8 @@ public final class Terminal {
     private enum State { case ground, esc, escInter, csi, osc, oscEsc, str, strEsc, charset(Int) }
     private var state: State = .ground
     private var params: [Int] = []
+    /// params[k] のあとが ':' (サブパラメータが続く) か。SGR 38:2::r:g:b と 38;2;r;g;b を区別する
+    private var subNext: [Bool] = []
     private var curParam: Int?
     private var priv: Character?
     private var inter = ""
@@ -542,7 +544,7 @@ public final class Terminal {
         g = [.ascii, .ascii, .ascii, .ascii]; gl = 0; singleShift = nil
         printerMode = false; autoPrintMode = false; printExtent = true; printBuf = ""
         saved = Saved(); savedAlt = Saved()
-        state = .ground; params = []; curParam = nil; priv = nil; inter = ""; oscBuf = ""
+        state = .ground; params = []; subNext = []; curParam = nil; priv = nil; inter = ""; oscBuf = ""
         lastChar = nil
         dirty = true
     }
@@ -839,12 +841,14 @@ public final class Terminal {
                 if curParam! > 99999 { curParam = 99999 }
             case 0x3B, 0x3A:
                 params.append(curParam ?? -1); curParam = nil
+                subNext.append(v == 0x3A)
             case 0x3C...0x3F:
                 priv = Character(sc)
             case 0x20...0x2F:
                 inter.append(Character(sc))
             case 0x40...0x7E:
                 if let p = curParam { params.append(p) } else if !params.isEmpty { params.append(-1) }
+                while subNext.count < params.count { subNext.append(false) }
                 csiDispatch(Character(sc))
                 state = .ground
             default:
@@ -904,7 +908,7 @@ public final class Terminal {
         case 0x18, 0x1A: state = .ground
         case 0x1B:
             state = .esc
-            params = []; curParam = nil; priv = nil; inter = ""
+            params = []; subNext = []; curParam = nil; priv = nil; inter = ""
         default: break
         }
     }
@@ -926,7 +930,7 @@ public final class Terminal {
         }
         switch sc {
         case "[":
-            state = .csi; params = []; curParam = nil; priv = nil; inter = ""
+            state = .csi; params = []; subNext = []; curParam = nil; priv = nil; inter = ""
         case "]":
             state = .osc; oscBuf = ""; oscLen = 0
         case "P", "_", "^", "X":
@@ -1013,6 +1017,8 @@ public final class Terminal {
         }
         if special, let m = Terminal.decGraphics[sc.value] { sc = m }
         if cs == .uk && sc == "#" { sc = "£" }
+        // U+FEFF (BOM / ZWNBSP) は幅 0 で何も描かないので捨てる (DEL と同じ)
+        if sc.value == 0xFEFF { return }
         macroOut(sc.value)
 
         // 特殊フォントの文字はいつも半角
@@ -1547,6 +1553,12 @@ public final class Terminal {
         var i = 0
         while i < params.count {
             let v = params[i] < 0 ? 0 : params[i]
+            // 38 / 48 のあとに ':' で続くサブパラメータ (38:2::r:g:b など)。ほかの SGR として読まない
+            var sub: [Int] = []
+            var k = i
+            if v == 38 || v == 48 {
+                while k < subNext.count && subNext[k] && k + 1 < params.count { k += 1; sub.append(params[k]) }
+            }
             switch v {
             case 0: attr = CellAttr()
             case 1: attr.bold = true
@@ -1576,21 +1588,32 @@ public final class Terminal {
             case 38 where !xterm256Color, 48 where !xterm256Color: break
             case 38, 48:
                 var color: TColor?
-                if i + 1 < params.count {
-                    if params[i + 1] == 5, i + 2 < params.count {
-                        color = .idx(UInt8(max(0, min(255, params[i + 2]))))
-                        i += 2
-                    } else if params[i + 1] == 2 {
-                        // 38;2;r;g;b と 38:2::r:g:b の両方を受ける
-                        var j = i + 2
-                        if params.count - j >= 4 && params[j] == -1 { j += 1 }
-                        if j + 2 < params.count {
-                            func c(_ k: Int) -> UInt8 { UInt8(max(0, min(255, params[k]))) }
-                            color = .rgb(c(j), c(j + 1), c(j + 2))
-                            i = j + 2
-                        } else {
-                            i = params.count
-                        }
+                func c(_ n: Int) -> UInt8 { UInt8(max(0, min(255, n))) }
+                if !sub.isEmpty {
+                    // 38:5:n / 38:2:r:g:b (本家) / 38:2:id:r:g:b / 38:2::r:g:b (ITU T.416・xterm)
+                    if sub[0] == 5, sub.count >= 2, sub[1] >= 0 {
+                        color = .idx(c(sub[1]))
+                    } else if sub[0] == 2 {
+                        let rgb = sub.count >= 5 ? Array(sub[2...4]) : Array(sub.dropFirst())
+                        if rgb.count == 3 { color = .rgb(c(rgb[0]), c(rgb[1]), c(rgb[2])) }
+                    }
+                } else if i + 1 < params.count, params[i + 1] == 2 || params[i + 1] == 5 {
+                    let mode = params[i + 1]
+                    k = i + 1
+                    // 38;5:n / 38;2:r:g:b のようにモードのあとが ':' のもの
+                    var rest: [Int] = []
+                    while k < subNext.count && subNext[k] && k + 1 < params.count { k += 1; rest.append(params[k]) }
+                    if rest.isEmpty {
+                        // 38;5;n / 38;2;r;g;b (足りなければ残りを読み捨てる)
+                        let end = min(params.count - 1, k + (mode == 5 ? 1 : 3))
+                        if end > k { rest = Array(params[(k + 1)...end]) }
+                        k = end
+                    }
+                    if mode == 5, let n = rest.first, n >= 0 {
+                        color = .idx(c(n))
+                    } else if mode == 2 {
+                        let rgb = rest.count >= 4 ? Array(rest.suffix(3)) : rest
+                        if rgb.count == 3 { color = .rgb(c(rgb[0]), c(rgb[1]), c(rgb[2])) }
                     }
                 }
                 if let c = color {
@@ -1598,7 +1621,7 @@ public final class Terminal {
                 }
             default: break
             }
-            i += 1
+            i = max(i, k) + 1
         }
     }
 

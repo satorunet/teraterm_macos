@@ -18,6 +18,9 @@ enum E {
     static let syntax = 11, tooManyLabels = 12, tooManyVar = 13, typeMismatch = 14, varNotInit = 15
     static let closeComment = 16, outOfRange = 17, closeBracket = 18, fewMemory = 19, notSupported = 20
     static let cantExec = 21
+    /// Tera Term Mac で足した: 一度つながった端末ウインドウが閉じた (本家 #1462)。
+    /// 番号は外に見せない (reportError で linkFirst の代わりに文言だけ変える)
+    static let linkLost = 101
 
     static func message(_ e: Int) -> String {
         switch e {
@@ -42,6 +45,7 @@ enum E {
         case fewMemory: return "Can't allocate memory."
         case notSupported: return "Unknown command."
         case cantExec: return "Can't execute command."
+        case linkLost: return "The link between the macro and Tera Term was lost. (The Tera Term window was closed.)"
         default: return "Unknown error message number."
         }
     }
@@ -194,6 +198,9 @@ public final class TTLInterpreter {
     /// waitevent 用: 接続状態の変化 (true = つながった) と、つながりが切れたこと
     var comEvents: [Bool] = []
     var linkEndEvent = false
+    /// つながっていた端末ウインドウが閉じてリンクが切れた (endLink)。unlink・closett・connect で戻す。
+    /// このときの "Link macro first." は linkLost の文言にする (本家 #1462)
+    var linkLost = false
     // wait4all 用 (snoopBuffers は TTLMacroRegistry.lock で守る。キーはのぞいているマクロ)
     var snoopBuffers: [ObjectIdentifier: [UInt8]] = [:]
     var w4aTargets: [TTLInterpreter] = []
@@ -1253,11 +1260,15 @@ public final class TTLInterpreter {
         var start = lineParsePtr, end = linePtr
         if start == end { end = lineLen }
         start = min(start, lineLen); end = min(max(end, start), lineLen)
-        let stop = host?.ttlError(message: E.message(err), line: lineNo, lineText: lineBuff.u8, file: macroFileName,
+        recv.lock()
+        let lost = linkLost && !linked
+        recv.unlock()
+        let message = E.message(err == E.linkFirst && lost ? E.linkLost : err)
+        let stop = host?.ttlError(message: message, line: lineNo, lineText: lineBuff.u8, file: macroFileName,
                                   range: start..<end) ?? true
         if stop {
             status = .end
-            lastError = TTLError(line: lineNo, message: E.message(err), file: macroFileName, text: lineBuff.u8)
+            lastError = TTLError(line: lineNo, message: message, file: macroFileName, text: lineBuff.u8)
         }
     }
     public private(set) var lastError: TTLError?
@@ -1586,7 +1597,7 @@ public final class TTLInterpreter {
     /// マクロは止まらずに続き、waitevent 2 が起きる。wait などは result = 0 で戻る
     public func endLink() {
         recv.lock()
-        if linked { linkEndEvent = true }
+        if linked { linkEndEvent = true; linkLost = true }
         linked = false
         recv.broadcast()
         recv.unlock()

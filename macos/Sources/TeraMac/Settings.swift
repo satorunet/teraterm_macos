@@ -80,6 +80,7 @@ struct TermSettings {
     var tcpPort = 23                                // TCPPort
     var telKeepAliveInterval = 300                  // TelKeepAliveInterval
     var autoWinClose = true                         // AutoWinClose
+    var telBin = false                              // TelBin (Telnet の BINARY を自分から申し込む。/B)
     var termType = "xterm"                          // TermType
     // 全般
     var disableAcceleratorSendBreak = false         // DisableAcceleratorSendBreak
@@ -408,7 +409,7 @@ extension TermSettings {
         ("EnableScrollBuff", \.enableScrollBuff), ("EnableBold", \.enableBold), ("UseNormalBGColor", \.useNormalBGColor), ("PopupMenu", \.popupMenu),
         ("DrawingResizedFont", \.drawingResizedFont),
         ("DeleteKey", \.deleteKeySendsDel), ("DisableAppKeypad", \.disableAppKeypad), ("DisableAppCursor", \.disableAppCursor),
-        ("HistoryList", \.historyList), ("Telnet", \.telnet), ("AutoWinClose", \.autoWinClose),
+        ("HistoryList", \.historyList), ("Telnet", \.telnet), ("AutoWinClose", \.autoWinClose), ("TelBin", \.telBin),
         ("DisableAcceleratorSendBreak", \.disableAcceleratorSendBreak), ("AcceptBroadcast", \.acceptBroadcast),
         ("AutoScrollOnlyInBottomLine", \.autoScrollOnlyInBottomLine), ("ClearOnResize", \.clearOnResize),
         ("NotifySound", \.notifySound),

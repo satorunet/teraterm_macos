@@ -280,6 +280,9 @@ final class TCPConnection: Connection {
     let waitsForConnection = true
     /// /B (TelBin): BINARY を自分から申し込む
     var requestBinary = false
+    /// こちらから WILL BINARY / DO BINARY を送って返事を待っている (返事にまた WILL / DO を返さない)
+    private var sentWillBinary = false
+    private var sentDoBinary = false
     /// /timeout= (秒)。0 は OS 任せ
     var timeout = 0
     private var ready = false
@@ -354,7 +357,10 @@ final class TCPConnection: Connection {
         if telnet && port == TCPConnection.telPort {
             // OnCommStart: Telnet でポートが TelPort のときだけ、こちらからネゴシエーションを始める
             var opts: [UInt8] = [IAC, WILL, OPT_TTYPE, IAC, WILL, OPT_NAWS, IAC, DO, OPT_SGA, IAC, DO, OPT_ECHO]
-            if requestBinary { opts += [IAC, WILL, OPT_BINARY, IAC, DO, OPT_BINARY] }
+            if requestBinary {
+                opts += [IAC, WILL, OPT_BINARY, IAC, DO, OPT_BINARY]
+                sentWillBinary = true; sentDoBinary = true
+            }
             sendRaw(opts)
             startKeepAlive()   // TelStartKeepAliveThread
         }
@@ -483,7 +489,9 @@ final class TCPConnection: Connection {
     private func negotiate(_ verb: UInt8, _ opt: UInt8) {
         switch verb {
         case DO:
-            if opt == OPT_TTYPE || opt == OPT_SGA || opt == OPT_BINARY {
+            if opt == OPT_BINARY && sentWillBinary {
+                sentWillBinary = false; binarySend = true   // こちらの WILL への返事
+            } else if opt == OPT_TTYPE || opt == OPT_SGA || opt == OPT_BINARY {
                 if opt == OPT_BINARY { binarySend = true }
                 sendRaw([IAC, WILL, opt])
             } else if opt == OPT_NAWS {
@@ -492,17 +500,21 @@ final class TCPConnection: Connection {
                 sendRaw([IAC, WONT, opt])
             }
         case DONT:
+            if opt == OPT_BINARY && sentWillBinary { sentWillBinary = false; binarySend = false; break }   // 断られた
             if opt == OPT_NAWS { nawsEnabled = false }
             if opt == OPT_BINARY { binarySend = false }
             sendRaw([IAC, WONT, opt])
         case WILL:
-            if opt == OPT_ECHO || opt == OPT_SGA || opt == OPT_BINARY {
+            if opt == OPT_BINARY && sentDoBinary {
+                sentDoBinary = false; binaryRecv = true   // こちらの DO への返事
+            } else if opt == OPT_ECHO || opt == OPT_SGA || opt == OPT_BINARY {
                 if opt == OPT_BINARY { binaryRecv = true }
                 sendRaw([IAC, DO, opt])
             } else {
                 sendRaw([IAC, DONT, opt])
             }
         case WONT:
+            if opt == OPT_BINARY && sentDoBinary { sentDoBinary = false; binaryRecv = false; break }   // 断られた
             if opt == OPT_BINARY { binaryRecv = false }
             sendRaw([IAC, DONT, opt])
         default: break

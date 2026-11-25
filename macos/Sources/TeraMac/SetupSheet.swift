@@ -136,12 +136,12 @@ final class IniDocument {
             return l[..<eq].trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(key) == .orderedSame
         }
         if let i = idx {
-            if let v = value { lines[i] = "\(key)=\(v)" } else { lines.remove(at: i) }
+            if let v = value { lines[i] = "\(key)=\(IniFile.quoteIfNeeded(v))" } else { lines.remove(at: i) }
         } else if let v = value {
             // セクションの最後の空でない行のあと
             var at = r.upperBound
             while at > r.lowerBound + 1 && lines[at - 1].trimmingCharacters(in: .whitespaces).isEmpty { at -= 1 }
-            lines.insert("\(key)=\(v)", at: at)
+            lines.insert("\(key)=\(IniFile.quoteIfNeeded(v))", at: at)
         }
     }
 
