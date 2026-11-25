@@ -6,12 +6,45 @@
     <language>ja</language>
     <item>
       <title>Tera Term Mac 0.4.3</title>
-      <pubDate>Wed, 25 Nov 2026 00:25:42 +0000</pubDate>
+      <pubDate>Wed, 25 Nov 2026 01:26:48 +0000</pubDate>
       <sparkle:version>0.4.3</sparkle:version>
       <sparkle:shortVersionString>0.4.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
       <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v0.4.3</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[]]></description>
+      <description><![CDATA[<style>
+body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
+h3 { font-size: 13px; margin: 12px 0 4px; }
+ul { margin: 4px 0; padding-left: 20px; }
+li { margin: 2px 0; }
+p { margin: 6px 0; }
+code { font: 12px Menlo, monospace; background: #eee; padding: 0 3px; border-radius: 3px; }
+.foot { color: #888; font-size: 11px; }
+</style>
+<p>本家 Tera Term の未解決の Issue のうち、Mac 版にも当てはまる不具合を直しました。</p>
+<h3>端末</h3>
+<ul>
+<li>Option+矢印キーなどが、修飾キー付きとして送られるようにしました (例: Option+← は ESC[1;3D)。シェルの単語移動などに使えます (#106)</li>
+<li>BOM (U+FEFF) が 1 文字分の空白として表示されないようにしました (#1219)</li>
+<li><code>38:2:…</code> のように <code>:</code> で区切った色指定を正しく読むようにしました (#462)</li>
+<li>太字と斜体が両方付いた文字で、斜体が消えないようにしました (#109)</li>
+</ul>
+<h3>接続・設定</h3>
+<ul>
+<li>通常の telnet 接続でも、<code>/B</code> と TERATERM.INI の <code>TelBin</code> が効くようにしました (#499)</li>
+<li>TERATERM.INI の値を <code>&quot;…&quot;</code> や <code>&#x27;…&#x27;</code> で囲んだとき、Windows 版と同じく引用符を外して読むようにしました (#1557)</li>
+</ul>
+<h3>マクロ</h3>
+<ul>
+<li>端末のウィンドウを閉じたあとのエラーを、「Link macro first.」ではなく、リンクが切れたことを示すメッセージにしました (#1462)</li>
+</ul>
+<h3>その他</h3>
+<ul>
+<li>ウィンドウタイトルの既定を「Tera Term Mac」にしました</li>
+<li>行が詰まって見えないよう、文字間スペースの既定を「行の上に 1」にしました</li>
+<li>設定 &gt; フォントの文字間スペースに上下ボタンを付けました。既定と違うときは「デフォルトに戻す」ボタンが出ます</li>
+</ul>
+<p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。TeraTerm Project とは関係のない非公式版です。</p>]]></description>
       <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.4.3/TeraTermMac-0.4.3.dmg" sparkle:edSignature="/jReuTxt5aRCtYiCUlBZjnhRA2wxpior0Jtr3knqppjbusxad2a2kG0PP1dN5M+fpzbOgLuU3JyJbJDYY0jwAw==" length="9536004" type="application/octet-stream"/>
     </item>
   </channel>

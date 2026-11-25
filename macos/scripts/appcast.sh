@@ -1,6 +1,7 @@
 #!/bin/bash
 # 自動アップデート (Sparkle) の appcast.xml を書く
-#   ./scripts/appcast.sh <版> <DMG のパス> [リリースノートのファイル (HTML)]
+#   ./scripts/appcast.sh <版> <DMG のパス> [リリースノートのファイル (.md か .html)]
+# リリースノートを渡すと、更新の画面に「更新内容」として出る。.md は GitHub Releases に書いたものをそのまま渡せばよい
 # DMG に秘密鍵 (~/.config/teramac/sparkle_ed25519_private.txt) で署名し、macos/appcast.xml を最新の版 1 つにして書き直す。
 # appcast.xml を GitHub の main に push すると、アプリが新しい版に気づく (SUFeedURL)。
 # DMG は GitHub Releases の v<版> に TeraTermMac-<版>.dmg として上げておくこと。
@@ -22,7 +23,13 @@ SIG=$("$SIGN_UPDATE" --ed-key-file "$KEY" "$DMG")
 URL="https://github.com/satorunet/teraterm_macos/releases/download/v${VER}/TeraTermMac-${VER}.dmg"
 DATE=$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")
 DESC=""
-if [ -n "$NOTES" ] && [ -f "$NOTES" ]; then DESC=$(cat "$NOTES"); fi
+if [ -n "$NOTES" ]; then
+    [ -f "$NOTES" ] || { echo "リリースノートがありません: $NOTES" >&2; exit 1; }
+    case "$NOTES" in
+        *.md) DESC=$(python3 scripts/notes2html.py "$NOTES") ;;
+        *) DESC=$(cat "$NOTES") ;;
+    esac
+fi
 
 cat > appcast.xml <<XML
 <?xml version="1.0" encoding="utf-8"?>
