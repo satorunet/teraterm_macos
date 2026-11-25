@@ -1,0 +1,40 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+  <title>clearscreen</title>
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <link rel="stylesheet" href="../../style.css" type="text/css">
+</head>
+
+<body>
+
+
+<h1>clearscreen</h1>
+
+<p>
+Erases the screen.
+</p>
+
+<pre class="macro-syntax">
+clearscreen &lt;int&gt;
+</pre>
+
+
+<h2>Remarks</h2>
+
+<p>
+Erases the screen of the terminal window if &lt;int&gt; is 0.<br>
+Erases the scroll buffer and screen of the terminal window if &lt;int&gt; is 1.<br>
+Does nothing if &lt;int&gt; is 2 (accepted for compatibility with Windows macros).
+</p>
+
+<h2>Example</h2>
+
+<pre class="macro-example">
+clearscreen 0
+</pre>
+
+</body>
+</html>

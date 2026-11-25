@@ -11,6 +11,14 @@ enum ConnectionSpec: Equatable {
     case serial(SerialParams)
     case shell
 
+    /// TCP/IP (ssh / Telnet / 生の TCP)。TTProxy を通るもの
+    var isNetwork: Bool {
+        switch self {
+        case .ssh, .telnet, .rawTCP: return true
+        default: return false
+        }
+    }
+
     var title: String {
         switch self {
         case .ssh(let h, let p, let u, _):
@@ -19,7 +27,7 @@ enum ConnectionSpec: Equatable {
         case .telnet(let h, let p): return p == 23 ? h : "\(h):\(p)"
         case .rawTCP(let h, let p): return "\(h):\(p)"
         case .serial(let s): return "\((s.path as NSString).lastPathComponent) \(s.baud)"
-        case .shell: return "ローカルシェル"
+        case .shell: return Lang.m("CONN_LOCAL_SHELL", "ローカルシェル")
         }
     }
 
@@ -35,7 +43,11 @@ enum ConnectionSpec: Equatable {
         switch cl.portType {
         case .serial?:
             var s = SerialParams()
-            if case .serial(let b)? = base { s = b }
+            if case .serial(let b)? = base { s = b } else {
+                // FlowCtrlRTS / FlowCtrlDTR は設定 (ts) のまま (コマンドラインにはない)
+                let h = ConnHistory.serial
+                s.rts = h.rts; s.dtr = h.dtr
+            }
             if let d = cl.comDevice {
                 s.path = d
             } else if let n = cl.comPort {
@@ -100,6 +112,15 @@ struct SerialParams: Equatable {
     var parity = "none"     // none / odd / even / mark / space (mark / space は SerialLineMode で作る)
     var stopBits = 1
     var flow = "none"       // none / xon / rts
+    /// FlowCtrlRTS / FlowCtrlDTR (#934 e4ddcf535 / 92ab12cf1): 0 Disable, 1 Enable, 2 Handshake, 3 Toggle (RTS だけ)
+    var rts = 1
+    var dtr = 1
+
+    /// ttset.c _ReadIniFile: INI にないときはフロー制御から決める (RTS/CTS なら RTS は Handshake、DSR/DTR なら DTR は Handshake)
+    static func defaultRTS(flow: String) -> Int { flow == "rts" ? SerialParams.handshake : SerialParams.enable }
+    static func defaultDTR(flow: String) -> Int { flow == "dsr" ? SerialParams.handshake : SerialParams.enable }
+    /// tttypes.h IdDisable / IdEnable / IdHandshake / IdToggle
+    static let disable = 0, enable = 1, handshake = 2, toggle = 3
 }
 
 protocol Connection: AnyObject {
@@ -176,7 +197,7 @@ final class PTYConnection: Connection {
         var m: Int32 = -1
         var ws = initialSize
         let p = forkpty(&m, nil, nil, &ws)
-        if p < 0 { throw ConnError(msg: "疑似端末を作れませんでした (errno \(errno))") }
+        if p < 0 { throw ConnError(msg: Lang.m("CONN_PTY_FAILED", "疑似端末を作れませんでした (errno %d)", errno)) }
         if p == 0 {
             _ = chdir(home)
             cArgs.withUnsafeBufferPointer { a in
@@ -226,7 +247,7 @@ final class PTYConnection: Connection {
             guard !self.closed else { return }
             self.closed = true
             if self.master >= 0 { Darwin.close(self.master); self.master = -1 }
-            self.onClose?(code == 0 ? nil : "終了コード \(code)")
+            self.onClose?(code == 0 ? nil : Lang.m("CONN_EXIT_CODE", "終了コード %d", code))
         }
     }
 
@@ -317,9 +338,10 @@ final class TCPConnection: Connection {
 
     func start() throws {
         let viaProxy = proxy?.isEnabled == true
-        let destHost = viaProxy ? proxy!.host : host
+        // IDN (#1493): プロキシのホスト名も ACE 形式で引く (TTProxy 1.0.0.28)
+        let destHost = viaProxy ? IDN.hostNameToASCII(proxy!.host) : host
         let destPort = viaProxy ? proxy!.effectivePort : port
-        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: destPort)), destPort > 0 else { throw ConnError(msg: "ポート番号がおかしいです") }
+        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: destPort)), destPort > 0 else { throw ConnError(msg: Lang.m("CONN_BAD_PORT", "ポート番号がおかしいです")) }
         let c = NWConnection(host: NWEndpoint.Host(destHost), port: p, using: .tcp)
         conn = c
         let q = queue
@@ -328,7 +350,7 @@ final class TCPConnection: Connection {
         if limit > 0 {
             q.asyncAfter(deadline: .now() + .seconds(limit)) { [weak self] in
                 guard let self = self, !self.ready else { return }
-                self.finish("接続できませんでした: タイムアウト (\(limit) 秒)")
+                self.finish(Lang.m("CONN_CONNECT_TIMEOUT", "接続できませんでした: タイムアウト (%d 秒)", limit))
                 c.cancel()
             }
         }
@@ -338,9 +360,9 @@ final class TCPConnection: Connection {
             case .ready:
                 if viaProxy { self.beginProxy() } else { self.didConnect(leftover: []) }
             case .failed(let e):
-                self.finish("接続できませんでした: \(e.localizedDescription)")
+                self.finish(Lang.m("CONN_CONNECT_FAILED_DETAIL", "接続できませんでした: %s", e.localizedDescription))
             case .waiting(let e):
-                self.finish("接続できませんでした: \(e.localizedDescription)")
+                self.finish(Lang.m("CONN_CONNECT_FAILED_DETAIL", "接続できませんでした: %s", e.localizedDescription))
                 c.cancel()
             case .cancelled:
                 self.finish(nil)
@@ -388,7 +410,7 @@ final class TCPConnection: Connection {
             didConnect(leftover: rest)
         case .failed(let m)?:
             handshake = nil
-            finish("接続できませんでした: \(m)")
+            finish(Lang.m("CONN_CONNECT_FAILED_DETAIL", "接続できませんでした: %s", m))
             conn?.cancel()
         case nil:
             conn?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, done, err in
@@ -637,14 +659,13 @@ final class SerialConnection: Connection {
         fd = open(params.path, O_RDWR | O_NOCTTY | O_NONBLOCK)
         if fd < 0 {
             let e = errno
-            throw ConnError(msg: "\(params.path) を開けませんでした: \(String(cString: strerror(e)))" +
-                            (e == EBUSY ? "\n(ほかのアプリが使っています)" : ""))
+            throw ConnError(msg: Lang.m("CONN_SERIAL_OPEN_FAILED", "%s を開けませんでした: %s", params.path, String(cString: strerror(e))) +
+                            (e == EBUSY ? "\n" + Lang.m("CONN_SERIAL_BUSY", "(ほかのアプリが使っています)") : ""))
         }
         _ = ioctl(fd, TIOCEXCL)
         try configure()
-        // DTR / RTS を上げる
-        var bits: Int32 = TIOCM_DTR | TIOCM_RTS
-        _ = ioctl(fd, TIOCMBIS, &bits)
+        // CommResetSerial: dcb.fRtsControl = FlowCtrlRTS / fDtrControl = FlowCtrlDTR (#934)
+        applyModemLines()
         tcflush(fd, TCIOFLUSH)
 
         let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
@@ -659,9 +680,9 @@ final class SerialConnection: Connection {
     /// ポートの設定 (速度・データ・パリティ・ストップ・フロー制御) をかける。開いたときとポートのリセットで使う
     private func configure() throws {
         var t = termios()
-        if tcgetattr(fd, &t) != 0 { throw ConnError(msg: "ポートの設定を読めませんでした") }
+        if tcgetattr(fd, &t) != 0 { throw ConnError(msg: Lang.m("CONN_SERIAL_GETATTR_FAILED", "ポートの設定を読めませんでした")) }
         guard let mode = SerialLineMode.make(dataBits: params.dataBits, parity: params.parity, stopBits: params.stopBits) else {
-            throw ConnError(msg: "\(params.dataBits) ビット・パリティ \(params.parity) は Mac のシリアルポートでは使えません")
+            throw ConnError(msg: Lang.m("CONN_SERIAL_UNSUPPORTED_FORMAT", "%d ビット・パリティ %s は Mac のシリアルポートでは使えません", params.dataBits, params.parity))
         }
         cfmakeraw(&t)
         t.c_cflag |= tcflag_t(CLOCAL | CREAD)
@@ -678,9 +699,13 @@ final class SerialConnection: Connection {
         if mode.stopBits == 2 { t.c_cflag |= tcflag_t(CSTOPB) } else { t.c_cflag &= ~tcflag_t(CSTOPB) }
         t.c_cflag &= ~tcflag_t(CRTSCTS | CDTR_IFLOW | CDSR_OFLOW)
         t.c_iflag &= ~tcflag_t(IXON | IXOFF | IXANY)
-        if flow == "rts" { t.c_cflag |= tcflag_t(CRTSCTS) }
+        // commlib.c CommResetSerial (#934): 送信側 (fOutxCtsFlow / fOutxDsrFlow) はフロー制御で、
+        // 受信側 (RTS / DTR の Handshake) は FlowCtrlRTS / FlowCtrlDTR で決める
+        if flow == "rts" { t.c_cflag |= tcflag_t(CCTS_OFLOW) }
+        if params.rts == SerialParams.handshake { t.c_cflag |= tcflag_t(CRTS_IFLOW) }
         if flow == "xon" { t.c_iflag |= tcflag_t(IXON | IXOFF) }
-        if flow == "dsr" { t.c_cflag |= tcflag_t(CDTR_IFLOW | CDSR_OFLOW) }
+        if flow == "dsr" { t.c_cflag |= tcflag_t(CDSR_OFLOW) }
+        if params.dtr == SerialParams.handshake { t.c_cflag |= tcflag_t(CDTR_IFLOW) }
         // VMIN/VTIME: 届いた分だけすぐ返す
         withUnsafeMutablePointer(to: &t.c_cc) {
             $0.withMemoryRebound(to: cc_t.self, capacity: Int(NCCS)) { cc in
@@ -696,7 +721,7 @@ final class SerialConnection: Connection {
         var sp = speed_t(currentBaud)
         let IOSSIOSPEED: UInt = 0x8008_5402
         if ioctl(fd, IOSSIOSPEED, &sp) != 0 && tcsetattr(fd, TCSANOW, &t) != 0 {
-            throw ConnError(msg: "通信速度 \(currentBaud) に設定できませんでした")
+            throw ConnError(msg: Lang.m("CONN_SERIAL_BAUD_FAILED", "通信速度 %d に設定できませんでした", currentBaud))
         }
         lineMode = mode
     }
@@ -727,16 +752,21 @@ final class SerialConnection: Connection {
             DispatchQueue.main.async { self.onData?(chunk) }
         } else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
             // USB シリアルを抜いたときなど
-            DispatchQueue.main.async { self.shutdown(msg: "ポートが切断されました") }
+            DispatchQueue.main.async { self.shutdown(msg: Lang.m("CONN_SERIAL_DISCONNECTED", "ポートが切断されました")) }
         }
     }
 
     func write(_ bytes: [UInt8]) {
         let f = fd
         let cd = charDelayMs, ld = lineDelayMs
+        let toggle = params.rts == SerialParams.toggle
         writeQueue.async {
             guard f >= 0 else { return }
             let bytes = self.lineMode.transmit(bytes)
+            // RTS_CONTROL_TOGGLE: 送っている間だけ RTS を上げる
+            var rtsBit: Int32 = TIOCM_RTS
+            if toggle { _ = ioctl(f, TIOCMBIS, &rtsBit) }
+            defer { if toggle { tcdrain(f); _ = ioctl(f, TIOCMBIC, &rtsBit) } }
             if cd == 0 && ld == 0 {
                 var off = 0
                 var tries = 0
@@ -830,8 +860,39 @@ final class SerialConnection: Connection {
     /// フロー制御なしのときだけ変えられる (Tera Term と同じ)
     func setModemLine(_ bit: Int32, _ on: Bool) {
         guard fd >= 0, flow == "none" else { return }
+        setLine(bit, on)
+    }
+
+    /// RTS / DTR をじかに上げ下げする (シリアルポート設定の RTS / DTR のチェック: EscapeCommFunction SETRTS / CLRRTS)
+    func setLine(_ bit: Int32, _ on: Bool) {
+        guard fd >= 0 else { return }
         var b = bit
         _ = ioctl(fd, on ? TIOCMBIS : TIOCMBIC, &b)
+    }
+
+    /// RTS / DTR がいま上がっているか
+    func lineState(_ bit: Int32) -> Bool? {
+        guard fd >= 0 else { return nil }
+        var bits: Int32 = 0
+        guard ioctl(fd, TIOCMGET, &bits) == 0 else { return nil }
+        return bits & bit != 0
+    }
+
+    /// FlowCtrlRTS / FlowCtrlDTR を変えて、ポートの設定と線の状態をかけ直す (serial_pp.cpp SetComStatus / PSN_APPLY)
+    func setRTSDTR(rts: Int, dtr: Int, flow f: String? = nil) {
+        guard fd >= 0 else { return }
+        params.rts = rts
+        params.dtr = dtr
+        if let f = f { flow = f; params.flow = f }
+        try? configure()
+        applyModemLines()
+    }
+
+    /// Disable は下げる、Enable・Handshake は上げる、Toggle は送るときだけ上げる (ふだんは下げておく)
+    private func applyModemLines() {
+        guard fd >= 0 else { return }
+        setLine(TIOCM_RTS, params.rts == SerialParams.enable || params.rts == SerialParams.handshake)
+        setLine(TIOCM_DTR, params.dtr != SerialParams.disable)
     }
 
     /// ビット: 1=CTS 2=DSR 4=RI 8=DCD
@@ -867,7 +928,9 @@ func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [Stri
                     timeout: Int? = nil, telnetBinary: Bool = false, termType: String = "xterm-256color", keepAlive: Int = 0,
                     proxy: ProxyConfig? = nil) -> Connection {
     switch spec {
-    case .ssh(let host, let port, let user, let key):
+    case .ssh(let uhost, let port, let user, let key):
+        // IDN (#1493): ssh には ACE 形式 (xn--) のホスト名を渡す
+        let host = IDN.hostNameToASCII(uhost)
         // マクロの scpsend / scprecv が同じ接続を使えるように ControlMaster を使う。
         // -e none: TTSSH にはエスケープ文字 (~.) がない
         var a = ["/usr/bin/ssh", "-e", "none", "-o", "ControlMaster=auto", "-o", "ControlPath=\(sshControlPath(host: host, port: port, user: user))", "-o", "ControlPersist=no"]
@@ -876,7 +939,9 @@ func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [Stri
         if !key.isEmpty { a += ["-i", (key as NSString).expandingTildeInPath] }
         a.append(user.isEmpty ? host : "\(user)@\(host)")
         return PTYConnection(argv: a, cols: cols, rows: rows, extraEnv: sshEnv, waitForOutput: true)
-    case .telnet(let h, let p):
+    case .telnet(let uh, let p):
+        // IDN (#1493): 名前解決とプロキシへ送るホスト名は ACE 形式 (IdnHostNameToAscii)
+        let h = IDN.hostNameToASCII(uh)
         let c = TCPConnection(host: h, port: p, telnet: true, cols: cols, rows: rows)
         c.timeout = timeout ?? 0
         c.requestBinary = telnetBinary
@@ -884,7 +949,8 @@ func makeConnection(_ spec: ConnectionSpec, cols: Int, rows: Int, sshArgs: [Stri
         c.keepAliveInterval = max(0, keepAlive)
         c.proxy = proxy
         return c
-    case .rawTCP(let h, let p):
+    case .rawTCP(let uh, let p):
+        let h = IDN.hostNameToASCII(uh)
         let c = TCPConnection(host: h, port: p, telnet: false, cols: cols, rows: rows)
         c.timeout = timeout ?? 0
         c.proxy = proxy

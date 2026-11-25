@@ -3,6 +3,13 @@ import XCTest
 
 /// TTProxy のやりとり・ChangeTitle・ファイルのフィルタ・マーク/スペースのパリティ
 final class ConnectionSettingsTests: XCTestCase {
+    // 日本語の文言で比べるテストがあるので、画面の言語を日本語に固定する (テストの実行環境の言語によらない)
+    override class func setUp() {
+        super.setUp()
+        UserDefaults.standard.set("ja_JP.lng", forKey: Lang.defaultsKey)
+        Lang.reload()
+    }
+
 
     private func noResolve(_ h: String, _ v4: Bool) -> [UInt8]? { nil }
 

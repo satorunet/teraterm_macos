@@ -1,0 +1,63 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Command line</title>
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link rel="stylesheet" href="../style.css" type="text/css">
+</head>
+<body>
+
+
+<h1>Command line</h1>
+
+<pre>
+<span class="syntax">"/Applications/Tera Term Mac.app/Contents/MacOS/TeraMac" /M=&lt;macro file&gt; [&lt;destination and options&gt;...]</span>
+</pre>
+
+<p>
+Run a macro with the /M= option of Tera Term Mac.<br>
+You can also run a macro by opening a .ttl file from the Finder or with the open command (<a href="howtorun.html">How to run a macro file</a>).
+</p>
+
+
+<h2>Options</h2>
+
+<dl>
+  <dt>/M=&lt;macro file&gt;</dt>
+  <dd>Macro filename.<br>
+      If this value is not a full path, it is understood as a relative path from the current folder. '~' is the home folder.<br>
+      If the name has no extension, ".TTL" (or ".ttl") is added.<br>
+      The filename(path excluded) is stored in the system variable "param1" and "params[1]".
+  </dd>
+
+  <dt>&lt;destination and options&gt;</dt>
+  <dd>A destination in the same format as the Tera Term Mac command line. If given, the connection is started and then the macro is run.</dd>
+</dl>
+
+<h2>System variables</h2>
+<p>
+The following <a href="syntax/variables.html">system variables</a> are set.
+</p>
+<dl>
+  <dt>params</dt>
+  <dd>String array of the parameters.<br>
+      params[0] holds "the app executable and the macro file path", and params[1] holds the macro filename.
+  </dd>
+
+  <dt>param1</dt>
+  <dd>Same as params[1]. The macro filename is stored.</dd>
+
+  <dt>param2 - param9</dt>
+  <dd>Always empty.</dd>
+
+  <dt>paramcnt</dt>
+  <dd>The number of parameters stored in params. Always 1 (the macro filename).</dd>
+</dl>
+<p>
+Each element of params and param1 - param9 are strings, so up to 511 characters can be stored.
+</p>
+
+</body>
+</html>

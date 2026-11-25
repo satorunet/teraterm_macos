@@ -23,6 +23,11 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
     /// JIS の送信 (漢字アウトを次の英数の前に付けるので、ウインドウごとに状態を持つ)
     private var jisEncoder = JISEncoder()
+    /// TTProxy のコマンドライン (-proxy=URL / -noproxy) で置き換えたプロキシ。本家はプロセスごと (defaultProxy) なので、
+    /// Mac ではウインドウごとに持つ (起動時の引数は最初のウインドウ、connect マクロはそのウインドウ)
+    var proxyOverride: ProxyURL?
+    /// シリアルポートの自動再接続 (AutoComPortReconnect)
+    private(set) lazy var serialReconnect = SerialReconnect(session: self)
     /// ログ (filesys_log.cpp の LogVar)
     private(set) var teraLog: TeraLog?
     var logPath: String? { teraLog?.path }
@@ -101,7 +106,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     static var all: [SessionWindowController] = []
 
     init(settings initial: TermSettings = TermSettings.load()) {
-        var settings = CommandLineSession.applyOnce(to: initial)   // 起動時の /B (最初のウインドウだけ)
+        var settings = CommandLineSession.applyOnce(to: initial)   // 起動時の /B /KR /KT (最初のウインドウだけ)
         // 起動時のテーマ (BGLoadThemeFile): テーマの色を設定に写してから画面を作る
         if let t = ThemeFile.startupTheme(base: settings) {
             t.colors.apply(to: &settings)
@@ -172,6 +177,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             self.updateTitle()
         }
         SessionWindowController.all.append(self)
+        proxyOverride = CommandLineSession.takeStartupProxy()   // 起動時の -proxy= / -noproxy
         // 端末の設定 (端末 ID・タイトル・制御シーケンスなど) をすぐにかける
         applySettings(settings)
         updateTitle()
@@ -181,14 +187,14 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - 端末からの依頼 (ベル・ウィンドウ操作・OSC 52)
 
-    /// ビジュアルベル: 端末を一瞬白くする
+    /// ビジュアルベル (vtterm.c VisualBell。8e22ce326 #333): 文字色と背景色を入れ替え (CSQExchangeColor)、
+    /// BeepVBellWait ミリ秒 (1 未満は 1) たったら戻す。本家は Sleep で止めるが、Mac 版は止めずにあとで戻す
     func flashTerminal() {
-        let flash = NSView(frame: termView.bounds)
-        flash.wantsLayer = true
-        flash.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
-        flash.autoresizingMask = [.width, .height]
-        termView.addSubview(flash)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { flash.removeFromSuperview() }
+        guard !termView.bellInverted else { return }
+        termView.bellInverted = true
+        termView.displayIfNeeded()
+        let v = termView
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(max(1, settings.beepVBellWait))) { v.bellInverted = false }
     }
 
     /// スクリーンの左上を原点にした座標 (Windows と同じ向き) と Mac の座標を変える
@@ -219,6 +225,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// ChangeTerminalSize: 端末の桁数・行数を変えてウインドウを合わせ、相手に知らせる
     private func resizeTerminal(cols: Int, rows: Int) {
+        // TermWidthMax / TermHeightMax (4.106: 1000 桁 / 500 行)
+        let cols = min(TermLimits.widthMax, cols), rows = min(TermLimits.heightMax, rows)
         fitWindow(cols: cols, rows: rows)
         conn?.resize(cols: term.cols, rows: term.rows)
         updateTitle()
@@ -250,6 +258,14 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         a.messageText = n.title
         a.informativeText = n.message
         a.beginSheetModal(for: w, completionHandler: nil)
+    }
+
+    /// 漢字コードを変えたとき (KanjiMenu の CallResetCharSet → ResetCharSet): 途中まで受けた文字・JIS の状態、
+    /// 送信の JIS の状態と端末の G0〜G3 を初めに戻す
+    func resetCharSet() {
+        decoder.reset()
+        jisEncoder = JISEncoder(options: TermEncoding.jisSendOptions)
+        term.resetCharSet()
     }
 
     /// 送る文字を送信の文字コードにする (JIS は漢字アウトの状態を続ける)
@@ -294,6 +310,14 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             clearScrollBufferFromRemote: s.clearScrollBufferFromRemote, printerCtrlSequence: s.printerCtrlSequence, beep: s.beep, receive: s.encoding, send: s.encodingSend,
             decSpMappingDir: s.decSpMappingDir, unicodeToDecSpMapping: s.unicodeToDecSpMapping, unicodeEmojiOverride: s.unicodeEmojiOverride, unicodeEmojiWidth: s.unicodeEmojiWidth)
         term.defaultCursorBlink = s.cursorBlink
+        // dumb 端末 + LogTimestamp: 行頭のタイムスタンプを画面にも出す (dd65db75a #255)。経過時間はどちらも接続からの時間
+        term.dumbTimestamp = { [weak self] in
+            // ts.LogTimestamp: 設定か、ログのダイアログで選んだもの (ログを取っていなくても出す)
+            guard let self = self, self.term.terminalID == .dumb,
+                  self.settings.logTimestamp || self.teraLog?.options.timestamp == true else { return nil }
+            let t = LogDefaults.timestampIndex(self.settings.logTimestampType)
+            return TeraLog.timestampText(type: t, now: Date(), start: self.connectedAt, connected: self.connectedAt)
+        }
         window?.backgroundColor = s.bg
         applyNewlineSettings()
         if let sc = conn as? SerialConnection { sc.charDelayMs = s.charDelayMs; sc.lineDelayMs = s.lineDelayMs }
@@ -368,15 +392,32 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     func connect(_ spec: ConnectionSpec, password: String? = nil, loginSteps steps: [LoginStep] = [],
                  sshArgs: [String] = [], timeout: Int? = nil, telnetBinary: Bool = false, quiet: Bool = false) -> Bool {
         disconnect(silent: true)
+        // ほかの接続を始めたら、シリアルの自動再接続は待つのをやめる
+        if !serialReconnect.opening { serialReconnect.cancel() }
         self.spec = spec
         remoteTitle = nil
         sshExtraArgs = sshArgs
+        // TTProxy: コマンドライン・connect マクロの -proxy= / -noproxy があればそちら (このウインドウの defaultProxy)
+        let proxySettings = ProxySettings.load().overridden(by: proxyOverride)
+        if let o = proxyOverride, o.isSSL, spec.isNetwork {
+            let m = Lang.m("CONN2_PROXY_SSL_UNSUPPORTED", "SSL を使うプロキシ (ssl / http+ssl など) には対応していません")
+            notice(m)
+            if !quiet, let w = window {
+                let a = NSAlert()
+                a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
+                a.informativeText = m
+                a.beginSheetModal(for: w)
+            }
+            updateTitle()
+            macro?.connectionChanged()
+            return false
+        }
         // TTSSH は pty-req の端末の種類に ts.TermType を使う
-        var sshEnv = SSHSetupArgs.environment(spec)
+        var sshEnv = SSHSetupArgs.environment(spec, proxy: proxySettings)
         if !settings.termType.isEmpty { sshEnv["TERM"] = settings.termType }
-        let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs + SSHSetupArgs.forConnection(spec),
+        let c = makeConnection(spec, cols: term.cols, rows: term.rows, sshArgs: sshArgs + SSHSetupArgs.forConnection(spec, proxy: proxySettings),
                                sshEnv: sshEnv, timeout: timeout, telnetBinary: telnetBinary || settings.telBin, termType: settings.termType,
-                               keepAlive: settings.telKeepAliveInterval, proxy: ProxySettings.load().config)
+                               keepAlive: settings.telKeepAliveInterval, proxy: proxySettings.config)
         if let sc = c as? SerialConnection { sc.charDelayMs = settings.charDelayMs; sc.lineDelayMs = settings.lineDelayMs; sc.breakMs = settings.sendBreakTime }
         c.onData = { [weak self] b in self?.received(b) }
         c.onClose = { [weak self, weak c] msg in
@@ -386,16 +427,18 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             self.connecting = false
             self.conn = nil
             self.transferConnectionLost()
-            self.notice(msg.map { (wasConnecting ? "" : "切断されました: ") + $0 } ?? "切断されました")
+            self.notice(msg.map { wasConnecting ? $0 : Lang.m("MENU_DISCONNECTED_REASON", "切断されました: %s", $0) } ?? Lang.m("MENU_DISCONNECTED", "切断されました"))
             if wasConnecting && !quiet, let m = msg, let w = self.window {
                 // cv.NoMsg (マクロの connect) のときは出さない
                 let a = NSAlert()
-                a.messageText = "接続できませんでした"
+                a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
                 a.informativeText = m
                 a.beginSheetModal(for: w)
             }
             self.updateTitle()
             self.macro?.connectionChanged()
+            // AutoComPortReconnect: USB シリアルを抜いた → 戻ったら開き直す (vtwin.cpp SerialReconnect)
+            if case .serial(let p) = spec, msg != nil, !wasConnecting, !self.closedByMenu { self.serialReconnect.portClosed(p) }
             // 相手から切られた: TCP/IP で AutoWinClose ならウインドウを閉じる (接続できなかったときは閉じない)
             if !wasConnecting && !self.closedByMenu { self.afterConnectionClosed() }
             self.closedByMenu = false
@@ -407,12 +450,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             self.transfer?.isReady = true
             self.connectedAt = Date()
             self.teraLog?.connectedTime = self.connectedAt
-            if c is TCPConnection { self.notice("\(spec.title) に接続しました") }
+            if c is TCPConnection { self.notice(Lang.m("MENU_CONNECTED_TO", "%s に接続しました", spec.title)) }
             self.updateTitle()
             self.autoStartLog()
             self.macro?.connectionChanged()
         }
-        if c is TCPConnection { notice("\(spec.title) に接続しています…") }
+        if c is TCPConnection { notice(Lang.m("MENU_CONNECTING_TO", "%s に接続しています…", spec.title)) }
         loginSteps = steps
         if let pw = password, !pw.isEmpty, steps.isEmpty { loginSteps = [LoginStep(prompt: "password:", response: pw)] }
         recentOutput = ""
@@ -422,7 +465,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             notice(error.localizedDescription)
             if !quiet {
                 let a = NSAlert()
-                a.messageText = "接続できませんでした"
+                a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
                 a.informativeText = error.localizedDescription
                 if let w = window { a.beginSheetModal(for: w) } else { a.runModal() }
             }
@@ -442,7 +485,10 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         connectedAt = Date()
         teraLog?.connectedTime = connectedAt
         macro?.connectionChanged()
-        if case .serial(let p) = spec { notice("\(p.path) を開きました (\(p.baud) bps, \(p.dataBits)\(p.parity.prefix(1).uppercased())\(p.stopBits), フロー制御: \(p.flow))") }
+        if case .serial(let p) = spec {
+            notice(Lang.m("MENU_SERIAL_OPENED", "%s を開きました (%d bps, %s, フロー制御: %s)",
+                          p.path, p.baud, "\(p.dataBits)\(p.parity.prefix(1).uppercased())\(p.stopBits)", p.flow))
+        }
         updateTitle()
         autoStartLog()
         return true
@@ -468,7 +514,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         connecting = false
         transferConnectionLost()
         c.close()
-        if !silent { notice("切断しました") }
+        if !silent { notice(Lang.m("MENU_DISCONNECTED_BY_USER", "切断しました")) }
         updateTitle()
         macro?.connectionChanged()
     }
@@ -585,7 +631,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         teraLog = l
         // CmdSetLogOpt で ts.LogTypePlainText が変わり、FixLogOption でバイナリなら off になる (BS をマクロに渡すかも変わる)
         term.logTypePlainText = l.options.plainText
-        showLogProgressWindow(hidden: o.hideDialog)   // FLogOpen が「ログ記録中」を作る
+        showLogProgressWindow(showState: o.dialogShowState)   // FLogOpen が「ログ記録中」を作る
         return true
     }
 
@@ -625,6 +671,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     /// 端末に表示した文字 (エスケープシーケンスなし、改行は CheckEOL でそろえた UTF-8)。マクロとテキストのログへ (OutputLogUTF32)
     private func macroText(_ b: [UInt8]) {
         macro?.received(b)
+        // dumb 端末ではタイムスタンプは画面に出したものがログに入るので、ログの側では付けない (dd65db75a #255)
+        teraLog?.suppressTimestamp = term.terminalID == .dumb
         teraLog?.putText(b)
     }
 
@@ -685,18 +733,6 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func serialSetup(_ sender: Any?) { setupSerialPort(sender) }
 
-    @objc func biggerFont(_ sender: Any?) { changeFont(by: 1) }
-    @objc func smallerFont(_ sender: Any?) { changeFont(by: -1) }
-
-    private func changeFont(by d: CGFloat) {
-        var s = settings
-        s.fontSize = max(8, min(48, s.fontSize + d))
-        settings = s
-        let (c, r) = (term.cols, term.rows)
-        termView.settings = s
-        fitWindow(cols: c, rows: r)
-    }
-
     @objc func runMacroMenu(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.allowedFileTypes = ["ttl", "txt"]
@@ -712,11 +748,11 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         do {
             let m = try MacroRunner(path: url.path, params: params, session: self)
             macro = m
-            notice("マクロ開始: \(url.lastPathComponent)")
+            notice(Lang.m("MENU_MACRO_STARTED", "マクロ開始: %s", url.lastPathComponent))
             m.start()
         } catch {
             let a = NSAlert()
-            a.messageText = "マクロを読めませんでした"
+            a.messageText = Lang.m("MENU_MACRO_LOAD_FAILED", "マクロを読めませんでした")
             a.informativeText = "\(error)"
             a.beginSheetModal(for: window!)
         }
@@ -772,7 +808,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
         guard let seq = SessionWindowController.keyCodeSequence(code, appCursor: term.appCursor, appKeypad: term.appKeypad,
                                                                 newline: settings.sendNewlineBytes) else {
-            notice("sendkcode \(code) には対応していません")
+            notice(Lang.m("MENU_SENDKCODE_UNSUPPORTED", "sendkcode %d には対応していません", code))
             return
         }
         for _ in 0..<max(1, count) { sendBytes(seq, echo: false, reconnect: false) }
@@ -883,11 +919,13 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         transferPanel = panel
         let name = (full as NSString).lastPathComponent
         panel.onCancel = { [weak job] in job?.finish() }
-        if !transferExtra.ftHideDialog { panel.show(title: "ファイル送信", over: window) }   // FTHideDialog
-        panel.set(proto: binary ? "ファイル送信 (バイナリ)" : "ファイル送信", file: name, detail: "0 / \(job.totalBytes) バイト", percent: 0)
+        let title = Lang.t("Tera Term", "DLG_FILETRANS_TITLE", "ファイル送信")
+        let proto = binary ? title + " (" + Lang.t("Tera Term", "DLG_SENDFILE_BINARY", "バイナリ") + ")" : title
+        if !transferExtra.ftHideDialog { panel.show(title: title, over: window) }   // FTHideDialog
+        panel.set(proto: proto, file: name, detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", 0, job.totalBytes), percent: 0)
         job.onProgress = { [weak panel] sent, total in
-            panel?.set(proto: binary ? "ファイル送信 (バイナリ)" : "ファイル送信", file: name,
-                       detail: "\(sent) / \(total) バイト", percent: total > 0 ? Double(sent) * 100 / Double(total) : 100)
+            panel?.set(proto: proto, file: name,
+                       detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", sent, total), percent: total > 0 ? Double(sent) * 100 / Double(total) : 100)
         }
         job.onFinish = { [weak self, weak job] in
             guard let self = self else { done(); return }
@@ -921,7 +959,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         guard job.start() else { panel.close(); scpPanels.removeAll { $0 === panel }; return false }
         scpJobs.append(job)
         panel.show(title: label, over: window)
-        panel.set(proto: label, file: name, detail: "接続しています…", percent: nil)
+        panel.set(proto: label, file: name, detail: Lang.m("MENU_CONNECTING", "接続しています…"), percent: nil)
         let originalDone = job.onFinish
         job.onFinish = { [weak self, weak job] ok in
             originalDone?(ok)
@@ -967,7 +1005,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         t.onMessage = { [weak self] m in
             guard let self = self else { return }
             let a = NSAlert()
-            a.messageText = "Tera Term: Error"
+            a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: Error")
             a.informativeText = m
             if let w = self.window { a.beginSheetModal(for: w) } else { a.runModal() }
         }
@@ -1006,27 +1044,28 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         let panel = transferPanel ?? TransferProgressPanel()
         transferPanel = panel
         panel.onCancel = { [weak self] in self?.cancelTransfer() }
-        panel.show(title: SessionWindowController.japaneseTitle(t.kind), over: window)
+        panel.show(title: SessionWindowController.transferTitle(t.kind), over: window)
     }
 
-    /// 転送ダイアログの題 (ja_JP.lng FILEDLG_TRANS_TITLE_*)
-    static func japaneseTitle(_ k: FileTransferKind) -> String {
+    /// 転送ダイアログの題 (本家の FILEDLG_TRANS_TITLE_*)
+    static func transferTitle(_ k: FileTransferKind) -> String {
+        func tt(_ key: String, _ def: String) -> String { Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_" + key, def) }
         switch k {
-        case .kermitRecv: return "Kermit受信"
-        case .kermitGet: return "Kermit取得"
-        case .kermitSend: return "Kermit送信"
-        case .kermitFinish: return "Kermit終了"
-        case .xmodemRecv: return "XMODEM受信"
-        case .xmodemSend: return "XMODEM送信"
-        case .ymodemRecv: return "YMODEM受信"
-        case .ymodemSend: return "YMODEM送信"
-        case .zmodemRecv, .zmodemAutoRecv: return "ZMODEM受信"
-        case .zmodemSend, .zmodemAutoSend: return "ZMODEM送信"
-        case .bplusRecv, .bplusAutoRecv: return "B-Plus受信"
-        case .bplusSend: return "B-Plus送信"
-        case .quickvanRecv: return "Quick-VAN受信"
-        case .quickvanSend: return "Quick-VAN送信"
-        case .rawRecv: return "ファイル受信中"
+        case .kermitRecv: return tt("KMTRCV", "Kermit受信")
+        case .kermitGet: return tt("KMTGET", "Kermit取得")
+        case .kermitSend: return tt("KMTSEND", "Kermit送信")
+        case .kermitFinish: return tt("KMTFIN", "Kermit終了")
+        case .xmodemRecv: return tt("XRCV", "XMODEM受信")
+        case .xmodemSend: return tt("XSEND", "XMODEM送信")
+        case .ymodemRecv: return tt("YRCV", "YMODEM受信")
+        case .ymodemSend: return tt("YSEND", "YMODEM送信")
+        case .zmodemRecv, .zmodemAutoRecv: return tt("ZRCV", "ZMODEM受信")
+        case .zmodemSend, .zmodemAutoSend: return tt("ZSEND", "ZMODEM送信")
+        case .bplusRecv, .bplusAutoRecv: return tt("BPRCV", "B-Plus受信")
+        case .bplusSend: return tt("BPSEND", "B-Plus送信")
+        case .quickvanRecv: return tt("QVRCV", "Quick-VAN受信")
+        case .quickvanSend: return tt("QVSEND", "Quick-VAN送信")
+        case .rawRecv: return tt("RAWRCV", "ファイル受信中")
         }
     }
 
@@ -1114,7 +1153,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// scpsend / scprecv の scp コマンドの引数 (SSH 接続のときだけ)
     func scpArguments(send: Bool, from: String, to: String) -> [String]? {
-        guard connected, case .ssh(let host, let port, let user, let key)? = spec else { return nil }
+        guard connected, case .ssh(let uhost, let port, let user, let key)? = spec else { return nil }
+        let host = IDN.hostNameToASCII(uhost)   // 接続と同じ ACE 形式 (#1493)
         var a = ["-o", "ControlPath=\(sshControlPath(host: host, port: port, user: user))", "-o", "BatchMode=yes"]
         if port != 22 { a += ["-P", String(port)] }
         if !key.isEmpty { a += ["-i", (key as NSString).expandingTildeInPath] }
@@ -1157,7 +1197,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             50470: { self.runMacroMenu(nil) },
             50990: { NSApp.orderFrontStandardAboutPanel(nil) },
         ]
-        if let f = actions[id] { f() } else { notice("callmenu \(id) には対応していません") }
+        if let f = actions[id] { f() } else { notice(Lang.m("MENU_CALLMENU_UNSUPPORTED", "callmenu %d には対応していません", id)) }
     }
 
     /// 新しいウインドウでローカルシェル
@@ -1200,7 +1240,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     func macroFinished(_ m: MacroRunner, error: String?) {
         guard macro === m else { return }
         macroDetached(m)
-        if let e = error { notice("マクロのエラーで止めました: \(e)") } else { notice("マクロ終了") }
+        if let e = error { notice(Lang.m("MENU_MACRO_STOPPED_ERROR", "マクロのエラーで止めました: %s", e)) } else { notice(Lang.m("MENU_MACRO_FINISHED", "マクロ終了")) }
     }
 
     /// disconnect (vtwin.cpp Disconnect): TCP (SSH を含む) で confirm なら「切断しますか?」(ConfirmDisconnect=on)
@@ -1214,9 +1254,9 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         if confirm && tcp && connected {
             let a = NSAlert()
             a.alertStyle = .warning
-            a.messageText = "切断しますか?"
-            a.addButton(withTitle: "OK")
-            a.addButton(withTitle: "キャンセル")
+            a.messageText = Lang.t("Tera Term", "MSG_DISCONNECT_CONF", "切断しますか?")
+            a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
+            a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
             a.buttons[1].keyEquivalent = "\u{1b}"
             a.window.initialFirstResponder = a.buttons[1]
             if a.runModal() != .alertFirstButtonReturn { return }
@@ -1281,6 +1321,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         transferPanel?.close()
         // マクロは止めずにリンクだけ外す (Tera Term の DDE 切断。testlink 0・waitevent 2 になる)
         if let m = macro { m.sessionClosed() }
+        serialReconnect.cancel()
         disconnect(silent: true)
         stopLog()
         SessionWindowController.all.removeAll { $0 === self }

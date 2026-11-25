@@ -18,6 +18,8 @@ public final class TeraLog {
     /// FixLogOption のあとの値 (バイナリなら plainText / timestamp は off)
     public private(set) var options: TTLLogOptions
     public var paused = false
+    /// 行頭のタイムスタンプを付けない (dumb 端末: 画面に出したタイムスタンプがそのままログに入る。FLogPutUTF32_ dd65db75a)
+    public var suppressTimestamp = false
     /// 接続した時刻 (タイムスタンプの種類 3 用)
     public var connectedTime: Date
     public let startTime: Date
@@ -106,10 +108,12 @@ public final class TeraLog {
         handle = nil
     }
 
-    /// loginfo の結果 (1 binary, 2 append, 4 plain text, 8 timestamp, 16 hide dialog)
+    /// loginfo の結果 (1 binary, 2 append, 4 plain text, 8 timestamp,
+    /// 16 hidden, 32 minimized, 64 normal ("Logging" ダイアログの表示状態。FLogInfo, 23aa80682 #1576))
     public var infoFlags: Int {
         (options.binary ? 1 : 0) | (options.append ? 2 : 0) | (options.plainText ? 4 : 0)
-            | (options.timestamp ? 8 : 0) | (options.hideDialog ? 16 : 0)
+            | (options.timestamp ? 8 : 0) | (options.dialogShowState == 0 ? 16 : 0)
+            | (options.dialogShowState == 1 ? 32 : 0) | (options.dialogShowState == 2 ? 64 : 0)
     }
 
     // MARK: - 書く
@@ -134,7 +138,7 @@ public final class TeraLog {
     }
 
     private func textWithTimestamps(_ utf8: [UInt8], now: Date) -> [UInt8] {
-        guard options.timestamp else { return utf8 }
+        guard options.timestamp, !suppressTimestamp else { return utf8 }
         var out: [UInt8] = []
         out.reserveCapacity(utf8.count + 32)
         var ts: [UInt8]?

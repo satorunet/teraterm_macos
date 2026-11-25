@@ -3,6 +3,7 @@
 // 元のコード: Copyright (C) 1994-1998 T. Teranishi, (C) 2004- TeraTerm Project (BSD 3-Clause)
 
 import AppKit
+import TeraCore
 import ObjectiveC
 import TeraCore
 
@@ -119,13 +120,14 @@ extension SessionWindowController {
         let panel = transferPanel ?? TransferProgressPanel()
         transferPanel = panel
         let name = (path as NSString).lastPathComponent
-        let proto = binary ? "ファイル送信 (バイナリ)" : "ファイル送信"
+        let sendTitle = Lang.t("Tera Term", "DLG_FILETRANS_TITLE", "ファイル送信")
+        let proto = binary ? sendTitle + " (" + Lang.t("Tera Term", "DLG_SENDFILE_BINARY", "バイナリ") + ")" : sendTitle
         panel.onCancel = { [weak job] in job?.finish() }
         // FTHideDialog: 進み具合のダイアログを出さない
-        if !transferExtra.ftHideDialog { panel.show(title: "ファイル送信中", over: window) }
-        panel.set(proto: proto, file: name, detail: "0 / \(job.totalBytes) バイト", percent: 0)
+        if !transferExtra.ftHideDialog { panel.show(title: Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_SENDFILE", "ファイル送信中"), over: window) }
+        panel.set(proto: proto, file: name, detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", 0, job.totalBytes), percent: 0)
         job.onProgress = { [weak panel] sent, total in
-            panel?.set(proto: proto, file: name, detail: "\(sent) / \(total) バイト",
+            panel?.set(proto: proto, file: name, detail: Lang.m("MENU_BYTES_PROGRESS", "%d / %d バイト", sent, total),
                        percent: total > 0 ? Double(sent) * 100 / Double(total) : 100)
         }
         job.onFinish = { [weak self, weak job] in
@@ -171,7 +173,7 @@ extension SessionWindowController {
     }
 
     @objc func kermitSend(_ sender: Any?) {
-        chooseSend("Tera Term: Kermit送信", multi: true) { [weak self] f in self?.startMenuTransfer(.kermitSend, files: f) }
+        chooseSend(Self.sendDialogTitle("KMTSEND", "Kermit送信"), multi: true) { [weak self] f in self?.startMenuTransfer(.kermitSend, files: f) }
     }
 
     @objc func kermitFinish(_ sender: Any?) { startMenuTransfer(.kermitFinish) }
@@ -209,7 +211,7 @@ extension SessionWindowController {
     @objc func ymodemReceive(_ sender: Any?) { startMenuTransfer(.ymodemRecv) }
 
     @objc func ymodemSend(_ sender: Any?) {
-        chooseSend("Tera Term: YMODEM送信", multi: true) { [weak self] f in self?.startMenuTransfer(.ymodemSend, files: f) }
+        chooseSend(Self.sendDialogTitle("YSEND", "YMODEM送信"), multi: true) { [weak self] f in self?.startMenuTransfer(.ymodemSend, files: f) }
     }
 
     // MARK: - 転送 ▸ ZMODEM
@@ -233,7 +235,7 @@ extension SessionWindowController {
     @objc func bplusReceive(_ sender: Any?) { startMenuTransfer(.bplusAutoRecv, noMessages: true) }
 
     @objc func bplusSend(_ sender: Any?) {
-        chooseSend("Tera Term: B-Plus送信", multi: false) { [weak self] f in self?.startMenuTransfer(.bplusSend, files: f) }
+        chooseSend(Self.sendDialogTitle("BPSEND", "B-Plus送信"), multi: false) { [weak self] f in self?.startMenuTransfer(.bplusSend, files: f) }
     }
 
     // MARK: - 転送 ▸ Quick-VAN
@@ -241,7 +243,12 @@ extension SessionWindowController {
     @objc func quickvanReceive(_ sender: Any?) { startMenuTransfer(.quickvanRecv) }
 
     @objc func quickvanSend(_ sender: Any?) {
-        chooseSend("Tera Term: Quick-VAN送信", multi: true) { [weak self] f in self?.startMenuTransfer(.quickvanSend, files: f) }
+        chooseSend(Self.sendDialogTitle("QVSEND", "Quick-VAN送信"), multi: true) { [weak self] f in self?.startMenuTransfer(.quickvanSend, files: f) }
+    }
+
+    /// ファイルを選ぶダイアログの題 ("Tera Term: " + 本家の FILEDLG_TRANS_TITLE_*)
+    private static func sendDialogTitle(_ key: String, _ def: String) -> String {
+        "Tera Term: " + Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_" + key, def)
     }
 
     private func chooseSend(_ title: String, multi: Bool, start: @escaping ([String]) -> Void) {
@@ -280,16 +287,24 @@ extension SessionWindowController {
         let path = (file as NSString).expandingTildeInPath
         guard let fp = fopen(path, "rb") else {
             let err = String(cString: strerror(errno))
-            scpAlert("TTSSH: ファイルオープンエラー", "読み取り用にファイルを開けません: \(err) \(file)")
+            scpAlert(Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_ERROR_TITLE", "TTSSH: ファイルオープンエラー"),
+                     Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_READ_ERROR", "読み取り用にファイルを開けません: %s %s", err, file))
             return
         }
         fclose(fp)
         // 送信先が空なら "." (リモートのホーム)
         guard let args = scpArguments(send: true, from: path, to: toDir) else { return }
-        let ok = runScp(args, label: "SCP ファイル送信中", file: path) { [weak self] ok in
-            if !ok { self?.scpAlert("TTSSH: SCP エラー", "scp send error") }
+        let errTitle = Lang.t("TTSSH", "MSG_SSH_SCP_ERROR_TITLE", "TTSSH: SCP エラー")
+        let ok = runScp(args, label: Self.scpLabel("DLG_SCP_PROGRESS_TITLE_SENDFILE", "SCP ファイル送信中"), file: path) { [weak self] ok in
+            if !ok { self?.scpAlert(errTitle, "scp send error") }
         }
-        if !ok { scpAlert("TTSSH: SCP エラー", "scp send error") }
+        if !ok { scpAlert(errTitle, "scp send error") }
+    }
+
+    /// 進み具合の題: 本家の "TTSSH: SCP ファイル送信中" から "TTSSH: " を外したもの
+    private static func scpLabel(_ key: String, _ def: String) -> String {
+        let s = Lang.t("TTSSH", key, def)
+        return s.hasPrefix("TTSSH: ") ? String(s.dropFirst(7)) : s
     }
 
     private func scpDialogReceive(remote: String, localDir: String) {
@@ -306,29 +321,32 @@ extension SessionWindowController {
         }
         if access(local, F_OK) == 0 {
             if access(local, W_OK) != 0 {
-                scpAlert("TTSSH: ファイルオープンエラー", "ファイル `\(local)' は読み取り専用です.")
+                scpAlert(Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_ERROR_TITLE", "TTSSH: ファイルオープンエラー"),
+                         Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_READONLY_ERROR", "ファイル `%s' は読み取り専用です.", local))
                 return
             }
             let a = NSAlert()
             a.alertStyle = .informational
-            a.messageText = "TTSSH: 確認"
-            a.informativeText = "ファイル `\(local)' が存在します.\n上書きしますか？"
-            a.addButton(withTitle: "はい")
-            a.addButton(withTitle: "いいえ")
+            a.messageText = Lang.t("TTSSH", "MSG_SSH_SCP_CONFIRM_TITLE", "TTSSH: 確認")
+            a.informativeText = Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_OVERWRITE_CONFIRM", "ファイル `%s' が存在します.\n上書きしますか？", local)
+            a.addButton(withTitle: Lang.t("TTSSH", "BTN_YES", "はい"))
+            a.addButton(withTitle: Lang.t("TTSSH", "BTN_NO", "いいえ"))
             if a.runModal() != .alertFirstButtonReturn { return }
         }
         // fopen(localfilefull, "wb")
         guard let fp = fopen(local, "wb") else {
             let err = String(cString: strerror(errno))
-            scpAlert("TTSSH: ファイルオープンエラー", "書き込み用にファイルを開けません: \(err) \(local)")
+            scpAlert(Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_ERROR_TITLE", "TTSSH: ファイルオープンエラー"),
+                     Lang.t("TTSSH", "MSG_SSH_SCP_FILEOPEN_WRITE_ERROR", "書き込み用にファイルを開けません: %s %s", err, local))
             return
         }
         fclose(fp)
         guard var args = scpArguments(send: false, from: remote, to: local) else { return }
         args.insert("-p", at: args.count - 2)   // scp -p -f (更新日時などを保つ)
-        let ok = runScp(args, label: "SCP ファイル受信中", file: local) { [weak self] ok in
-            if !ok { self?.scpAlert("TTSSH: SCP エラー", "scp receive error") }
+        let errTitle = Lang.t("TTSSH", "MSG_SSH_SCP_ERROR_TITLE", "TTSSH: SCP エラー")
+        let ok = runScp(args, label: Self.scpLabel("DLG_SCP_PROGRESS_TITLE_RECEIVEFILE", "SCP ファイル受信中"), file: local) { [weak self] ok in
+            if !ok { self?.scpAlert(errTitle, "scp receive error") }
         }
-        if !ok { scpAlert("TTSSH: SCP エラー", "scp receive error") }
+        if !ok { scpAlert(errTitle, "scp receive error") }
     }
 }

@@ -31,9 +31,9 @@ final class TransferProgressPanel: NSObject, NSWindowDelegate {
     func update(_ pr: FileTransferProgress) {
         protoLabel.stringValue = pr.protocolText
         if let f = pr.fileName { fileLabel.stringValue = f }
-        var t = "\(pr.byteCount) バイト"
-        if pr.packetNumber > 0 { t += "  パケット \(pr.packetNumber)" }
-        if pr.elapsed > 0 { t += String(format: "  %.0f 秒", pr.elapsed) }
+        var t = Lang.m("XFER_BYTES", "%d バイト", pr.byteCount)
+        if pr.packetNumber > 0 { t += "  " + Lang.m("XFER_PACKET", "パケット %d", pr.packetNumber) }
+        if pr.elapsed > 0 { t += "  " + Lang.m("XFER_SECONDS", "%d 秒", Int(pr.elapsed.rounded())) }
         countLabel.stringValue = t
         if let pc = pr.percent, pr.totalBytes != nil {
             bar.stopAnimation(nil)
@@ -81,7 +81,7 @@ final class TransferProgressPanel: NSObject, NSWindowDelegate {
         bar.maxValue = 100
         bar.translatesAutoresizingMaskIntoConstraints = false
         v.addSubview(bar)
-        let cancel = NSButton(title: "キャンセル", target: self, action: #selector(cancelPressed(_:)))
+        let cancel = NSButton(title: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), target: self, action: #selector(cancelPressed(_:)))
         cancel.keyEquivalent = "\u{1b}"
         cancel.translatesAutoresizingMaskIntoConstraints = false
         v.addSubview(cancel)
@@ -207,7 +207,8 @@ final class ScpJob {
               let m = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return }
         func g(_ i: Int) -> String { Range(m.range(at: i), in: line).map { String(line[$0]) } ?? "" }
         let pc = Double(g(2)) ?? 0
-        onProgress?(g(1).trimmingCharacters(in: .whitespaces), pc, "\(g(3))  \(g(4))  残り \(g(5))")
+        onProgress?(g(1).trimmingCharacters(in: .whitespaces), pc, "\(g(3))  \(g(4))  " + Lang.m("XFER_REMAINING", "残り %s", g(5)))
+
     }
 
     private func finished(_ ok: Bool) {

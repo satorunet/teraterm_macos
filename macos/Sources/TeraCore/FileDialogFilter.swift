@@ -22,9 +22,12 @@ public struct FileDialogFilter: Equatable {
     public var matchesEverything: Bool { patterns.contains { $0 == "*" || $0 == "*.*" } }
 
     /// FILEDLG_USER_FILTER_NAME: 「ユーザ定義(*.txt)」
-    public var userFilterName: String { "ユーザ定義(\(mask))" }
-    /// FILEDLG_ALL_FILTER
-    public static let allFilterName = "すべてのファイル(*.*)"
+    public var userFilterName: String { Lang.t("Tera Term", "FILEDLG_USER_FILTER_NAME", "ユーザ定義") + "(\(mask))" }
+    /// FILEDLG_ALL_FILTER ("すべてのファイル(*.*)\0*.*\0\0" の表示名の部分)
+    public static var allFilterName: String {
+        Lang.t("Tera Term", "FILEDLG_ALL_FILTER", "すべてのファイル(*.*)").components(separatedBy: "\\0")[0]
+    }
+
 
     /// "*.ext" だけでできていれば、その拡張子 (NSSavePanel.allowedFileTypes 用)。それ以外の書き方を含むと nil
     public var allowedExtensions: [String]? {

@@ -27,7 +27,7 @@ let package = Package(
                 linkerSettings: [.linkedLibrary("iconv")]),
         .target(name: "TeraCore", dependencies: ["COniguruma", "CTeraFile"], path: "Sources/TeraCore",
                 swiftSettings: [.unsafeFlags(["-enforce-exclusivity=unchecked"], .when(configuration: .release))]),
-        .target(name: "TeraUninstall", path: "Sources/TeraUninstall"),
+        .target(name: "TeraUninstall", dependencies: ["TeraCore"], path: "Sources/TeraUninstall"),
         .executableTarget(name: "TeraMac", dependencies: ["TeraCore", "TeraUninstall", .product(name: "Sparkle", package: "Sparkle")],
                           path: "Sources/TeraMac",
                           // この Mac の SDK には Sparkle の見出しが使う NS_SWIFT_SENDABLE がないので空にする (注釈だけなので動きは変わらない)

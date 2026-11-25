@@ -51,10 +51,12 @@ extension SessionWindowController {
             p.path = old.path
             if p.baud != old.baud { sc.setBaud(p.baud) }
             if p.flow != sc.flow { sc.setFlow(["xon": 1, "rts": 2, "none": 3, "dsr": 4][p.flow] ?? 3) }
+            // FlowCtrlRTS / FlowCtrlDTR (serial_pp.cpp PSN_APPLY: SetCommState の fRtsControl / fDtrControl, #934)
+            sc.setRTSDTR(rts: p.rts, dtr: p.dtr, flow: p.flow)
             if p.dataBits != old.dataBits || p.parity != old.parity || p.stopBits != old.stopBits {
                 // CommResetSerial: 開いたままデータ長・パリティ・ストップビットをかけ直す
                 if !sc.setLineParams(dataBits: p.dataBits, parity: p.parity, stopBits: p.stopBits) {
-                    notice("\(p.dataBits) ビット・パリティ \(p.parity)・ストップ \(p.stopBits) にできませんでした")
+                    notice(Lang.m("MENU_SERIAL_LINE_FAILED", "%d ビット・パリティ %s・ストップ %d にできませんでした", p.dataBits, p.parity, p.stopBits))
                 }
             }
             ConnHistory.serial = p
@@ -85,14 +87,7 @@ extension SessionWindowController {
         installAlphaObservers()
     }
 
-    private func visualBell() {
-        guard let v = window?.contentView else { return }
-        let flash = NSView(frame: v.bounds)
-        flash.wantsLayer = true
-        flash.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
-        v.addSubview(flash)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { flash.removeFromSuperview() }
-    }
+    private func visualBell() { flashTerminal() }
 
     func updateWindowAlpha() {
         guard let w = window else { return }
@@ -129,7 +124,7 @@ extension SessionWindowController {
         guard let w = sheetWindow() else { return }
         let prev = TermSettings.setupFileName
         let p = NSSavePanel()
-        p.title = "Tera Term: 設定の保存"
+        p.title = Lang.t("Tera Term", "FILEDLG_SAVE_SETUP_TITLE", "Tera Term: 設定の保存")
         p.allowedFileTypes = ["ini"]
         p.allowsOtherFileTypes = true
         p.directoryURL = URL(fileURLWithPath: (prev as NSString).deletingLastPathComponent)
@@ -140,25 +135,30 @@ extension SessionWindowController {
             let fm = FileManager.default
             if fm.fileExists(atPath: path) && !fm.isWritableFile(atPath: path) {
                 let a = NSAlert()
-                a.messageText = "Tera Term: エラー"
-                a.informativeText = "TERATERM.INI に書き込み権限がありません"
+                a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: エラー")
+                a.informativeText = Lang.t("Tera Term", "MSG_SAVESETUP_PERMISSION_ERROR", "TERATERM.INI に書き込み権限がありません")
                 a.beginSheetModal(for: w)
                 return
             }
-            // 違うファイルに保存するときは、前のファイルの内容 (知らないセクションも) を引き継ぐ
-            if path != prev && !fm.fileExists(atPath: path) && fm.fileExists(atPath: prev) { try? fm.copyItem(atPath: prev, toPath: path) }
+            if path == prev {
+                // 同名ファイルへ書き込み (上書き): IniAutoBackup ならバックアップを作成 (vtwin.cpp OnSetupSave → CreateBakupFile)
+                if self.settings.iniAutoBackup { IniBackup.create(for: path) }
+            } else if !fm.fileExists(atPath: path) && fm.fileExists(atPath: prev) {
+                // 違うファイルに保存するときは、前のファイルの内容 (知らないセクションも) を引き継ぐ (CopyFileW(Prev, New, TRUE))
+                try? fm.copyItem(atPath: prev, toPath: path)
+            }
             var s = self.settings
             s.cols = self.term.cols
             s.rows = self.term.rows
             var t = self.transferOptions
             t.fileDir = self.transferOptions.fileDir
             do {
-                try TeraTermIniExport.write(settings: s, transfer: t, to: path)
+                try TeraTermIniExport.write(settings: s, transfer: t, extra: self.transferExtra, to: path)
                 TermSettings.setupFileName = path
                 UserDefaults.standard.set(path, forKey: "TeraTermIniPath")
             } catch {
                 let a = NSAlert()
-                a.messageText = "Tera Term: エラー"
+                a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: エラー")
                 a.informativeText = "\(path)\n\(error.localizedDescription)"
                 a.beginSheetModal(for: w)
             }
@@ -170,7 +170,7 @@ extension SessionWindowController {
         guard let w = sheetWindow() else { return }
         let prev = TermSettings.setupFileName
         let p = NSOpenPanel()
-        p.title = "Tera Term: 設定の読み込み"
+        p.title = Lang.t("Tera Term", "FILEDLG_RESTORE_SETUP_TITLE", "Tera Term: 設定の読み込み")
         p.allowedFileTypes = ["ini", "INI"]
         p.allowsOtherFileTypes = true
         p.directoryURL = URL(fileURLWithPath: (prev as NSString).deletingLastPathComponent)
@@ -178,8 +178,8 @@ extension SessionWindowController {
             guard let self = self, r == .OK, let url = p.url else { return }
             guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data) else {
                 let a = NSAlert()
-                a.messageText = "Tera Term: エラー"
-                a.informativeText = "読み込めませんでした\n\(url.path)"
+                a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: エラー")
+                a.informativeText = Lang.m("MENU_RESTORE_SETUP_FAILED", "読み込めませんでした\n%s", url.path)
                 a.beginSheetModal(for: w)
                 return
             }
@@ -200,6 +200,9 @@ extension SessionWindowController {
         let keepFileDir = ini.string("Tera Term", "FileDir") == nil
         let fileDir = keepFileDir ? transferOptions.fileDir : t.fileDir
         transferOptions = t
+        // SendfileSequential / SendfileSkipOptionDialog (ttset.c _ReadIniFile, 既定 off)
+        transferExtra.sendfileSequential = ini.onOff("Tera Term", "SendfileSequential") ?? false
+        transferExtra.sendfileSkipOptionDialog = ini.onOff("Tera Term", "SendfileSkipOptionDialog") ?? false
         // 端末の大きさは INI の TerminalSize にする (SetupTerm)
         var s = r.settings
         if ini.ints("Tera Term", "TerminalSize") == nil { s.cols = term.cols; s.rows = term.rows }
@@ -221,8 +224,9 @@ extension SessionWindowController {
         guard let w = sheetWindow() else { return }
         let cur = TermSettings.keyCnfFileName
         let p = NSOpenPanel()
-        p.title = "Tera Term:キーマップの読み込み"
-        p.message = "キーボード設定ファイル (*.cnf)"
+        p.title = Lang.t("Tera Term", "FILEDLG_LOAD_KEYMAP_TITLE", "Tera Term:キーマップの読み込み")
+        // 本家はファイルの種類の欄 ("名前\0*.cnf\0\0")。名前だけ使う
+        p.message = Lang.t("Tera Term", "FILEDLG_KEYBOARD_FILTER", "キーボード設定ファイル (*.cnf)").components(separatedBy: "\\0")[0]
         p.allowedFileTypes = ["cnf", "CNF"]
         p.directoryURL = URL(fileURLWithPath: (cur as NSString).deletingLastPathComponent)
         p.beginSheetModal(for: w) { r in
@@ -264,7 +268,7 @@ final class SetupDirectoryDialog: SheetDialog, NSTableViewDataSource, NSTableVie
     }
 
     func begin(on w: NSWindow) {
-        panel.title = "Tera Term: 設定フォルダ"
+        panel.title = Lang.t("Tera Term", "DLG_SETUPDIR_TITLE", "Tera Term: 設定フォルダ")
         cancelButton.isHidden = true
         let s = session?.settings ?? TermSettings.load()
         let ssh = SSHSettings.load()
@@ -273,11 +277,11 @@ final class SetupDirectoryDialog: SheetDialog, NSTableViewDataSource, NSTableVie
             return e.hasPrefix("/") || e.isEmpty ? e : (AppPaths.setupDirectory as NSString).appendingPathComponent(e)
         }
         var r: [(String, String)] = [
-            ("Tera Term設定ファイル", TermSettings.setupFileName),
-            ("キーボード設定ファイル", TermSettings.keyCnfFileName),
-            ("SSH known_hostsファイル", exp(ssh.knownHostsRW)),
+            (Lang.t("Tera Term", "DLG_SETUPDIR_INIFILE", "Tera Term設定ファイル"), TermSettings.setupFileName),
+            (Lang.t("Tera Term", "DLG_SETUPDIR_KEYBOARDFILE", "キーボード設定ファイル"), TermSettings.keyCnfFileName),
+            (Lang.t("Tera Term", "DLG_SETUPDIR_KNOWNHOSTSFILE", "SSH known_hostsファイル"), exp(ssh.knownHostsRW)),
         ]
-        if !ssh.knownHostsRO.isEmpty { r.append(("SSH known_hostsファイル", exp(ssh.knownHostsRO))) }
+        if !ssh.knownHostsRO.isEmpty { r.append((Lang.t("Tera Term", "DLG_SETUPDIR_KNOWNHOSTSFILE", "SSH known_hostsファイル"), exp(ssh.knownHostsRO))) }
         r += [
             ("CurrentDirectry", FileManager.default.currentDirectoryPath),
             ("HomeDir", AppPaths.setupDirectory),
@@ -404,7 +408,7 @@ enum KeyMap {
         keys = [:]
         userKeys = []
         path = p
-        guard let d = FileManager.default.contents(atPath: p), let ini = IniFile(data: d) else { return ["\(p) を読めません"] }
+        guard let d = FileManager.default.contents(atPath: p), let ini = IniFile(data: d) else { return [Lang.m("MENU_KEYMAP_CANNOT_READ", "%s を読めません", p)] }
         var used: [Int: String] = [:]
         var warnings: [String] = []
         func take(_ code: Int, _ name: String) -> Bool {

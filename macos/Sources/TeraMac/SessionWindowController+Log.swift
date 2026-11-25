@@ -4,6 +4,7 @@
 import AppKit
 import ObjectiveC
 import TeraCore
+import TeraCore
 
 private var logProgressKey: UInt8 = 0
 
@@ -18,12 +19,12 @@ extension SessionWindowController {
     }
 
     /// FLogOpen から: 「ログ記録中」を作る。HideDialog なら表示しない
-    func showLogProgressWindow(hidden: Bool) {
+    func showLogProgressWindow(showState: Int) {
         closeLogProgressWindow()
         guard let l = teraLog else { return }
         let w = LogProgressWindow(session: self, path: l.path)
         logProgressWindow = w
-        w.start(hidden: hidden)
+        w.start(showState: showState)
     }
 
     /// FLogClose から
@@ -52,8 +53,8 @@ extension SessionWindowController {
                 // ログできない
                 let a = NSAlert()
                 a.alertStyle = .critical
-                a.messageText = "Tera Term: ファイル オープン エラー"
-                a.informativeText = "ログファイルに書き込めません。\n\(r.path)"
+                a.messageText = Lang.t("Tera Term", "MSG_TT_FILE_OPEN_ERROR", "Tera Term: ファイル オープン エラー")
+                a.informativeText = Lang.t("Tera Term", "MSG_LOGFILE_WRITE_ERROR", "ログファイルに書き込めません。\n%s", r.path)
                 a.beginSheetModal(for: w, completionHandler: nil)
             }
         }
@@ -84,8 +85,8 @@ extension SessionWindowController {
             // 選択できないので呼ばれないはず
             let a = NSAlert()
             a.alertStyle = .warning
-            a.messageText = "エラー"
-            a.informativeText = "ログファイルを開けません"
+            a.messageText = Lang.t("Tera Term", "MSG_ERROR", "エラー")
+            a.informativeText = Lang.t("Tera Term", "MSG_COMMENT_LOG_OPEN_ERROR", "ログファイルを開けません")
             a.beginSheetModal(for: w, completionHandler: nil)
             return
         }
@@ -105,8 +106,8 @@ extension SessionWindowController {
             DispatchQueue.main.async {
                 let a = NSAlert()
                 a.alertStyle = .warning
-                a.messageText = "エラー"
-                a.informativeText = "ログファイルを表示できません (\(code))"
+                a.messageText = Lang.t("Tera Term", "MSG_ERROR", "エラー")
+                a.informativeText = Lang.t("Tera Term", "MSG_VIEW_LOGFILE_ERROR", "ログファイルを表示できません (%d)", code)
                 if let w = self?.window { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
             }
         }
@@ -150,8 +151,8 @@ extension SessionWindowController {
         // ts.HideWindow / ts.Minimize でなければ知らせる
         let a = NSAlert()
         a.alertStyle = .critical
-        a.messageText = "Tera Term: ファイル オープン エラー"
-        a.informativeText = "ログファイルに書き込めません。\n\(path)"
+        a.messageText = Lang.t("Tera Term", "MSG_TT_FILE_OPEN_ERROR", "Tera Term: ファイル オープン エラー")
+        a.informativeText = Lang.t("Tera Term", "MSG_LOGFILE_WRITE_ERROR", "ログファイルに書き込めません。\n%s", path)
         if let w = window { a.beginSheetModal(for: w, completionHandler: nil) } else { a.runModal() }
     }
 

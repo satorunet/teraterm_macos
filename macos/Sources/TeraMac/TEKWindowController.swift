@@ -247,22 +247,22 @@ final class TEKWindowController: NSWindowController, NSWindowDelegate {
         guard let w = window else { return }
         var t = TEKWindowSettings.shared
         let alert = NSAlert()
-        alert.messageText = "TEK ウィンドウの設定"
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "キャンセル")
+        alert.messageText = Lang.t("Tera Term", "DLG_WIN_TEK_TITLE", "TEK ウィンドウの設定")
+        alert.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
+        alert.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
         let v = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 90))
         func label(_ s: String, _ y: CGFloat) {
             let l = NSTextField(labelWithString: s)
             l.frame = NSRect(x: 0, y: y, width: 120, height: 20)
             v.addSubview(l)
         }
-        label("文字色:", 62)
-        label("背景色:", 34)
+        label(Lang.m("CONN_TEK_TEXT_COLOR", "文字色:"), 62)
+        label(Lang.m("CONN_TEK_BG_COLOR", "背景色:"), 34)
         let fg = NSColorWell(frame: NSRect(x: 130, y: 60, width: 50, height: 24))
         fg.color = NSColor(tekRGB: t.foreColor)
         let bg = NSColorWell(frame: NSRect(x: 130, y: 32, width: 50, height: 24))
         bg.color = NSColor(tekRGB: t.backColor)
-        let emu = NSButton(checkboxWithTitle: "カラーエミュレーション(&E)".replacingOccurrences(of: "&", with: ""), target: nil, action: nil)
+        let emu = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_WIN_COLOREMU", "カラーエミュレーション(&E)").trimmingCharacters(in: CharacterSet(charactersIn: ":：")), target: nil, action: nil)
         emu.frame = NSRect(x: 0, y: 2, width: 260, height: 20)
         emu.state = t.colorEmulation ? .on : .off
         [fg, bg, emu].forEach { v.addSubview($0) }
@@ -335,19 +335,26 @@ final class TEKWindowController: NSWindowController, NSWindowDelegate {
             i.target = self
             return i
         }
-        let win = NSMenu(title: "ウィンドウ")
+        /// メニューバーの見出し。本家の文言が "ファイル(&F)" の形なら "(F)" を残す (英語の "&File" なら "File")
+        func top(_ key: String, _ def: String) -> String {
+            let s = Lang.t("Tera Term", key, def)
+            let raw = Lang.raw("Tera Term", key) ?? def
+            guard let r = raw.range(of: "\\([&＆][^)）]\\)", options: .regularExpression) else { return s }
+            return s + "(" + String(raw[r].dropFirst(2).prefix(1)) + ")"
+        }
+        let win = NSMenu(title: Lang.t("Tera Term", "TEKMENU_WINDOW", "ウィンドウ"))
         win.delegate = WindowMenuController.shared
         return [
-            ("ファイル(F)", "f", m("ファイル", [it("印刷...", #selector(filePrint(_:)), "p"), .separator(),
-                                              it("終了", #selector(fileExit(_:)), "q")]), nil),
-            ("編集(E)", "e", m("編集", [it("コピー", #selector(editCopy(_:)), "c"), it("画面のコピー", #selector(editCopyScreen(_:))),
-                                      it("貼り付け", #selector(editPaste(_:)), "v"), it("貼り付け<CR>", #selector(editPasteCR(_:)), "r"),
-                                      .separator(), it("画面のクリア", #selector(editClearScreen(_:)))]), nil),
-            ("設定(S)", "s", m("設定", [it("ウィンドウ...", #selector(setupWindow(_:))), it("フォント...", #selector(setupFont(_:)))]), nil),
-            ("VT-ウィンドウ(O)", "o", nil, #selector(vtWindow(_:))),
-            ("ウィンドウ(W)", "w", win, nil),
-            ("ヘルプ(H)", "h", m("ヘルプ", [it("目次", #selector(helpIndex(_:))), .separator(),
-                                         it("Tera Termについて...", #selector(helpAbout(_:)))]), nil),
+            (top("TEKMENU_FILE", "ファイル(&F)"), "f", m(Lang.t("Tera Term", "TEKMENU_FILE", "ファイル"), [it(Lang.t("Tera Term", "TEKMENU_FILE_PRINT", "印刷..."), #selector(filePrint(_:)), "p"), .separator(),
+                                              it(Lang.t("Tera Term", "TEKMENU_FILE_EXIT", "終了"), #selector(fileExit(_:)), "q")]), nil),
+            (top("TEKMENU_EDIT", "編集(&E)"), "e", m(Lang.t("Tera Term", "TEKMENU_EDIT", "編集"), [it(Lang.t("Tera Term", "TEKMENU_EDIT_COPY", "コピー"), #selector(editCopy(_:)), "c"), it(Lang.t("Tera Term", "TEKMENU_EDIT_COPYSCREEN", "画面のコピー"), #selector(editCopyScreen(_:))),
+                                      it(Lang.t("Tera Term", "TEKMENU_EDIT_PASTE", "貼り付け"), #selector(editPaste(_:)), "v"), it(Lang.t("Tera Term", "TEKMENU_EDIT_PASTECR", "貼り付け<CR>"), #selector(editPasteCR(_:)), "r"),
+                                      .separator(), it(Lang.t("Tera Term", "TEKMENU_EDIT_CLSCREEN", "画面のクリア"), #selector(editClearScreen(_:)))]), nil),
+            (top("TEKMENU_SETUP", "設定(&S)"), "s", m(Lang.t("Tera Term", "TEKMENU_SETUP", "設定"), [it(Lang.t("Tera Term", "TEKMENU_SETUP_WINDOW", "ウィンドウ..."), #selector(setupWindow(_:))), it(Lang.t("Tera Term", "TEKMENU_SETUP_FONT", "フォント..."), #selector(setupFont(_:)))]), nil),
+            (top("TEKMENU_VTWIN", "VT-ウィンドウ(&O)"), "o", nil, #selector(vtWindow(_:))),
+            (top("TEKMENU_WINDOW", "ウィンドウ(&W)"), "w", win, nil),
+            (top("TEKMENU_HELP", "ヘルプ(&H)"), "h", m(Lang.t("Tera Term", "TEKMENU_HELP", "ヘルプ"), [it(Lang.t("Tera Term", "TEKMENU_HELP_INDEX", "目次"), #selector(helpIndex(_:))), .separator(),
+                                         it(Lang.t("Tera Term", "TEKMENU_HELP_ABOUT", "Tera Termについて..."), #selector(helpAbout(_:)))]), nil),
         ]
     }()
 

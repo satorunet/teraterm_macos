@@ -1,0 +1,1554 @@
+[
+ {
+  "t": "Quick guide",
+  "items": [
+   {
+    "t": "Quick guide contents",
+    "p": "easy/index.html"
+   },
+   {
+    "t": "Download and install",
+    "p": "easy/install.html"
+   },
+   {
+    "t": "Connect to a server with SSH",
+    "p": "easy/connect-ssh.html"
+   },
+   {
+    "t": "Connect to a serial device",
+    "p": "easy/connect-serial.html"
+   },
+   {
+    "t": "Terminal basics",
+    "p": "easy/terminal.html"
+   },
+   {
+    "t": "Record a log",
+    "p": "easy/log.html"
+   },
+   {
+    "t": "Send and receive files",
+    "p": "easy/files.html"
+   },
+   {
+    "t": "Change the look and the language",
+    "p": "easy/settings.html"
+   },
+   {
+    "t": "Save the hosts you use often",
+    "p": "easy/ttmenu.html"
+   },
+   {
+    "t": "Try a macro",
+    "p": "easy/macro.html"
+   },
+   {
+    "t": "Troubleshooting",
+    "p": "easy/trouble.html"
+   }
+  ]
+ },
+ {
+  "t": "Getting started",
+  "items": [
+   {
+    "t": "What is Tera Term Mac",
+    "p": "about/foreword.html"
+   },
+   {
+    "t": "System requirements",
+    "p": "about/requirements.html"
+   },
+   {
+    "t": "Installing",
+    "p": "about/requirements.html#install"
+   },
+   {
+    "t": "Updating",
+    "p": "about/requirements.html#update"
+   },
+   {
+    "t": "Uninstalling",
+    "p": "uninstall.html"
+   },
+   {
+    "t": "Differences from Windows",
+    "p": "about/module.html"
+   },
+   {
+    "t": "Supported emulations",
+    "p": "about/emulations.html"
+   },
+   {
+    "t": "How to configure",
+    "p": "usage/tips/teraterm_config_howto.html"
+   }
+  ]
+ },
+ {
+  "t": "Connecting",
+  "items": [
+   {
+    "t": "New connection",
+    "p": "menu/file-new.html"
+   },
+   {
+    "t": "Host list",
+    "p": "menu/file-new.html#HostList"
+   },
+   {
+    "t": "Editing the host list",
+    "p": "menu/setup-additional-tcpip_edithistory.html"
+   },
+   {
+    "t": "Connecting with SSH",
+    "p": "usage/ssh.html"
+   },
+   {
+    "t": "SSH settings",
+    "p": "menu/setup-ssh.html"
+   },
+   {
+    "t": "SSH authentication",
+    "p": "menu/setup-sshauth.html"
+   },
+   {
+    "t": "SSH port forwarding",
+    "p": "menu/setup-sshforward.html"
+   },
+   {
+    "t": "Generating SSH keys",
+    "p": "menu/setup-sshkeygenerator.html"
+   },
+   {
+    "t": "known_hosts file",
+    "p": "setup/knownfiles.html"
+   },
+   {
+    "t": "Telnet and TCP/IP settings",
+    "p": "menu/setup-tcpip.html"
+   },
+   {
+    "t": "TCP/IP advanced settings",
+    "p": "menu/setup-additional-tcpip.html"
+   },
+   {
+    "t": "Using ports other than 23",
+    "p": "usage/tips/not_port23.html"
+   },
+   {
+    "t": "Connecting to a serial port",
+    "p": "menu/file-new.html#SerialPort"
+   },
+   {
+    "t": "Serial port settings",
+    "p": "menu/setup-serialport.html"
+   },
+   {
+    "t": "Local shell",
+    "p": "usage/cygwin.html"
+   },
+   {
+    "t": "Local shell settings",
+    "p": "menu/setup-additional-cygwin.html"
+   },
+   {
+    "t": "Connecting through a proxy",
+    "p": "usage/proxy.html"
+   },
+   {
+    "t": "Proxy settings",
+    "p": "menu/setup-proxy.html"
+   },
+   {
+    "t": "TeraTerm Menu",
+    "p": "usage/TTMenu/TTMenu.html"
+   },
+   {
+    "t": "Command line",
+    "p": "commandline/teraterm.html"
+   },
+   {
+    "t": "SSH command line",
+    "p": "commandline/ttssh.html"
+   },
+   {
+    "t": "Proxy command line",
+    "p": "commandline/ttproxy.html"
+   },
+   {
+    "t": "Disconnecting",
+    "p": "menu/file.html#disconnect"
+   }
+  ]
+ },
+ {
+  "t": "Using the terminal",
+  "items": [
+   {
+    "t": "Copy and paste",
+    "p": "menu/edit.html"
+   },
+   {
+    "t": "Copy and paste settings",
+    "p": "menu/setup-additional-copy-and-paste.html"
+   },
+   {
+    "t": "Keyboard and shortcuts",
+    "p": "usage/keyboard.html"
+   },
+   {
+    "t": "Keyboard settings",
+    "p": "menu/setup-keyboard.html"
+   },
+   {
+    "t": "Mouse",
+    "p": "usage/mouse.html"
+   },
+   {
+    "t": "Windows and tabs",
+    "p": "menu/window.html"
+   },
+   {
+    "t": "Window list",
+    "p": "menu/window-window.html"
+   },
+   {
+    "t": "Terminal settings",
+    "p": "menu/setup-terminal.html"
+   },
+   {
+    "t": "Character encodings",
+    "p": "usage/character_encoding.html"
+   },
+   {
+    "t": "Unicode settings",
+    "p": "usage/unicode.html"
+   },
+   {
+    "t": "Encoding settings",
+    "p": "menu/setup-additional-coding.html"
+   },
+   {
+    "t": "Fonts",
+    "p": "menu/setup-font.html"
+   },
+   {
+    "t": "Window and colors",
+    "p": "menu/setup-window.html"
+   },
+   {
+    "t": "Themes and transparency",
+    "p": "usage/transparent.html"
+   },
+   {
+    "t": "Reset and send break",
+    "p": "menu/control.html"
+   },
+   {
+    "t": "Broadcast",
+    "p": "menu/control-broadcast.html"
+   },
+   {
+    "t": "Printing",
+    "p": "menu/file-print.html"
+   },
+   {
+    "t": "TEK window",
+    "p": "menutek/file.html"
+   },
+   {
+    "t": "TEK window settings",
+    "p": "menutek/setup.html"
+   },
+   {
+    "t": "Supported control sequences",
+    "p": "about/ctrlseq.html"
+   },
+   {
+    "t": "[KanjiCode] menu",
+    "p": "ttxplugin/kanjimenu.html"
+   },
+   {
+    "t": "Moving from Windows",
+    "p": "usage/migrate_to_5.html"
+   }
+  ]
+ },
+ {
+  "t": "Menus and dialogs",
+  "items": [
+   {
+    "t": "B-Plus Send",
+    "p": "menu/file-transfer-bplus-send.html"
+   },
+   {
+    "t": "Kermit Get",
+    "p": "menu/file-transfer-kermit-get.html"
+   },
+   {
+    "t": "Kermit Send",
+    "p": "menu/file-transfer-kermit-send.html"
+   },
+   {
+    "t": "Quick-VAN Send",
+    "p": "menu/file-transfer-qv-send.html"
+   },
+   {
+    "t": "XMODEM Receive",
+    "p": "menu/file-transfer-xmodem-recv.html"
+   },
+   {
+    "t": "XMODEM Send",
+    "p": "menu/file-transfer-xmodem-send.html"
+   },
+   {
+    "t": "ZMODEM Send",
+    "p": "menu/file-transfer-zmodem-send.html"
+   },
+   {
+    "t": "Contents of a theme file",
+    "p": "menu/setup-additional-visual-theme.html"
+   },
+   {
+    "t": "Serial port settings",
+    "p": "menu/setup-additional-serialport.html"
+   },
+   {
+    "t": "Setup menu",
+    "p": "menu/setup.html"
+   },
+   {
+    "t": "TEK: Back to VT window",
+    "p": "menutek/vtwindow.html"
+   },
+   {
+    "t": "TEK: Edit menu",
+    "p": "menutek/edit.html"
+   },
+   {
+    "t": "TEK: Font",
+    "p": "menutek/setup-font.html"
+   },
+   {
+    "t": "TEK: Help menu",
+    "p": "menutek/help.html"
+   },
+   {
+    "t": "TEK: Print",
+    "p": "menutek/file-print.html"
+   },
+   {
+    "t": "TEK: Window list",
+    "p": "menutek/window-window.html"
+   },
+   {
+    "t": "TEK: Window menu",
+    "p": "menutek/window.html"
+   },
+   {
+    "t": "TEK: Window settings",
+    "p": "menutek/setup-window.html"
+   }
+  ]
+ },
+ {
+  "t": "Files and logs",
+  "items": [
+   {
+    "t": "Logging",
+    "p": "menu/file-log.html"
+   },
+   {
+    "t": "Logging and log replay",
+    "p": "usage/tips/loging_howto.html"
+   },
+   {
+    "t": "Log settings",
+    "p": "menu/setup-additional-log.html"
+   },
+   {
+    "t": "Sending a file",
+    "p": "menu/file-sendfile.html"
+   },
+   {
+    "t": "Receiving a file",
+    "p": "menu/file-receivefile.html"
+   },
+   {
+    "t": "File transfer protocols",
+    "p": "menu/file-transfer.html"
+   },
+   {
+    "t": "ZMODEM",
+    "p": "menu/file-transfer-zmodem.html"
+   },
+   {
+    "t": "XMODEM",
+    "p": "menu/file-transfer-xmodem.html"
+   },
+   {
+    "t": "YMODEM",
+    "p": "menu/file-transfer-ymodem.html"
+   },
+   {
+    "t": "Kermit",
+    "p": "menu/file-transfer-kermit.html"
+   },
+   {
+    "t": "B-Plus",
+    "p": "menu/file-transfer-bplus.html"
+   },
+   {
+    "t": "Quick-VAN",
+    "p": "menu/file-transfer-qv.html"
+   },
+   {
+    "t": "Sending files with SCP",
+    "p": "menu/file-ssh-scp.html"
+   },
+   {
+    "t": "Drag and drop",
+    "p": "usage/mouse.html#dragdropwindow"
+   },
+   {
+    "t": "Confirming drag and drop",
+    "p": "setup/teraterm-trans.html#draganddrop"
+   },
+   {
+    "t": "Changing the folder",
+    "p": "menu/file-chdir.html"
+   },
+   {
+    "t": "Transfer via another host",
+    "p": "usage/tips/forwarding-files.html"
+   }
+  ]
+ },
+ {
+  "t": "Macros",
+  "items": [
+   {
+    "t": "About macros",
+    "p": "macro/index.html"
+   },
+   {
+    "t": "Running a macro",
+    "p": "macro/howtorun.html"
+   },
+   {
+    "t": "Opening .ttl files",
+    "p": "macro/howtoassoc.html"
+   },
+   {
+    "t": "Macro command line",
+    "p": "macro/commandline.html"
+   },
+   {
+    "t": "TTL language",
+    "p": "macro/syntax/index.html"
+   },
+   {
+    "t": "TTL files",
+    "p": "macro/syntax/file.html"
+   },
+   {
+    "t": "Variables",
+    "p": "macro/syntax/variables.html"
+   },
+   {
+    "t": "Expressions and operators",
+    "p": "macro/syntax/expressions.html"
+   },
+   {
+    "t": "Command list (by category)",
+    "p": "macro/command/index.html"
+   },
+   {
+    "t": "Appendixes",
+    "p": "macro/appendixes/index.html"
+   },
+   {
+    "t": "Error messages",
+    "p": "macro/appendixes/errormessages.html"
+   },
+   {
+    "t": "Newline characters",
+    "p": "macro/appendixes/newline.html"
+   },
+   {
+    "t": "ASCII code table",
+    "p": "macro/appendixes/ascii.html"
+   },
+   {
+    "t": "Mac note: execution speed",
+    "p": "macro/appendixes/speed.html"
+   },
+   {
+    "t": "Mac note: writing paths",
+    "p": "macro/command/makepath.html"
+   },
+   {
+    "t": "Environment variables (Mac)",
+    "p": "macro/command/expandenv.html"
+   },
+   {
+    "t": "Mac note: password files",
+    "p": "macro/command/getpassword.html"
+   },
+   {
+    "t": "Mac note: macro window",
+    "p": "macro/command/show.html"
+   },
+   {
+    "t": "Reconnecting right after disconnect",
+    "p": "macro/appendixes/disconnecttiming.html"
+   },
+   {
+    "t": "Negative integer constants",
+    "p": "macro/appendixes/negative.html"
+   },
+   {
+    "t": "Formats of constants",
+    "p": "macro/syntax/formats.html"
+   },
+   {
+    "t": "Identifiers and reserved words",
+    "p": "macro/syntax/identifiers.html"
+   },
+   {
+    "t": "Line formats",
+    "p": "macro/syntax/lineformats.html"
+   },
+   {
+    "t": "Parameter formats",
+    "p": "macro/syntax/parameter.html"
+   },
+   {
+    "t": "Types",
+    "p": "macro/syntax/types.html"
+   }
+  ]
+ },
+ {
+  "t": "Macro commands",
+  "items": [
+   {
+    "t": "basename",
+    "p": "macro/command/basename.html"
+   },
+   {
+    "t": "beep",
+    "p": "macro/command/beep.html"
+   },
+   {
+    "t": "bplusrecv",
+    "p": "macro/command/bplusrecv.html"
+   },
+   {
+    "t": "bplussend",
+    "p": "macro/command/bplussend.html"
+   },
+   {
+    "t": "break",
+    "p": "macro/command/break.html"
+   },
+   {
+    "t": "bringupbox",
+    "p": "macro/command/bringupbox.html"
+   },
+   {
+    "t": "call",
+    "p": "macro/command/call.html"
+   },
+   {
+    "t": "callmenu",
+    "p": "macro/command/callmenu.html"
+   },
+   {
+    "t": "changedir",
+    "p": "macro/command/changedir.html"
+   },
+   {
+    "t": "checksum16, checksum16file",
+    "p": "macro/command/checksum16.html"
+   },
+   {
+    "t": "checksum32, checksum32file",
+    "p": "macro/command/checksum32.html"
+   },
+   {
+    "t": "checksum8, checksum8file",
+    "p": "macro/command/checksum8.html"
+   },
+   {
+    "t": "clearscreen",
+    "p": "macro/command/clearscreen.html"
+   },
+   {
+    "t": "clipb2var",
+    "p": "macro/command/clipb2var.html"
+   },
+   {
+    "t": "closesbox",
+    "p": "macro/command/closesbox.html"
+   },
+   {
+    "t": "closett",
+    "p": "macro/command/closett.html"
+   },
+   {
+    "t": "code2str",
+    "p": "macro/command/code2str.html"
+   },
+   {
+    "t": "connect",
+    "p": "macro/command/connect.html"
+   },
+   {
+    "t": "continue",
+    "p": "macro/command/continue.html"
+   },
+   {
+    "t": "crc16, crc16file",
+    "p": "macro/command/crc16.html"
+   },
+   {
+    "t": "crc32, crc32file",
+    "p": "macro/command/crc32.html"
+   },
+   {
+    "t": "cygconnect",
+    "p": "macro/command/cygconnect.html"
+   },
+   {
+    "t": "delpassword",
+    "p": "macro/command/delpassword.html"
+   },
+   {
+    "t": "delpassword2",
+    "p": "macro/command/delpassword2.html"
+   },
+   {
+    "t": "delvar",
+    "p": "macro/command/delvar.html"
+   },
+   {
+    "t": "dirname",
+    "p": "macro/command/dirname.html"
+   },
+   {
+    "t": "dirnamebox",
+    "p": "macro/command/dirnamebox.html"
+   },
+   {
+    "t": "disconnect",
+    "p": "macro/command/disconnect.html"
+   },
+   {
+    "t": "dispstr",
+    "p": "macro/command/dispstr.html"
+   },
+   {
+    "t": "do, loop",
+    "p": "macro/command/doloop.html"
+   },
+   {
+    "t": "enablekeyb",
+    "p": "macro/command/enablekeyb.html"
+   },
+   {
+    "t": "end",
+    "p": "macro/command/end.html"
+   },
+   {
+    "t": "exec",
+    "p": "macro/command/exec.html"
+   },
+   {
+    "t": "execcmnd",
+    "p": "macro/command/execcmnd.html"
+   },
+   {
+    "t": "exit",
+    "p": "macro/command/exit.html"
+   },
+   {
+    "t": "fileclose",
+    "p": "macro/command/fileclose.html"
+   },
+   {
+    "t": "fileconcat",
+    "p": "macro/command/fileconcat.html"
+   },
+   {
+    "t": "filecopy",
+    "p": "macro/command/filecopy.html"
+   },
+   {
+    "t": "filecreate",
+    "p": "macro/command/filecreate.html"
+   },
+   {
+    "t": "filedelete",
+    "p": "macro/command/filedelete.html"
+   },
+   {
+    "t": "filelock",
+    "p": "macro/command/filelock.html"
+   },
+   {
+    "t": "filemarkptr",
+    "p": "macro/command/filemarkptr.html"
+   },
+   {
+    "t": "filenamebox",
+    "p": "macro/command/filenamebox.html"
+   },
+   {
+    "t": "fileopen",
+    "p": "macro/command/fileopen.html"
+   },
+   {
+    "t": "fileread",
+    "p": "macro/command/fileread.html"
+   },
+   {
+    "t": "filereadln",
+    "p": "macro/command/filereadln.html"
+   },
+   {
+    "t": "filerename",
+    "p": "macro/command/filerename.html"
+   },
+   {
+    "t": "filesearch",
+    "p": "macro/command/filesearch.html"
+   },
+   {
+    "t": "fileseek",
+    "p": "macro/command/fileseek.html"
+   },
+   {
+    "t": "fileseekback",
+    "p": "macro/command/fileseekback.html"
+   },
+   {
+    "t": "filestat",
+    "p": "macro/command/filestat.html"
+   },
+   {
+    "t": "filestrseek",
+    "p": "macro/command/filestrseek.html"
+   },
+   {
+    "t": "filestrseek2",
+    "p": "macro/command/filestrseek2.html"
+   },
+   {
+    "t": "filetruncate",
+    "p": "macro/command/filetruncate.html"
+   },
+   {
+    "t": "fileunlock",
+    "p": "macro/command/fileunlock.html"
+   },
+   {
+    "t": "filewrite",
+    "p": "macro/command/filewrite.html"
+   },
+   {
+    "t": "filewriteln",
+    "p": "macro/command/filewriteln.html"
+   },
+   {
+    "t": "findfirst",
+    "p": "macro/command/findoperations.html"
+   },
+   {
+    "t": "flushrecv",
+    "p": "macro/command/flushrecv.html"
+   },
+   {
+    "t": "foldercreate",
+    "p": "macro/command/foldercreate.html"
+   },
+   {
+    "t": "folderdelete",
+    "p": "macro/command/folderdelete.html"
+   },
+   {
+    "t": "foldersearch",
+    "p": "macro/command/foldersearch.html"
+   },
+   {
+    "t": "for, next",
+    "p": "macro/command/fornext.html"
+   },
+   {
+    "t": "getdate",
+    "p": "macro/command/getdate.html"
+   },
+   {
+    "t": "getdir",
+    "p": "macro/command/getdir.html"
+   },
+   {
+    "t": "getenv",
+    "p": "macro/command/getenv.html"
+   },
+   {
+    "t": "getfileattr",
+    "p": "macro/command/getfileattr.html"
+   },
+   {
+    "t": "gethostname",
+    "p": "macro/command/gethostname.html"
+   },
+   {
+    "t": "getipv4addr",
+    "p": "macro/command/getipv4addr.html"
+   },
+   {
+    "t": "getipv6addr",
+    "p": "macro/command/getipv6addr.html"
+   },
+   {
+    "t": "getmodemstatus",
+    "p": "macro/command/getmodemstatus.html"
+   },
+   {
+    "t": "getpassword2",
+    "p": "macro/command/getpassword2.html"
+   },
+   {
+    "t": "getspecialfolder",
+    "p": "macro/command/getspecialfolder.html"
+   },
+   {
+    "t": "gettime",
+    "p": "macro/command/gettime.html"
+   },
+   {
+    "t": "gettitle",
+    "p": "macro/command/gettitle.html"
+   },
+   {
+    "t": "getttdir",
+    "p": "macro/command/getttdir.html"
+   },
+   {
+    "t": "getttpos",
+    "p": "macro/command/getttpos.html"
+   },
+   {
+    "t": "getver",
+    "p": "macro/command/getver.html"
+   },
+   {
+    "t": "goto",
+    "p": "macro/command/goto.html"
+   },
+   {
+    "t": "if, then, elseif, else, endif",
+    "p": "macro/command/ifthenelseif.html"
+   },
+   {
+    "t": "ifdefined",
+    "p": "macro/command/ifdefined.html"
+   },
+   {
+    "t": "include",
+    "p": "macro/command/include.html"
+   },
+   {
+    "t": "inputbox",
+    "p": "macro/command/inputbox.html"
+   },
+   {
+    "t": "int2str",
+    "p": "macro/command/int2str.html"
+   },
+   {
+    "t": "intdim",
+    "p": "macro/command/intdim.html"
+   },
+   {
+    "t": "ispassword",
+    "p": "macro/command/ispassword.html"
+   },
+   {
+    "t": "ispassword2",
+    "p": "macro/command/ispassword2.html"
+   },
+   {
+    "t": "kmtfinish",
+    "p": "macro/command/kmtfinish.html"
+   },
+   {
+    "t": "kmtget",
+    "p": "macro/command/kmtget.html"
+   },
+   {
+    "t": "kmtrecv",
+    "p": "macro/command/kmtrecv.html"
+   },
+   {
+    "t": "kmtsend",
+    "p": "macro/command/kmtsend.html"
+   },
+   {
+    "t": "listbox",
+    "p": "macro/command/listbox.html"
+   },
+   {
+    "t": "loadkeymap",
+    "p": "macro/command/loadkeymap.html"
+   },
+   {
+    "t": "logautoclosemode",
+    "p": "macro/command/logautoclosemode.html"
+   },
+   {
+    "t": "logclose",
+    "p": "macro/command/logclose.html"
+   },
+   {
+    "t": "loginfo",
+    "p": "macro/command/loginfo.html"
+   },
+   {
+    "t": "logopen",
+    "p": "macro/command/logopen.html"
+   },
+   {
+    "t": "logpause",
+    "p": "macro/command/logpause.html"
+   },
+   {
+    "t": "logrotate",
+    "p": "macro/command/logrotate.html"
+   },
+   {
+    "t": "logstart",
+    "p": "macro/command/logstart.html"
+   },
+   {
+    "t": "logwrite",
+    "p": "macro/command/logwrite.html"
+   },
+   {
+    "t": "messagebox",
+    "p": "macro/command/messagebox.html"
+   },
+   {
+    "t": "mpause",
+    "p": "macro/command/mpause.html"
+   },
+   {
+    "t": "passwordbox",
+    "p": "macro/command/passwordbox.html"
+   },
+   {
+    "t": "pause",
+    "p": "macro/command/pause.html"
+   },
+   {
+    "t": "quickvanrecv",
+    "p": "macro/command/quickvanrecv.html"
+   },
+   {
+    "t": "quickvansend",
+    "p": "macro/command/quickvansend.html"
+   },
+   {
+    "t": "random",
+    "p": "macro/command/random.html"
+   },
+   {
+    "t": "recvfile",
+    "p": "macro/command/recvfile.html"
+   },
+   {
+    "t": "recvln",
+    "p": "macro/command/recvln.html"
+   },
+   {
+    "t": "redim",
+    "p": "macro/command/redim.html"
+   },
+   {
+    "t": "regexoption",
+    "p": "macro/command/regexoption.html"
+   },
+   {
+    "t": "restoresetup",
+    "p": "macro/command/restoresetup.html"
+   },
+   {
+    "t": "return",
+    "p": "macro/command/return.html"
+   },
+   {
+    "t": "rotateleft",
+    "p": "macro/command/rotateleft.html"
+   },
+   {
+    "t": "rotateright",
+    "p": "macro/command/rotateright.html"
+   },
+   {
+    "t": "scprecv",
+    "p": "macro/command/scprecv.html"
+   },
+   {
+    "t": "scpsend",
+    "p": "macro/command/scpsend.html"
+   },
+   {
+    "t": "send",
+    "p": "macro/command/send.html"
+   },
+   {
+    "t": "sendbinary",
+    "p": "macro/command/sendbinary.html"
+   },
+   {
+    "t": "sendbreak",
+    "p": "macro/command/sendbreak.html"
+   },
+   {
+    "t": "sendbroadcast",
+    "p": "macro/command/sendbroadcast.html"
+   },
+   {
+    "t": "sendfile",
+    "p": "macro/command/sendfile.html"
+   },
+   {
+    "t": "sendkcode",
+    "p": "macro/command/sendkcode.html"
+   },
+   {
+    "t": "sendln",
+    "p": "macro/command/sendln.html"
+   },
+   {
+    "t": "sendlnbroadcast",
+    "p": "macro/command/sendlnbroadcast.html"
+   },
+   {
+    "t": "sendlnmulticast",
+    "p": "macro/command/sendlnmulticast.html"
+   },
+   {
+    "t": "sendmulticast",
+    "p": "macro/command/sendmulticast.html"
+   },
+   {
+    "t": "sendtext",
+    "p": "macro/command/sendtext.html"
+   },
+   {
+    "t": "setbaud",
+    "p": "macro/command/setbaud.html"
+   },
+   {
+    "t": "setdate",
+    "p": "macro/command/setdate.html"
+   },
+   {
+    "t": "setdebug",
+    "p": "macro/command/setdebug.html"
+   },
+   {
+    "t": "setdir",
+    "p": "macro/command/setdir.html"
+   },
+   {
+    "t": "setdlgpos",
+    "p": "macro/command/setdlgpos.html"
+   },
+   {
+    "t": "setdtr",
+    "p": "macro/command/setdtr.html"
+   },
+   {
+    "t": "setecho",
+    "p": "macro/command/setecho.html"
+   },
+   {
+    "t": "setenv",
+    "p": "macro/command/setenv.html"
+   },
+   {
+    "t": "setexitcode",
+    "p": "macro/command/setexitcode.html"
+   },
+   {
+    "t": "setfileattr",
+    "p": "macro/command/setfileattr.html"
+   },
+   {
+    "t": "setflowctrl",
+    "p": "macro/command/setflowctrl.html"
+   },
+   {
+    "t": "setmulticastname",
+    "p": "macro/command/setmulticastname.html"
+   },
+   {
+    "t": "setpassword",
+    "p": "macro/command/setpassword.html"
+   },
+   {
+    "t": "setpassword2",
+    "p": "macro/command/setpassword2.html"
+   },
+   {
+    "t": "setrts",
+    "p": "macro/command/setrts.html"
+   },
+   {
+    "t": "setserialdelaychar",
+    "p": "macro/command/setserialdelaychar.html"
+   },
+   {
+    "t": "setserialdelayline",
+    "p": "macro/command/setserialdelayline.html"
+   },
+   {
+    "t": "setspeed",
+    "p": "macro/command/setspeed.html"
+   },
+   {
+    "t": "setsync",
+    "p": "macro/command/setsync.html"
+   },
+   {
+    "t": "settime",
+    "p": "macro/command/settime.html"
+   },
+   {
+    "t": "settitle",
+    "p": "macro/command/settitle.html"
+   },
+   {
+    "t": "showtt",
+    "p": "macro/command/showtt.html"
+   },
+   {
+    "t": "sprintf",
+    "p": "macro/command/sprintf.html"
+   },
+   {
+    "t": "sprintf2",
+    "p": "macro/command/sprintf2.html"
+   },
+   {
+    "t": "statusbox",
+    "p": "macro/command/statusbox.html"
+   },
+   {
+    "t": "str2code",
+    "p": "macro/command/str2code.html"
+   },
+   {
+    "t": "str2int",
+    "p": "macro/command/str2int.html"
+   },
+   {
+    "t": "strcompare",
+    "p": "macro/command/strcompare.html"
+   },
+   {
+    "t": "strconcat",
+    "p": "macro/command/strconcat.html"
+   },
+   {
+    "t": "strcopy",
+    "p": "macro/command/strcopy.html"
+   },
+   {
+    "t": "strdim",
+    "p": "macro/command/strdim.html"
+   },
+   {
+    "t": "strinsert",
+    "p": "macro/command/strinsert.html"
+   },
+   {
+    "t": "strjoin",
+    "p": "macro/command/strjoin.html"
+   },
+   {
+    "t": "strlen",
+    "p": "macro/command/strlen.html"
+   },
+   {
+    "t": "strmatch",
+    "p": "macro/command/strmatch.html"
+   },
+   {
+    "t": "strremove",
+    "p": "macro/command/strremove.html"
+   },
+   {
+    "t": "strreplace",
+    "p": "macro/command/strreplace.html"
+   },
+   {
+    "t": "strscan",
+    "p": "macro/command/strscan.html"
+   },
+   {
+    "t": "strspecial",
+    "p": "macro/command/strspecial.html"
+   },
+   {
+    "t": "strsplit",
+    "p": "macro/command/strsplit.html"
+   },
+   {
+    "t": "strtrim",
+    "p": "macro/command/strtrim.html"
+   },
+   {
+    "t": "testlink",
+    "p": "macro/command/testlink.html"
+   },
+   {
+    "t": "tolower",
+    "p": "macro/command/tolower.html"
+   },
+   {
+    "t": "toupper",
+    "p": "macro/command/toupper.html"
+   },
+   {
+    "t": "unlink",
+    "p": "macro/command/unlink.html"
+   },
+   {
+    "t": "until, enduntil",
+    "p": "macro/command/until.html"
+   },
+   {
+    "t": "uptime",
+    "p": "macro/command/uptime.html"
+   },
+   {
+    "t": "var2clipb",
+    "p": "macro/command/var2clipb.html"
+   },
+   {
+    "t": "wait",
+    "p": "macro/command/wait.html"
+   },
+   {
+    "t": "wait4all",
+    "p": "macro/command/wait4all.html"
+   },
+   {
+    "t": "waitevent",
+    "p": "macro/command/waitevent.html"
+   },
+   {
+    "t": "waitln",
+    "p": "macro/command/waitln.html"
+   },
+   {
+    "t": "waitn",
+    "p": "macro/command/waitn.html"
+   },
+   {
+    "t": "waitrecv",
+    "p": "macro/command/waitrecv.html"
+   },
+   {
+    "t": "waitregex",
+    "p": "macro/command/waitregex.html"
+   },
+   {
+    "t": "while, endwhile",
+    "p": "macro/command/while.html"
+   },
+   {
+    "t": "xmodemrecv",
+    "p": "macro/command/xmodemrecv.html"
+   },
+   {
+    "t": "xmodemsend",
+    "p": "macro/command/xmodemsend.html"
+   },
+   {
+    "t": "yesnobox",
+    "p": "macro/command/yesnobox.html"
+   },
+   {
+    "t": "ymodemrecv",
+    "p": "macro/command/ymodemrecv.html"
+   },
+   {
+    "t": "ymodemsend",
+    "p": "macro/command/ymodemsend.html"
+   },
+   {
+    "t": "zmodemrecv",
+    "p": "macro/command/zmodemrecv.html"
+   },
+   {
+    "t": "zmodemsend",
+    "p": "macro/command/zmodemsend.html"
+   }
+  ]
+ },
+ {
+  "t": "Settings",
+  "items": [
+   {
+    "t": "Saving settings",
+    "p": "menu/setup-save.html"
+   },
+   {
+    "t": "Loading settings",
+    "p": "menu/setup-restore.html"
+   },
+   {
+    "t": "Opening the settings folder",
+    "p": "menu/setup-directory.html"
+   },
+   {
+    "t": "Folders used",
+    "p": "setup/folder.html"
+   },
+   {
+    "t": "General settings",
+    "p": "menu/setup-general.html"
+   },
+   {
+    "t": "Additional settings",
+    "p": "menu/setup-additional.html"
+   },
+   {
+    "t": "General tab",
+    "p": "menu/setup-additional-general.html"
+   },
+   {
+    "t": "Window tab",
+    "p": "menu/setup-additional-window.html"
+   },
+   {
+    "t": "Visual tab",
+    "p": "menu/setup-additional-visual.html"
+   },
+   {
+    "t": "Theme tab",
+    "p": "menu/setup-additional-theme.html"
+   },
+   {
+    "t": "Terminal tab",
+    "p": "menu/setup-additional-terminal.html"
+   },
+   {
+    "t": "Control sequence tab",
+    "p": "menu/setup-additional-ctrlseq.html"
+   },
+   {
+    "t": "Keyboard tab",
+    "p": "menu/setup-additional-keyboard.html"
+   },
+   {
+    "t": "Mouse tab",
+    "p": "menu/setup-additional-mouse.html"
+   },
+   {
+    "t": "Font tab",
+    "p": "menu/setup-additional-font.html"
+   },
+   {
+    "t": "UI tab (language)",
+    "p": "menu/setup-additional-ui.html"
+   },
+   {
+    "t": "Language files",
+    "p": "setup/lng.html"
+   },
+   {
+    "t": "Loading a key map",
+    "p": "menu/setup-loadkeymap.html"
+   },
+   {
+    "t": "Keyboard file (KEYBOARD.CNF)",
+    "p": "setup/keyboard.html"
+   },
+   {
+    "t": "Settings file (TERATERM.INI)",
+    "p": "setup/teraterm.html"
+   },
+   {
+    "t": "All TERATERM.INI entries",
+    "p": "setup/teraterm-ini.html"
+   },
+   {
+    "t": "Theme files",
+    "p": "setup/theme.html"
+   },
+   {
+    "t": "Menu IDs",
+    "p": "reference/menu_id.html"
+   },
+   {
+    "t": "INI: Communication",
+    "p": "setup/teraterm-com.html"
+   },
+   {
+    "t": "INI: Miscellaneous",
+    "p": "setup/teraterm-misc.html"
+   },
+   {
+    "t": "INI: Printing",
+    "p": "setup/teraterm-prn.html"
+   },
+   {
+    "t": "Log Level",
+    "p": "setup/teraterm-ssh.html"
+   },
+   {
+    "t": "INI: Terminal",
+    "p": "setup/teraterm-term.html"
+   },
+   {
+    "t": "INI: Window",
+    "p": "setup/teraterm-win.html"
+   }
+  ]
+ },
+ {
+  "t": "Troubleshooting",
+  "items": [
+   {
+    "t": "Q & A",
+    "p": "about/qanda.html"
+   },
+   {
+    "t": "Cannot connect to a host",
+    "p": "about/qanda.html#connection"
+   },
+   {
+    "t": "Settings are not kept",
+    "p": "about/qanda.html#save_ini"
+   },
+   {
+    "t": "Log differs from the screen",
+    "p": "about/qanda.html#logfile_garbled"
+   },
+   {
+    "t": "Tips",
+    "p": "usage/tips/index.html"
+   },
+   {
+    "t": "User shortcut keys",
+    "p": "usage/tips/user-shortcutkey.html"
+   },
+   {
+    "t": "Numeric keypad",
+    "p": "usage/tips/about_tenkey.html"
+   },
+   {
+    "t": "Keypad modes",
+    "p": "usage/tips/appkeypad.html"
+   },
+   {
+    "t": "VT100 PF1-PF4 keys",
+    "p": "usage/tips/pf1-pf4key_vt100.html"
+   },
+   {
+    "t": "Dropped data",
+    "p": "usage/tips/data_drop.html"
+   },
+   {
+    "t": "Non-ASCII user names",
+    "p": "usage/tips/login_nonascii.html"
+   },
+   {
+    "t": "VT100 line wrapping",
+    "p": "usage/tips/vt100_wrap.html"
+   },
+   {
+    "t": "Using with vim",
+    "p": "usage/tips/vim.html"
+   },
+   {
+    "t": "XMODEM tips",
+    "p": "usage/tips/xmodem.html"
+   },
+   {
+    "t": "ZMODEM tips",
+    "p": "usage/tips/zmodem.html"
+   },
+   {
+    "t": "Glossary",
+    "p": "about/glossary.html"
+   },
+   {
+    "t": "Tips on B-Plus",
+    "p": "usage/tips/b-plus.html"
+   },
+   {
+    "t": "Tips for Quick-VAN",
+    "p": "usage/tips/quick_van.html"
+   }
+  ]
+ },
+ {
+  "t": "About",
+  "items": [
+   {
+    "t": "Help and Tera Term Mac menus",
+    "p": "menu/help.html"
+   },
+   {
+    "t": "License and copyright",
+    "p": "about/copyright.html"
+   },
+   {
+    "t": "Contacts",
+    "p": "about/contacts.html"
+   },
+   {
+    "t": "Requests",
+    "p": "about/requests.html"
+   },
+   {
+    "t": "Authors",
+    "p": "about/writer.html"
+   },
+   {
+    "t": "Primary Device Attribute",
+    "p": "about/ctrlseq_device_attributes.html"
+   },
+   {
+    "t": "DEC Special Graphics",
+    "p": "about/emulations_dec_special.html"
+   }
+  ]
+ },
+ {
+  "t": "For developers (Mac)",
+  "items": [
+   {
+    "t": "Source layout",
+    "p": "reference/mac-develop.html"
+   },
+   {
+    "t": "Build, test and release",
+    "p": "reference/mac-develop-build.html"
+   },
+   {
+    "t": "UI languages and help",
+    "p": "reference/mac-develop-i18n.html"
+   }
+  ]
+ }
+]

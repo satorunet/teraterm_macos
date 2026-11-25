@@ -7,6 +7,7 @@
 
 import AppKit
 import TeraCore
+import TeraCore
 
 enum DropType { case cancel, scp, sendFile, pasteFilename }
 
@@ -154,7 +155,7 @@ extension SessionWindowController {
                 showDropError("scp send error")
                 return
             }
-            let ok = runScp(args, label: "SCP 送信", file: file) { [weak self] ok in
+            let ok = runScp(args, label: Lang.m("MENU_DROP_SCP_SEND", "SCP 送信"), file: file) { [weak self] ok in
                 guard let self = self else { return }
                 if !ok { self.showDropError("scp send error"); return }
                 self.dropNextFile()
@@ -201,24 +202,25 @@ extension SessionWindowController {
     private func showDropDialog(file: String, remaining: Int, scpEnable: Bool, sendfileEnable: Bool) -> DropDialogResult? {
         let d = dropState
         let a = NSAlert()
-        a.messageText = "Tera Term: ファイル ドラッグ&ドロップ"
-        a.informativeText = "ファイル転送を行いますか？\n\(file)"
+        func tt(_ key: String, _ def: String) -> String { Lang.t("Tera Term", key, def) }
+        a.messageText = tt("DLG_DANDD_TITLE", "Tera Term: ファイル ドラッグ&ドロップ")
+        a.informativeText = tt("DLG_DANDD_TEXT", "ファイル転送を行いますか？") + "\n" + file
 
-        let scp = NSButton(radioButtonWithTitle: "SCP", target: nil, action: nil)
-        let destLabel = NSTextField(labelWithString: "送信先:")
+        let scp = NSButton(radioButtonWithTitle: tt("DLG_DANDD_SCP_RADIO", "SCP"), target: nil, action: nil)
+        let destLabel = NSTextField(labelWithString: tt("DLG_DANDD_SCP_DEST_LABEL", "送信先:"))
         let dest = NSTextField(string: dropSettings.scpSendDir)
-        dest.placeholderString = "空のときはホームディレクトリに送信されます"
+        dest.placeholderString = tt("DLG_DANDD_SCP_DEST_NOTE", "空のときはホームディレクトリに送信されます")
         dest.widthAnchor.constraint(equalToConstant: 260).isActive = true
-        let send = NSButton(radioButtonWithTitle: "ファイル送信（ファイルの内容を貼り付け）", target: nil, action: nil)
-        let binary = NSButton(checkboxWithTitle: "バイナリ", target: nil, action: nil)
-        let paste = NSButton(radioButtonWithTitle: "ファイル名を貼り付け", target: nil, action: nil)
-        let escape = NSButton(checkboxWithTitle: "エスケープ", target: nil, action: nil)
-        let space = NSButton(radioButtonWithTitle: "スペースで区切る", target: nil, action: nil)
-        let newline = NSButton(radioButtonWithTitle: "改行で区切る", target: nil, action: nil)
-        let same = NSButton(checkboxWithTitle: "同じ処理を次の \(remaining - 1) 個のファイルに適用", target: nil, action: nil)
-        let nextDrop = NSButton(checkboxWithTitle: "次のドロップ時、同じ処理を行う", target: nil, action: nil)
-        let dontShow = NSButton(checkboxWithTitle: "次のドロップ時、ダイアログを表示しない", target: nil, action: nil)
-        let note = NSTextField(labelWithString: "このダイアログは、Control を押しながらドロップすると必ず表示されます")
+        let send = NSButton(radioButtonWithTitle: tt("DLG_DANDD_SENDFILE_RADIO", "ファイル送信（ファイルの内容を貼り付け）"), target: nil, action: nil)
+        let binary = NSButton(checkboxWithTitle: tt("DLG_DANDD_SEND_BINARY_CHECK", "バイナリ"), target: nil, action: nil)
+        let paste = NSButton(radioButtonWithTitle: tt("DLG_DANDD_PASTE_RADIO", "ファイル名を貼り付け"), target: nil, action: nil)
+        let escape = NSButton(checkboxWithTitle: tt("DLG_DANDD_PASTE_ESCAPE_CHECK", "エスケープ"), target: nil, action: nil)
+        let space = NSButton(radioButtonWithTitle: tt("DLG_DANDD_PASTE_SPACE_RADIO", "スペースで区切る"), target: nil, action: nil)
+        let newline = NSButton(radioButtonWithTitle: tt("DLG_DANDD_PASTE_NEWLINE_RADIO", "改行で区切る"), target: nil, action: nil)
+        let same = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_DANDD_NEXTFILES", "同じ処理を次の %d 個のファイルに適用", remaining - 1), target: nil, action: nil)
+        let nextDrop = NSButton(checkboxWithTitle: tt("DLG_DANDD_SAME_NEEXTDROP", "次のドロップ時、同じ処理を行う"), target: nil, action: nil)
+        let dontShow = NSButton(checkboxWithTitle: tt("DLG_DANDD_DONTSHOW_NEEXTDROP", "次のドロップ時、ダイアログを表示しない"), target: nil, action: nil)
+        let note = NSTextField(labelWithString: tt("DLG_DANDD_NOTE", "このダイアログは、Control を押しながらドロップすると必ず表示されます"))
         note.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         note.textColor = .secondaryLabelColor
 
@@ -263,8 +265,8 @@ extension SessionWindowController {
         stack.spacing = 6
         stack.frame = NSRect(x: 0, y: 0, width: 380, height: stack.fittingSize.height)
         a.accessoryView = stack
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "キャンセル")
+        a.addButton(withTitle: tt("BTN_OK", "OK"))
+        a.addButton(withTitle: tt("BTN_CANCEL", "キャンセル"))
         a.window.initialFirstResponder = d.dropType == .scp ? dest : nil
 
         guard a.runModal() == .alertFirstButtonReturn else { d.dropType = .cancel; return nil }

@@ -198,10 +198,10 @@ struct ForwardSpec: Equatable {
     var display: String {
         let l = listen.isEmpty ? "" : listen + ":"
         switch kind {
-        case .x11: return "X11 (リモートのXアプリケーションをローカルのXサーバに表示)"
-        case .dynamic: return "ダイナミック " + l + port
-        case .local: return "ローカル " + l + port + " → リモート " + host + ":" + hostPort
-        case .remote: return "リモート " + l + port + " → ローカル " + host + ":" + hostPort
+        case .x11: return Lang.m("CONN_FWD_X11", "X11 (リモートのXアプリケーションをローカルのXサーバに表示)")
+        case .dynamic: return Lang.m("CONN_FWD_DYNAMIC", "ダイナミック %s", l + port)
+        case .local: return Lang.m("CONN_FWD_LOCAL", "ローカル %s → リモート %s:%s", l + port, host, hostPort)
+        case .remote: return Lang.m("CONN_FWD_REMOTE", "リモート %s → ローカル %s:%s", l + port, host, hostPort)
         }
     }
 
@@ -311,17 +311,32 @@ struct ProxySettings: Equatable {
     var sshEnvironment: [String: String] { config?.environment ?? [:] }
 }
 
+extension ProxySettings {
+    /// TTProxy のコマンドライン (-proxy=URL / -noproxy) で defaultProxy を置き換えたもの (この接続だけ)。
+    /// ユーザー名・パスワードも URL のもの (なければ空)。タイムアウト・SocksResolve・Telnet のプロンプトは設定のまま
+    func overridden(by u: ProxyURL?) -> ProxySettings {
+        guard let u = u else { return self }
+        var s = self
+        s.type = u.usesProxy ? u.typeName : "none"
+        s.host = u.host
+        s.port = u.port
+        s.user = u.user
+        s.pass = u.pass
+        return s
+    }
+}
+
 /// 新しい SSH 接続に足す引数 (SessionWindowController.connect から呼ぶ)
 enum SSHSetupArgs {
-    static func forConnection(_ spec: ConnectionSpec) -> [String] {
+    static func forConnection(_ spec: ConnectionSpec, proxy: ProxySettings = ProxySettings.load()) -> [String] {
         guard case .ssh = spec else { return [] }
-        return ProxySettings.load().sshArgs() + SSHSettings.load().sshArgs()
+        return proxy.sshArgs() + SSHSettings.load().sshArgs()
     }
 
     /// ssh を動かすときの環境変数 (プロキシの設定)
-    static func environment(_ spec: ConnectionSpec) -> [String: String] {
+    static func environment(_ spec: ConnectionSpec, proxy: ProxySettings = ProxySettings.load()) -> [String: String] {
         guard case .ssh = spec else { return [:] }
-        return ProxySettings.load().sshEnvironment
+        return proxy.sshEnvironment
     }
 }
 
@@ -417,13 +432,13 @@ final class SSHSetupDialog: SheetDialog {
     private let rwField = SetupUI.field(width: 260)
     private let roField = SetupUI.field(width: 260)
     private let hbField = SetupUI.field(width: 60)
-    private let agentCheck = SetupUI.check("エージェント転送を有効にする(&A)")
-    private let dnsCheck = SetupUI.check("ホストキーの鍵指紋をDNSで確認する(&V)")
-    private let rotationPopup = SetupUI.popup(["無効", "有効", "確認する"])
+    private let agentCheck = SetupUI.check(Lang.t("TTSSH", "DLG_SSHSETUP_FORWARDAGENT", "エージェント転送を有効にする(&A)"))
+    private let dnsCheck = SetupUI.check(Lang.t("TTSSH", "DLG_SSHSETUP_VERIFYHOSTKEYDNS", "ホストキーの鍵指紋をDNSで確認する(&V)"))
+    private let rotationPopup = SetupUI.popup([Lang.t("TTSSH", "DLG_SSHSETUP_HOSTKEY_ROTATION_NO", "無効"), Lang.t("TTSSH", "DLG_SSHSETUP_HOSTKEY_ROTATION_YES", "有効"), Lang.t("TTSSH", "DLG_SSHSETUP_HOSTKEY_ROTATION_ASK", "確認する")])
     private let logField = SetupUI.field(width: 60)
 
     func begin(on w: NSWindow) {
-        panel.title = "TTSSH: 設定"
+        panel.title = Lang.t("TTSSH", "DLG_SSHSETUP_TITLE", "TTSSH: 設定")
         compSlider.numberOfTickMarks = 10
         compSlider.allowsTickMarkValuesOnly = true
         compSlider.integerValue = s.compression
@@ -435,10 +450,10 @@ final class SSHSetupDialog: SheetDialog {
             let enabled = cur.isEmpty ? (defs[key] ?? all) : cur
             return AlgorithmOrderList(enabled: enabled, all: all + (defs[key] ?? []).filter { !all.contains($0) }, border: border)
         }
-        let cipher = list(s.cipherOrder, "cipher", "ciphers", "<以下の暗号アルゴリズムは使用されません>")
-        let kex = list(s.kexOrder, "kex", "kexalgorithms", "<以下の鍵交換アルゴリズムは使用されません>")
-        let hk = list(s.hostKeyOrder, "key", "hostkeyalgorithms", "<以下のホストキーアルゴリズムは使用されません>")
-        let mac = list(s.macOrder, "mac", "macs", "<以下のMACアルゴリズムは使用されません>")
+        let cipher = list(s.cipherOrder, "cipher", "ciphers", Lang.t("TTSSH", "DLG_SSHSETUP_CIPHER_BORDER", "<以下の暗号アルゴリズムは使用されません>"))
+        let kex = list(s.kexOrder, "kex", "kexalgorithms", Lang.t("TTSSH", "DLG_SSHSETUP_KEX_BORDER", "<以下の鍵交換アルゴリズムは使用されません>"))
+        let hk = list(s.hostKeyOrder, "key", "hostkeyalgorithms", Lang.t("TTSSH", "DLG_SSHSETUP_HOST_KEY_BORDER", "<以下のホストキーアルゴリズムは使用されません>"))
+        let mac = list(s.macOrder, "mac", "macs", Lang.t("TTSSH", "DLG_SSHSETUP_MAC_BORDER", "<以下のMACアルゴリズムは使用されません>"))
         lists = [cipher, kex, hk, mac]
         rwField.stringValue = s.knownHostsRW
         roField.stringValue = s.knownHostsRO
@@ -448,30 +463,30 @@ final class SSHSetupDialog: SheetDialog {
         rotationPopup.selectItem(at: max(0, min(2, s.updateHostkeys)))
         logField.stringValue = String(s.logLevel)
 
-        let note = NSTextField(wrappingLabelWithString: "SSH2: '圧縮レベル' が 0 でなければ圧縮が有効になります (OpenSSH は圧縮レベルを選べません)。")
+        let note = NSTextField(wrappingLabelWithString: Lang.m("CONN_COMPRESS_NOTE", "SSH2: '圧縮レベル' が 0 でなければ圧縮が有効になります (OpenSSH は圧縮レベルを選べません)。"))
         note.preferredMaxLayoutWidth = 520
         note.font = .systemFont(ofSize: 11)
         let left = SetupUI.column([
-            SetupUI.row([SetupUI.label("圧縮レベル(&C):"), SetupUI.label("なし"), compSlider, SetupUI.label("最高")]),
+            SetupUI.row([SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_COMPRESS", "圧縮レベル(&C):")), SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_COMPRESS_NONE", "なし")), compSlider, SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_COMPRESS_HIGHEST", "最高"))]),
             note,
-            cipher.view(title: "優先する暗号アルゴリズムの順(&P)", upTitle: "上へ(&1)", downTitle: "下へ(&2)"),
-            kex.view(title: "優先する鍵交換アルゴリズムの順(&E) (SSH2のみ)", upTitle: "上へ(&3)", downTitle: "下へ(&4)"),
-            hk.view(title: "優先するホストキーアルゴリズムの順(&S) (SSH2のみ)", upTitle: "上へ(&5)", downTitle: "下へ(&6)"),
-            mac.view(title: "優先するMACアルゴリズムの順(&D) (SSH2のみ)", upTitle: "上へ(&7)", downTitle: "下へ(&8)"),
+            cipher.view(title: Lang.t("TTSSH", "DLG_SSHSETUP_CIPHER", "優先する暗号アルゴリズムの順(&P)"), upTitle: Lang.t("TTSSH", "DLG_SSHSETUP_CIPHER_UP", "上へ(&1)"), downTitle: Lang.t("TTSSH", "DLG_SSHSETUP_CIPHER_DOWN", "下へ(&2)")),
+            kex.view(title: Lang.t("TTSSH", "DLG_SSHSETUP_KEX", "優先する鍵交換アルゴリズムの順(&E) (SSH2のみ)"), upTitle: Lang.t("TTSSH", "DLG_SSHSETUP_KEX_UP", "上へ(&3)"), downTitle: Lang.t("TTSSH", "DLG_SSHSETUP_KEX_DOWN", "下へ(&4)")),
+            hk.view(title: Lang.t("TTSSH", "DLG_SSHSETUP_HOST_KEY", "優先するホストキーアルゴリズムの順(&S) (SSH2のみ)"), upTitle: Lang.t("TTSSH", "DLG_SSHSETUP_HOST_KEY_UP", "上へ(&5)"), downTitle: Lang.t("TTSSH", "DLG_SSHSETUP_HOST_KEY_DOWN", "下へ(&6)")),
+            mac.view(title: Lang.t("TTSSH", "DLG_SSHSETUP_MAC", "優先するMACアルゴリズムの順(&D) (SSH2のみ)"), upTitle: Lang.t("TTSSH", "DLG_SSHSETUP_MAC_UP", "上へ(&7)"), downTitle: Lang.t("TTSSH", "DLG_SSHSETUP_MAC_DOWN", "下へ(&8)")),
         ], spacing: 8)
         let chooseRW = SetupUI.button("...", target: self, action: #selector(chooseRW))
         let chooseRO = SetupUI.button("...", target: self, action: #selector(chooseRO))
-        let known = SetupUI.box("SSH Known Hosts", SetupUI.grid([
-            [SetupUI.label("読み書き(&W):"), SetupUI.row([rwField, chooseRW])],
-            [SetupUI.label("読み取り専用(&R):"), SetupUI.row([roField, chooseRO])],
+        let known = SetupUI.box(Lang.t("TTSSH", "DLG_SSHSETUP_KNOWNHOST", "SSH Known Hosts"), SetupUI.grid([
+            [SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_KNOWNHOST_RW", "読み書き(&W):")), SetupUI.row([rwField, chooseRW])],
+            [SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_KNOWNHOST_RO", "読み取り専用(&R):")), SetupUI.row([roField, chooseRO])],
         ]))
         let right = SetupUI.column([
             known,
-            SetupUI.row([SetupUI.label("&Keepalive"), hbField, SetupUI.label("秒(0を指定すると無効)")]),
+            SetupUI.row([SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_HEARTBEAT", "&Keepalive")), hbField, SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_HEARTBEAT_UNIT", "秒(0を指定すると無効)"))]),
             agentCheck, dnsCheck,
-            SetupUI.row([SetupUI.label("ホスト公開鍵の自動更新(&N)"), rotationPopup]),
-            SetupUI.row([SetupUI.label("ログレベル(&L)"), logField, SetupUI.label("(0を指定すると無効)")]),
-            SetupUI.label("いずれの変更も次回のセッション以降有効になります."),
+            SetupUI.row([SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_HOSTKEY_ROTATION", "ホスト公開鍵の自動更新(&N)")), rotationPopup]),
+            SetupUI.row([SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_LOGLEVEL", "ログレベル(&L)")), logField, SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_LOGLEVEL_UNIT", "(0を指定すると無効)"))]),
+            SetupUI.label(Lang.t("TTSSH", "DLG_SSHSETUP_NOTICE", "いずれの変更も次回のセッション以降有効になります.")),
         ], spacing: 10)
         layout(SetupUI.row([left, right], spacing: 20, align: .top))
         present(on: w)
@@ -511,18 +526,18 @@ final class SSHSetupDialog: SheetDialog {
 
 final class SSHAuthSetupDialog: SheetDialog {
     private var s = SSHSettings.load()
-    private let noUser = SetupUI.radio("入力しない(&D)")
-    private let defUser = SetupUI.radio("デフォルトユーザ名を使用(&S):")
-    private let logonUser = SetupUI.radio("ログオンユーザ名を使用(&E):")
+    private let noUser = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_NO_USERNAME", "入力しない(&D)"))
+    private let defUser = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_DEFAULT_USERNAME", "デフォルトユーザ名を使用(&S):"))
+    private let logonUser = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_LOGON_USERNAME", "ログオンユーザ名を使用(&E):"))
     private let userField = SetupUI.field(width: 180)
-    private let mPassword = SetupUI.radio("プレインパスワードを使う(&L)")
-    private let mKey = SetupUI.radio("&RSA/DSA/ECDSA/ED25519鍵を使う")
-    private let mChallenge = SetupUI.radio("SSH2:キーボードインタラクティブ認証を使う")
-    private let mAgent = SetupUI.radio("ssh-agent を使う (Pageant にあたるもの)")
+    private let mPassword = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD_PASSWORD", "プレインパスワードを使う(&L)"))
+    private let mKey = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD_RSA", "&RSA/DSA/ECDSA/ED25519鍵を使う"))
+    private let mChallenge = SetupUI.radio("SSH2:" + Lang.t("TTSSH", "DLG_AUTH_METHOD_CHALLENGE2", "キーボードインタラクティブ認証を使う"))
+    private let mAgent = SetupUI.radio(Lang.m("CONN_USE_SSH_AGENT", "ssh-agent を使う (Pageant にあたるもの)"))
     private let keyField = SetupUI.field(width: 240)
 
     func begin(on w: NSWindow) {
-        panel.title = "TTSSH: 認証設定"
+        panel.title = Lang.t("TTSSH", "DLG_AUTHSETUP_TITLE", "TTSSH: 認証設定")
         for b in [noUser, defUser, logonUser] { b.target = self; b.action = #selector(userTypeChanged(_:)) }
         for b in [mPassword, mKey, mChallenge, mAgent] { b.target = self; b.action = #selector(methodChanged(_:)) }
         [noUser, defUser, logonUser][max(0, min(2, s.defaultUserType))].state = .on
@@ -534,15 +549,15 @@ final class SSHAuthSetupDialog: SheetDialog {
         default: mPassword.state = .on
         }
         keyField.stringValue = s.defaultRSAPrivateKeyFile.isEmpty ? ConnHistory.lastKeyFile : s.defaultRSAPrivateKeyFile
-        let keyButton = SetupUI.button("秘密鍵(&K)...", target: self, action: #selector(chooseKey))
-        let userBox = SetupUI.box("ユーザ名", SetupUI.column([
+        let keyButton = SetupUI.button(Lang.m("CONN_PRIVATE_KEY_BUTTON", "秘密鍵(&K)..."), target: self, action: #selector(chooseKey))
+        let userBox = SetupUI.box(Lang.t("TTSSH", "DLG_AUTHSETUP_USERNAME", "ユーザ名"), SetupUI.column([
             noUser, SetupUI.row([defUser, userField]),
-            SetupUI.row([logonUser, SetupUI.label("現在のログオンユーザ名 \"\(NSUserName())\"")]),
+            SetupUI.row([logonUser, SetupUI.label(Lang.t("TTSSH", "DLG_AUTHSETUP_LOGON_USERNAME_TEXT", "現在のログオンユーザ名 \"%s\"", NSUserName()))]),
         ]))
-        let methodBox = SetupUI.box("認証方式", SetupUI.column([
+        let methodBox = SetupUI.box(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD", "認証方式"), SetupUI.column([
             mPassword, mKey, SetupUI.indent(SetupUI.row([keyButton, keyField])), mChallenge, mAgent,
         ]))
-        layout(SetupUI.column([SetupUI.label("通常使用する認証設定:"), userBox, methodBox], spacing: 10))
+        layout(SetupUI.column([SetupUI.label(Lang.t("TTSSH", "DLG_AUTHSETUP_BANNER", "通常使用する認証設定:")), userBox, methodBox], spacing: 10))
         userTypeChanged(nil)
         methodChanged(nil)
         present(on: w)
@@ -583,11 +598,11 @@ final class SSHForwardSetupDialog: SheetDialog, NSTableViewDataSource, NSTableVi
     private var s = SSHSettings.load()
     private var specs: [ForwardSpec] = []
     private let table = NSTableView()
-    private let gatewayCheck = SetupUI.check("ローカルのポートは他のホストからの接続を受け入れる(&C)")
-    private let xCheck = SetupUI.check("リモートの&XアプリケーションをローカルのXサーバに表示する")
+    private let gatewayCheck = SetupUI.check(Lang.t("TTSSH", "DLG_FWDSETUP_CHECKIDENTITY", "ローカルのポートは他のホストからの接続を受け入れる(&C)"))
+    private let xCheck = SetupUI.check(Lang.t("TTSSH", "DLG_FWDSETUP_XAPP", "リモートの&XアプリケーションをローカルのXサーバに表示する"))
 
     func begin(on w: NSWindow) {
-        panel.title = "TTSSH: ポート転送設定"
+        panel.title = Lang.t("TTSSH", "DLG_FWDSETUP_TITLE", "TTSSH: ポート転送設定")
         let all = ForwardSpec.parseList(s.defaultForwarding)
         specs = all.filter { $0.kind != .x11 }
         xCheck.state = all.contains { $0.kind == .x11 } ? .on : .off
@@ -608,12 +623,12 @@ final class SSHForwardSetupDialog: SheetDialog, NSTableViewDataSource, NSTableVi
         sc.widthAnchor.constraint(equalToConstant: 430).isActive = true
         sc.heightAnchor.constraint(equalToConstant: 120).isActive = true
         let buttons = SetupUI.column([
-            SetupUI.button("追加(&A)...", target: self, action: #selector(add)),
-            SetupUI.button("編集(&E)...", target: self, action: #selector(edit)),
-            SetupUI.button("削除(&R)", target: self, action: #selector(remove)),
+            SetupUI.button(Lang.t("TTSSH", "DLG_FWDSETUP_ADD", "追加(&A)..."), target: self, action: #selector(add)),
+            SetupUI.button(Lang.t("TTSSH", "DLG_FWDSETUP_EDIT", "編集(&E)..."), target: self, action: #selector(edit)),
+            SetupUI.button(Lang.t("TTSSH", "DLG_FWDSETUP_REMOVE", "削除(&R)"), target: self, action: #selector(remove)),
         ])
-        let fwdBox = SetupUI.box("ポート転送(&P)", SetupUI.column([SetupUI.row([sc, buttons], align: .top), gatewayCheck]))
-        let xBox = SetupUI.box("Xクライアントアプリケーションの転送", xCheck)
+        let fwdBox = SetupUI.box(Lang.t("TTSSH", "DLG_FWDSETUP_LIST", "ポート転送(&P)"), SetupUI.column([SetupUI.row([sc, buttons], align: .top), gatewayCheck]))
+        let xBox = SetupUI.box(Lang.t("TTSSH", "DLG_FWDSETUP_X", "Xクライアントアプリケーションの転送"), xCheck)
         layout(SetupUI.column([fwdBox, xBox], spacing: 10))
         present(on: w)
     }
@@ -659,9 +674,9 @@ final class SSHForwardSetupDialog: SheetDialog, NSTableViewDataSource, NSTableVi
 final class ForwardEditDialog: SheetDialog {
     private var spec: ForwardSpec
     private var completion: ((ForwardSpec?) -> Void)?
-    private let rLocal = SetupUI.radio("ローカルのポート(&L)")
-    private let rRemote = SetupUI.radio("リモートサーバのポート(&R)")
-    private let rDynamic = SetupUI.radio("ダイナミックポート(&D)")
+    private let rLocal = SetupUI.radio(Lang.t("TTSSH", "DLG_FWD_LOCAL_PORT", "ローカルのポート(&L)"))
+    private let rRemote = SetupUI.radio(Lang.t("TTSSH", "DLG_FWD_REMOTE_PORT", "リモートサーバのポート(&R)"))
+    private let rDynamic = SetupUI.radio(Lang.t("TTSSH", "DLG_FWD_DYNAMIC_PORT", "ダイナミックポート(&D)"))
     private let lPort = SetupUI.field(width: 70), lListen = SetupUI.field(width: 110), lHost = SetupUI.field(width: 150), lHostPort = SetupUI.field(width: 70)
     private let rPort = SetupUI.field(width: 70), rListen = SetupUI.field(width: 110), rHost = SetupUI.field(width: 150), rHostPort = SetupUI.field(width: 70)
     private let dPort = SetupUI.field(width: 70), dListen = SetupUI.field(width: 110)
@@ -670,7 +685,7 @@ final class ForwardEditDialog: SheetDialog {
 
     func begin(on w: NSWindow, completion: @escaping (ForwardSpec?) -> Void) {
         self.completion = completion
-        panel.title = "SSHポート転送"
+        panel.title = Lang.t("TTSSH", "DLG_FWD_TITLE", "SSHポート転送")
         for b in [rLocal, rRemote, rDynamic] { b.target = self; b.action = #selector(kindChanged(_:)) }
         switch spec.kind {
         case .remote: rRemote.state = .on; (rPort.stringValue, rListen.stringValue, rHost.stringValue, rHostPort.stringValue) = (spec.port, spec.listen, spec.host, spec.hostPort)
@@ -678,12 +693,12 @@ final class ForwardEditDialog: SheetDialog {
         default: rLocal.state = .on; (lPort.stringValue, lListen.stringValue, lHost.stringValue, lHostPort.stringValue) = (spec.port, spec.listen, spec.host, spec.hostPort)
         }
         let body = SetupUI.column([
-            SetupUI.label("ポート転送を行う向きの選択:"),
-            SetupUI.row([rLocal, lPort, SetupUI.label("リッスン(&I)"), lListen]),
-            SetupUI.indent(SetupUI.row([SetupUI.label("リモート側ホスト(&M)"), lHost, SetupUI.label("ポート(&P)"), lHostPort])),
-            SetupUI.row([rRemote, rPort, SetupUI.label("リッスン(&S)"), rListen]),
-            SetupUI.indent(SetupUI.row([SetupUI.label("ローカル側ホスト(&A)"), rHost, SetupUI.label("ポート(&O)"), rHostPort])),
-            SetupUI.row([rDynamic, dPort, SetupUI.label("リッスン(&T)"), dListen]),
+            SetupUI.label(Lang.t("TTSSH", "DLG_FWD_BANNER", "ポート転送を行う向きの選択:")),
+            SetupUI.row([rLocal, lPort, SetupUI.label(Lang.t("TTSSH", "DLG_FWD_LOCAL_LISTEN", "リッスン(&I)")), lListen]),
+            SetupUI.indent(SetupUI.row([SetupUI.label(Lang.t("TTSSH", "DLG_FWD_LOCAL_REMOTE", "リモート側ホスト(&M)")), lHost, SetupUI.label(Lang.t("TTSSH", "DLG_FWD_LOCAL_REMOTE_PORT", "ポート(&P)")), lHostPort])),
+            SetupUI.row([rRemote, rPort, SetupUI.label(Lang.t("TTSSH", "DLG_FWD_REMOTE_LISTEN", "リッスン(&S)")), rListen]),
+            SetupUI.indent(SetupUI.row([SetupUI.label(Lang.t("TTSSH", "DLG_FWD_REMOTE_LOCAL", "ローカル側ホスト(&A)")), rHost, SetupUI.label(Lang.t("TTSSH", "DLG_FWD_REMOTE_LOCAL_PORT", "ポート(&O)")), rHostPort])),
+            SetupUI.row([rDynamic, dPort, SetupUI.label(Lang.t("TTSSH", "DLG_FWD_DYNAMIC_LISTEN", "リッスン(&T)")), dListen]),
         ], spacing: 8)
         layout(body)
         kindChanged(nil)
@@ -727,17 +742,17 @@ final class SSHKeyGenDialog: SheetDialog {
     private let passField = SetupUI.secure(width: 220)
     private let pass2Field = SetupUI.secure(width: 220)
     private let commentField = SetupUI.field(width: 220)
-    private let bcryptCheck = SetupUI.check("bcrypt KDF形式(&K)")
+    private let bcryptCheck = SetupUI.check(Lang.t("TTSSH", "DLG_KEYGEN_BCRYPT_KDF", "bcrypt KDF形式(&K)"))
     private let roundsField = SetupUI.field(width: 50)
-    private let savePub = SetupUI.button("公開鍵の保存(&I)")
-    private let savePriv = SetupUI.button("秘密鍵の保存(&P)")
+    private let savePub = SetupUI.button(Lang.t("TTSSH", "DLG_KEYGEN_SAVEPUBLIC", "公開鍵の保存(&I)"))
+    private let savePriv = SetupUI.button(Lang.t("TTSSH", "DLG_KEYGEN_SAVEPRIVATE", "秘密鍵の保存(&P)"))
     private var tmpDir: String?
     private var generatedType = "rsa"
 
     func begin(on w: NSWindow) {
-        panel.title = "TTSSH: 鍵生成"
-        okButton.title = "生成"
-        cancelButton.title = "閉じる"
+        panel.title = Lang.t("TTSSH", "DLG_KEYGEN_TITLE", "TTSSH: 鍵生成")
+        okButton.title = Lang.t("TTSSH", "DLG_KEYGEN_GENERATE", "生成")
+        cancelButton.title = Lang.t("TTSSH", "BTN_CLOSE", "閉じる")
         radios = types.map { SetupUI.radio($0.0, target: self, action: #selector(typeChanged(_:))) }
         radios[0].state = .on
         bitsField.stringValue = "3072"
@@ -748,18 +763,18 @@ final class SSHKeyGenDialog: SheetDialog {
         savePub.target = self; savePub.action = #selector(savePublic)
         savePriv.target = self; savePriv.action = #selector(savePrivate)
         savePub.isEnabled = false; savePriv.isEnabled = false
-        let typeBox = SetupUI.box("鍵の種類", SetupUI.column([
+        let typeBox = SetupUI.box(Lang.t("TTSSH", "DLG_KEYGEN_KEYTYPE", "鍵の種類"), SetupUI.column([
             SetupUI.row(Array(radios[0..<2])), SetupUI.row(Array(radios[2..<4])), SetupUI.row(Array(radios[4..<6])),
         ]))
         let body = SetupUI.column([
-            SetupUI.row([typeBox, SetupUI.column([SetupUI.label("ビット数(&B):"), bitsField])], align: .top),
+            SetupUI.row([typeBox, SetupUI.column([SetupUI.label(Lang.t("TTSSH", "DLG_KEYGEN_BITS", "ビット数(&B):")), bitsField])], align: .top),
             progress,
             SetupUI.grid([
-                [SetupUI.label("鍵のパスフレーズ:"), passField],
-                [SetupUI.label("パスフレーズの確認:"), pass2Field],
-                [SetupUI.label("コメント(&O):"), commentField],
+                [SetupUI.label(Lang.t("TTSSH", "DLG_KEYGEN_PASSPHRASE", "鍵のパスフレーズ:")), passField],
+                [SetupUI.label(Lang.t("TTSSH", "DLG_KEYGEN_PASSPHRASE2", "パスフレーズの確認:")), pass2Field],
+                [SetupUI.label(Lang.t("TTSSH", "DLG_KEYGEN_COMMENT", "コメント(&O):")), commentField],
             ]),
-            SetupUI.row([bcryptCheck, SetupUI.label("ラウンド数(&N):"), roundsField]),
+            SetupUI.row([bcryptCheck, SetupUI.label(Lang.t("TTSSH", "DLG_KEYGEN_BCRYPT_ROUNDS", "ラウンド数(&N):")), roundsField]),
             SetupUI.row([savePub, savePriv]),
         ], spacing: 10)
         layout(body)
@@ -779,7 +794,7 @@ final class SSHKeyGenDialog: SheetDialog {
     /// 生成 (ssh-keygen を一時フォルダで動かす。保存ボタンでコピーする)
     override func ok() {
         guard passField.stringValue == pass2Field.stringValue else {
-            alert("パスフレーズが一致しません。"); return
+            alert(Lang.t("TTSSH", "MSG_SAVE_PRIVATE_KEY_MISMATCH_ERROR", "パスフレーズが一致しません。")); return
         }
         let i = radios.firstIndex { $0.state == .on } ?? 0
         let t = types[i]
@@ -788,7 +803,7 @@ final class SSHKeyGenDialog: SheetDialog {
         var args = ["-q", "-t", t.1, "-N", passField.stringValue, "-C", commentField.stringValue, "-f", dir + "/id"]
         if t.1 == "rsa" || t.1 == "ecdsa" || t.1 == "dsa" { args += ["-b", bitsField.stringValue] }
         if bcryptCheck.state == .on { args += ["-a", String(max(1, Int(roundsField.stringValue) ?? 16))] } else { args += ["-m", "PEM"] }
-        progress.stringValue = "生成中..."
+        progress.stringValue = Lang.t("TTSSH", "MSG_KEYGEN_GENERATING", "生成中...")
         okButton.isEnabled = false
         DispatchQueue.global().async {
             let p = Process()
@@ -806,12 +821,12 @@ final class SSHKeyGenDialog: SheetDialog {
                 if p.terminationStatus == 0 && FileManager.default.fileExists(atPath: dir + "/id") {
                     self.tmpDir = dir
                     self.generatedType = t.1
-                    self.progress.stringValue = "鍵を生成しました。"
+                    self.progress.stringValue = Lang.t("TTSSH", "MSG_KEYGEN_GENERATED", "鍵を生成しました。")
                     self.savePub.isEnabled = true
                     self.savePriv.isEnabled = true
                 } else {
                     self.progress.stringValue = ""
-                    self.alert("鍵を生成できませんでした。\n" + msg)
+                    self.alert(Lang.m("CONN_KEYGEN_FAILED", "鍵を生成できませんでした。\n%s", msg))
                 }
             }
         }
@@ -833,7 +848,7 @@ final class SSHKeyGenDialog: SheetDialog {
             do {
                 try fm.copyItem(atPath: dir + "/id" + suffix, toPath: u.path)
                 try fm.setAttributes([.posixPermissions: suffix.isEmpty ? 0o600 : 0o644], ofItemAtPath: u.path)
-            } catch { self.alert("保存できませんでした。\n\(error.localizedDescription)") }
+            } catch { self.alert(Lang.m("CONN_SAVE_FAILED", "保存できませんでした。\n%s", error.localizedDescription)) }
         }
     }
 
@@ -855,14 +870,14 @@ final class SSHKeyGenDialog: SheetDialog {
 final class ProxySetupDialog: SheetDialog, NSTextFieldDelegate {
     private var s = ProxySettings.load()
     private let urlField = SetupUI.field(width: 300)
-    private let typePopup = SetupUI.popup(["プロキシを使用しない", "HTTP", "TELNET", "SOCKS4", "SOCKS5"])
+    private let typePopup = SetupUI.popup([Lang.t("TTProxy", "MSG_TYPE_NONE", "プロキシを使用しない"), "HTTP", "TELNET", "SOCKS4", "SOCKS5"])
     private let hostField = SetupUI.field(width: 220)
     private let portField = SetupUI.field(width: 70)
     private let userField = SetupUI.field(width: 160)
     private let passField = SetupUI.secure(width: 160)
 
     func begin(on w: NSWindow) {
-        panel.title = "プロキシの設定"
+        panel.title = Lang.t("TTProxy", "DLG_SETUP_TITLE", "プロキシの設定")
         urlField.isEditable = false
         typePopup.selectItem(at: ProxySettings.types.firstIndex(of: s.type) ?? 0)
         typePopup.target = self; typePopup.action = #selector(changed)
@@ -871,15 +886,15 @@ final class ProxySetupDialog: SheetDialog, NSTextFieldDelegate {
         userField.stringValue = s.user
         passField.stringValue = s.pass
         for f in [hostField, portField, userField, passField] { f.delegate = self }
-        let other = SetupUI.button("その他の設定(&O)...", target: self, action: #selector(otherSettings))
+        let other = SetupUI.button(Lang.t("TTProxy", "DLG_SETUP_OTHER", "その他の設定(&O)..."), target: self, action: #selector(otherSettings))
         layout(SetupUI.column([
             SetupUI.grid([
-                [SetupUI.label("URL表現"), urlField],
-                [SetupUI.label("種類(&T)"), typePopup],
-                [SetupUI.label("ホスト名(&H)"), hostField],
-                [SetupUI.label("ポート番号(&N)"), portField],
-                [SetupUI.label("ユーザ名(&U)"), userField],
-                [SetupUI.label("パスワード(&P)"), passField],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_SETUP_URL", "URL表現")), urlField],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_SETUP_TYPE", "種類(&T)")), typePopup],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_SETUP_HOST", "ホスト名(&H)")), hostField],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_SETUP_PORT", "ポート番号(&N)")), portField],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_SETUP_USER", "ユーザ名(&U)")), userField],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_SETUP_PASS", "パスワード(&P)")), passField],
             ]),
             other,
         ], spacing: 10))
@@ -911,8 +926,8 @@ final class ProxySetupDialog: SheetDialog, NSTextFieldDelegate {
     override func ok() {
         read()
         if s.type != "none" {
-            if s.host.isEmpty { msg("プロキシのホスト名を指定してください。"); return }
-            if !portField.stringValue.isEmpty && s.port <= 0 { msg("ポート番号には正の整数を指定してください。"); return }
+            if s.host.isEmpty { msg(Lang.t("TTProxy", "MSG_EMPTY_HOSTNAME", "プロキシのホスト名を指定してください。")); return }
+            if !portField.stringValue.isEmpty && s.port <= 0 { msg(Lang.t("TTProxy", "MSG_ILLEGAL_PORT", "ポート番号には正の整数を指定してください。")); return }
         }
         s.save()
         close()
@@ -932,32 +947,32 @@ final class ProxyOtherDialog: SheetDialog {
     private var completion: ((ProxySettings?) -> Void)?
     private let timeoutField = SetupUI.field(width: 50)
     private let logField = SetupUI.field(width: 240)
-    private let resolvePopup = SetupUI.popup(["自動的に判断する", "プロキシ側で解決する", "ローカルで解決する"])
+    private let resolvePopup = SetupUI.popup([Lang.t("TTProxy", "DLG_OTHER_RESOLV_AUTO", "自動的に判断する"), Lang.t("TTProxy", "DLG_OTHER_RESOLV_REMOTE", "プロキシ側で解決する"), Lang.t("TTProxy", "DLG_OTHER_RESOLV_LOCAL", "ローカルで解決する")])
     private let prompts = (0..<5).map { _ in SetupUI.field(width: 200) }
 
     init(settings: ProxySettings) { s = settings; super.init() }
 
     func begin(on w: NSWindow, completion: @escaping (ProxySettings?) -> Void) {
         self.completion = completion
-        panel.title = "その他の設定"
+        panel.title = Lang.t("TTProxy", "DLG_OTHER_TITLE", "その他の設定")
         timeoutField.stringValue = String(s.timeout)
         logField.stringValue = s.debugLog
         resolvePopup.selectItem(at: ["auto", "remote", "local"].firstIndex(of: s.resolve.lowercased()) ?? 0)
         let vals = [s.telnetHostnamePrompt, s.telnetUsernamePrompt, s.telnetPasswordPrompt, s.telnetConnectedMessage, s.telnetErrorMessage]
         for (f, v) in zip(prompts, vals) { f.stringValue = v }
-        let refer = SetupUI.button("参照(&F)...", target: self, action: #selector(chooseLog))
+        let refer = SetupUI.button(Lang.t("TTProxy", "DLG_OTHER_REFER", "参照(&F)..."), target: self, action: #selector(chooseLog))
         layout(SetupUI.column([
-            SetupUI.box("共通の設定", SetupUI.grid([
-                [SetupUI.label("接続タイムアウト(&T)"), SetupUI.row([timeoutField, SetupUI.label("秒")])],
-                [SetupUI.label("プロキシとの通信ログ(&L)"), SetupUI.row([logField, refer])],
+            SetupUI.box(Lang.t("TTProxy", "DLG_OTHER_COMMON", "共通の設定"), SetupUI.grid([
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_TIMEOUT", "接続タイムアウト(&T)")), SetupUI.row([timeoutField, SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_SECOND", "秒"))])],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_LOG", "プロキシとの通信ログ(&L)")), SetupUI.row([logField, refer])],
             ])),
-            SetupUI.box("SOCKSプロキシの設定", SetupUI.row([SetupUI.label("名前解決(&R)"), resolvePopup])),
-            SetupUI.box("TELNETプロキシの設定", SetupUI.grid([
-                [SetupUI.label("ホスト名入力プロンプト(&H)"), prompts[0]],
-                [SetupUI.label("ユーザー名入力プロンプト(&U)"), prompts[1]],
-                [SetupUI.label("パスワード入力プロンプト(&P)"), prompts[2]],
-                [SetupUI.label("接続成功メッセージ(&C)"), prompts[3]],
-                [SetupUI.label("接続失敗メッセージ(&E)"), prompts[4]],
+            SetupUI.box(Lang.t("TTProxy", "DLG_OTHER_SOCKS", "SOCKSプロキシの設定"), SetupUI.row([SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_RESOLV", "名前解決(&R)")), resolvePopup])),
+            SetupUI.box(Lang.t("TTProxy", "DLG_OTHER_TELNET", "TELNETプロキシの設定"), SetupUI.grid([
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_HOST", "ホスト名入力プロンプト(&H)")), prompts[0]],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_USER", "ユーザー名入力プロンプト(&U)")), prompts[1]],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_PASS", "パスワード入力プロンプト(&P)")), prompts[2]],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_CONNECT", "接続成功メッセージ(&C)")), prompts[3]],
+                [SetupUI.label(Lang.t("TTProxy", "DLG_OTHER_ERROR", "接続失敗メッセージ(&E)")), prompts[4]],
             ])),
         ], spacing: 10))
         present(on: w)
@@ -965,7 +980,7 @@ final class ProxyOtherDialog: SheetDialog {
 
     @objc private func chooseLog() {
         let p = NSSavePanel()
-        p.title = "ログファイルの選択"
+        p.title = Lang.t("TTProxy", "MSG_LOGFILE_SELECT", "ログファイルの選択")
         p.beginSheetModal(for: panel) { r in if r == .OK, let u = p.url { self.logField.stringValue = u.path } }
     }
 

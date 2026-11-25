@@ -10,14 +10,15 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let panel: NSPanel
     private weak var parent: SessionWindowController?
     private let combo = NSComboBox()
-    private let realtime = NSButton(checkboxWithTitle: "リアルタイム", target: nil, action: nil)
-    private let history = NSButton(checkboxWithTitle: "ヒストリ", target: nil, action: nil)
+    private let realtime = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_BROADCAST_REALTIME", "リアルタイム"), target: nil, action: nil)
+    private let history = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_BROADCAST_HISTORY", "ヒストリ"), target: nil, action: nil)
     private let crlf = NSButton(radioButtonWithTitle: "CRLF", target: nil, action: nil)
     private let cr = NSButton(radioButtonWithTitle: "CR", target: nil, action: nil)
     private let lf = NSButton(radioButtonWithTitle: "LF", target: nil, action: nil)
-    private let enterKey = NSButton(checkboxWithTitle: "Enterキー", target: nil, action: nil)
-    private let parentOnly = NSButton(checkboxWithTitle: "このウィンドウのみに送信", target: nil, action: nil)
-    private let submitLabel = NSTextField(labelWithString: "送信キー:")
+    private let enterKey = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_BROADCAST_ENTER", "Enterキー"), target: nil, action: nil)
+    // 本家は「このプロセスのみに送信」。Mac 版はウインドウ単位なので別の文言
+    private let parentOnly = NSButton(checkboxWithTitle: Lang.m("MENU_BROADCAST_PARENTONLY", "このウィンドウのみに送信"), target: nil, action: nil)
+    private let submitLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_BROADCAST_SUBMIT_KEY_LABEL", "送信キー") + ":")
     private let submitKey = NSPopUpButton()
     private let table = NSTableView()
     private var windows: [SessionWindowController] = []
@@ -43,7 +44,7 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 230),
                         styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
         super.init()
-        panel.title = "Tera Term: コマンドのブロードキャスト"
+        panel.title = Lang.t("Tera Term", "DLG_BROADCAST_TITLE", "Tera Term: コマンドのブロードキャスト")
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.delegate = self
@@ -68,8 +69,8 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         combo.delegate = self
         combo.completes = false
         loadHistory()
-        let send = NSButton(title: "送信", target: self, action: #selector(submit(_:)))
-        let close = NSButton(title: "閉じる", target: self, action: #selector(closePanel(_:)))
+        let send = NSButton(title: Lang.t("Tera Term", "DLG_BROADCAST_SUBMIT", "送信"), target: self, action: #selector(submit(_:)))
+        let close = NSButton(title: Lang.t("Tera Term", "DLG_BROADCAST_CLOSE", "閉じる"), target: self, action: #selector(closePanel(_:)))
         close.keyEquivalent = "\u{1B}"
 
         realtime.state = .on
@@ -97,9 +98,12 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         table.dataSource = self
         table.delegate = self
         let menu = NSMenu()
-        for (t, a) in [("選択ウィンドウを前面へ", #selector(bringFront)), ("選択ウィンドウを最小化", #selector(minimizeSelected)),
-                       ("すべて選択 / すべて選択解除", #selector(toggleAll)), ("選択状態を反転", #selector(invertSelection)),
-                       ("ウィンドウ一覧の更新", #selector(refreshList))] {
+        func tt(_ key: String, _ def: String) -> String { Lang.t("Tera Term", key, def) }
+        let selectAll = tt("CMENU_BROADCAST_SELECT_ALL", "すべて選択") + " / " + tt("CMENU_BROADCAST_UNSELECT_ALL", "すべて選択解除")
+        for (t, a) in [(tt("CMENU_BROADCAST_FOREGROUND", "選択ウィンドウを前面へ"), #selector(bringFront)),
+                       (tt("CMENU_BROADCAST_MINIMIZE", "選択ウィンドウを最小化"), #selector(minimizeSelected)),
+                       (selectAll, #selector(toggleAll)), (tt("CMENU_BROADCAST_INVERSE", "選択状態を反転"), #selector(invertSelection)),
+                       (tt("CMENU_BROADCAST_REFRESH", "ウィンドウ一覧の更新"), #selector(refreshList))] {
             let it = NSMenuItem(title: t, action: a, keyEquivalent: "")
             it.target = self
             menu.addItem(it)
@@ -115,7 +119,7 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let top = NSStackView(views: [combo, send, close])
         let nl = NSStackView(views: [crlf, cr, lf])
         let nlBox = NSBox()
-        nlBox.title = "改行"
+        nlBox.title = Lang.m("MENU_BROADCAST_NEWLINE", "改行")
         nlBox.contentView = nl
         let options = NSStackView(views: [realtime, history, nlBox, enterKey, parentOnly, NSStackView(views: [submitLabel, submitKey])])
         options.orientation = .vertical
@@ -197,12 +201,19 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
     // MARK: - リアルタイム: 入力欄のキーを送り先のウインドウへ
 
     private func installKeyMonitor() {
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp]) { [weak self] e in
             guard let self = self, e.window === self.panel else { return e }
+            if e.type != .keyDown { return self.handleMouse(e) }
             let editing = self.panel.firstResponder is NSText && (self.panel.firstResponder as? NSText)?.delegate === self.combo
             guard editing else { return e }
             if self.realtime.state == .on {
-                if e.modifierFlags.contains(.command) { return e }   // ⌘ の操作 (貼り付けなど) は入力欄で
+                // Shift+Insert (BroadcastEditProc WM_KEYDOWN: intercept Shift-INS) と ⌘V は送り先へ貼り付け (SendCB)
+                let flags = e.modifierFlags.intersection([.shift, .control, .option, .command])
+                if (e.keyCode == 114 && flags == .shift) || (flags == .command && e.charactersIgnoringModifiers?.lowercased() == "v") {
+                    self.pasteToTargets()
+                    return nil
+                }
+                if e.modifierFlags.contains(.command) { return e }   // ほかの ⌘ の操作は入力欄で
                 // IME で変換中: 入力欄 (BroadcastFieldEditor) に渡す。確定した文字は insertText で送り先へ (WM_IME_COMPOSITION)
                 if self.fieldEditor.hasMarkedText() { return e }
                 // 文字のキー (修飾なし・Shift だけ) も入力欄に渡して IME を通す。制御キーなどはそのまま送り先のキー入力に
@@ -221,6 +232,44 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
             }
             return e
         }
+    }
+
+    /// リアルタイムのとき、入力欄での右クリック・中クリックは送り先へ貼り付け (BroadcastEditProc WM_RBUTTONUP / WM_MBUTTONUP)。
+    /// DisablePasteMouseRButton / DisablePasteMouseMButton (CPF_DISABLE_RBUTTON / CPF_DISABLE_MBUTTON) なら何もしない
+    private func handleMouse(_ e: NSEvent) -> NSEvent? {
+        guard realtime.state == .on else { return e }
+        let p = combo.convert(e.locationInWindow, from: nil)
+        guard combo.bounds.contains(p) else { return e }
+        let isRight = e.type == .rightMouseDown || e.type == .rightMouseUp
+        if !isRight && e.buttonNumber != 2 { return e }
+        let disabled = isRight ? !(parent?.settings.rightClickPaste ?? true) : (parent?.settings.disablePasteMouseMButton ?? true)
+        if (e.type == .rightMouseUp || e.type == .otherMouseUp) && !disabled { pasteToTargets() }
+        return nil   // WM_RBUTTONDOWN / WM_MBUTTONDOWN も入力欄には渡さない (コンテキストメニューを出さない)
+    }
+
+    /// SendCB: クリップボードの文字を CBPreparePaste(dlg, FALSE, FALSE, FALSE) で整え、選んだウインドウに文字として送る。
+    /// 改行の確認は各ウインドウではなくこのダイアログで行う (5.3)
+    private func pasteToTargets() {
+        guard var s = NSPasteboard.general.string(forType: .string), !s.isEmpty else { return }
+        let st = parent?.settings ?? TermSettings.load()
+        if st.trimTrailingNLOnPaste {   // CPF_TRIM_TRAILING_NL
+            while let c = s.last, c == "\r" || c == "\n" || c == "\r\n" { s.removeLast() }
+        }
+        // CheckClipboardContentW (AddCR = FALSE)
+        if st.confirmChangePaste {
+            var confirm = s.contains(where: { $0 == "\r" || $0 == "\n" || $0 == "\r\n" })
+            if !confirm, let words = st.confirmChangePasteWords() { confirm = words.contains { s.contains($0) } }
+            if confirm {
+                let f = combo.convert(combo.bounds, to: nil)
+                let near = panel.convertPoint(toScreen: NSPoint(x: f.minX, y: f.minY))
+                guard let edited = PasteConfirmDialog.run(text: s, over: panel, near: near) else { return }
+                s = edited
+            }
+        }
+        // 改行を CR のみに正規化 (ブラケットはしない)
+        s = s.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r")
+        guard !s.isEmpty else { return }
+        for t in targets { t.termView.onSendText?(s) }   // PostMessage WM_CHAR / WM_UNICHAR
     }
 
     /// IME を通す文字のキー
@@ -276,7 +325,10 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
         BroadcastWindow.shared = nil
     }
 
-    // MARK: - ヒストリ (broadcast.log の [BroadcastCommands]、新しい順、重複なし、99 件まで)
+    // MARK: - ヒストリ (broadcast.log の [BroadcastCommands]、新しい順、重複なし、MaxBroadcatHistory (既定 99) 件まで)
+
+    /// HistoryStoreCreate(ts.MaxBroadcatHistory)
+    private var maxHistory: Int { max(0, parent?.settings.maxBroadcatHistory ?? 99) }
 
     private static var historyPath: String { (AppPaths.setupDirectory as NSString).appendingPathComponent("broadcast.log") }
 
@@ -293,14 +345,14 @@ final class BroadcastWindow: NSObject, NSTableViewDataSource, NSTableViewDelegat
 
     private func loadHistory() {
         combo.removeAllItems()
-        combo.addItems(withObjectValues: readHistory())
+        combo.addItems(withObjectValues: Array(readHistory().prefix(maxHistory)))
     }
 
     private func addHistory(_ s: String) {
         guard !s.isEmpty else { return }
         var h = readHistory().filter { $0 != s }
         h.insert(s, at: 0)
-        h = Array(h.prefix(99))
+        h = Array(h.prefix(maxHistory))
         var out = "[BroadcastCommands]\n"
         for (i, c) in h.enumerated() { out += "Command\(i + 1)=\(c)\n" }
         try? out.write(toFile: BroadcastWindow.historyPath, atomically: true, encoding: .utf8)

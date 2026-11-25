@@ -1,4 +1,5 @@
 import AppKit
+import TeraCore
 
 /// 貼り付けの確認 (clipboarddlg.cpp IDD_CLIPBOARD_DIALOG)。
 /// 中身を書き換えてから貼り付けられる。大きさは変えられて、次も同じ大きさで出る (PasteDialogSize)。
@@ -12,7 +13,7 @@ enum PasteConfirmDialog {
         let size = savedSize()
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-        panel.title = "Tera Term: クリップボードの確認"
+        panel.title = Lang.t("Tera Term", "DLG_CLIPBOARD_TITLE", "Tera Term: クリップボードの確認")
         panel.minSize = panel.frameRect(forContentRect: NSRect(origin: .zero, size: defaultSize)).size
 
         let scroll = NSTextView.scrollableTextView()
@@ -28,10 +29,10 @@ enum PasteConfirmDialog {
         tv.isAutomaticSpellingCorrectionEnabled = false
         tv.string = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
 
-        let ok = NSButton(title: "OK", target: nil, action: nil)
+        let ok = NSButton(title: Lang.t("Tera Term", "BTN_OK", "OK"), target: nil, action: nil)
         ok.keyEquivalent = "\r"
         ok.keyEquivalentModifierMask = [.command]   // 改行は文字の編集に使うので OK は ⌘Return
-        let cancel = NSButton(title: "キャンセル", target: nil, action: nil)
+        let cancel = NSButton(title: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), target: nil, action: nil)
         cancel.keyEquivalent = "\u{1B}"
         let handler = Handler()
         ok.target = handler; ok.action = #selector(Handler.ok)

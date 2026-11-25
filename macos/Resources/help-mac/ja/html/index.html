@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<HTML>
+<HEAD>
+<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+<TITLE>Tera Term Mac ヘルプ 目次</TITLE>
+<META http-equiv="Content-Style-Type" content="text/css">
+<link rel="stylesheet" href="./style.css" type="text/css">
+</HEAD>
+<BODY>
+
+<h1 class="center" id="toc">Tera Term Mac ヘルプ 目次</h1>
+
+<p class="center">
+Tera Term の著作者: T. Teranishi (寺西 高)<BR>
+Tera Term: Copyright (C) 1994-1998 T. Teranishi<BR>
+(C) 2004-2026 TeraTerm Project<BR>
+All Rights Reserved.<BR>
+Tera Term Mac の開発: satorunet (Mac 版で追加したコードは MIT License)<BR>
+</p>
+
+<div class="center">
+<IMG SRC="image/icon-teraterm.png" ALT="Tera Term" WIDTH="48" HEIGHT="48">
+</div>
+
+<p>
+Tera Term Mac は、Tera Term を macOS 用に移植したターミナルエミュレーター(通信プログラム)です。<BR>
+Swift / AppKit で作り直しており、Apple Silicon と Intel の Mac で動きます。<BR>
+TeraTerm Project とは関係のない個人の移植(非公式版)です。不具合や要望は本家ではなく、<a href="about/contacts.html">Tera Term Mac の連絡先</a>へお願いします。<BR><BR>
+</p>
+<UL>
+ <LI>シリアルポート接続 (/dev/cu.*)</LI>
+ <LI>TCP/IP (telnet, SSH2) 接続。SSH は macOS の OpenSSH (ssh コマンド) を使います</LI>
+ <LI>ローカルシェル接続 (Mac のシェルを端末で使えます)</LI>
+ <LI>ログ再生</LI>
+ <LI>IPv6 対応</LI>
+ <LI>VT100 端末のエミュレーション (および、VT200, 300 の一部、xterm 互換の 256 色・TrueColor)</LI>
+ <LI>TEK4010 端末のエミュレーション</LI>
+ <LI>ファイル転送プロトコル (Kermit, XMODEM, YMODEM, ZMODEM, B-PLUS, Quick-VAN)</LI>
+ <LI>マクロ言語 (TTL) による自動運転。Windows 版のマクロがほぼそのまま動きます</LI>
+ <LI>TeraTerm Menu (メニューバーに常駐する接続先ランチャー)</LI>
+ <LI>Windows 版の設定ファイル (TERATERM.INI, ttpmenu.ini) の読み込み</LI>
+ <LI>Sparkle による自動アップデート</LI>
+ <LI>文字種、文字幅は、本家 Tera Term と同じ<a href="https://www.unicode.org/versions/Unicode18.0.0/" target="_blank">Unicode 18.0</a>に準拠</LI>
+ <LI>UTF-8をはじめ多くの<a href="usage/character_encoding.html">文字コードを使用可能</a></LI>
+ <LI><a href="setup/lng.html">メッセージカタログ</a> (本家の言語ファイルを使います)</LI>
+</UL>
+
+<p>
+このヘルプは本家 Tera Term のヘルプを元に、Mac 版に合わせて書き直したものです。
+名前付きパイプ接続、CygTerm+、プラグイン (TTX) の追加など、Windows にしかない機能は Mac 版にはありません。
+</p>
+
+
+<div class="topic" id="easy">はじめての方へ</div>
+<UL>
+ <LI><a href="easy/index.html">かんたんマニュアル</a> (画面の写真つきで、インストールから接続・ログ・マクロまで)</LI>
+</UL>
+<BR>
+
+<div class="topic" id="about">Tera Term Mac について</div>
+<UL>
+ <LI><A HREF="about/foreword.html">まえがき</A></LI>
+ <LI><A HREF="usage/migrate_to_5.html">Tera Term 4 から 5 への移行</A></LI>
+ <LI><A HREF="about/module.html">構成要素</A></LI>
+ <LI><A HREF="about/copyright.html">ライセンス・著作権</A></LI>
+ <LI><A HREF="about/requirements.html">動作環境・インストール・アップデート</A></LI>
+ <LI><A HREF="about/emulations.html">エミュレーション</A></LI>
+ <LI><A HREF="about/ctrlseq.html">対応制御シーケンス</A></LI>
+ <LI><A HREF="about/qanda.html">Q &amp; A</A></LI>
+ <LI><A HREF="about/requests.html">要望集</A></LI>
+ <LI><A HREF="about/contacts.html">連絡先</A></LI>
+ <LI><A HREF="about/glossary.html">用語集</A></LI>
+ <LI><A HREF="about/writer.html">執筆者一覧</A></LI>
+</UL>
+
+
+<div class="topic" id="usage">使いかた</div>
+<UL>
+ <LI><A HREF="usage/keyboard.html">キーボード</A></LI>
+ <LI><A HREF="usage/mouse.html">マウス</A></LI>
+ <LI><A HREF="usage/ssh.html">SSH 接続</A></LI>
+ <LI><A HREF="usage/cygwin.html">Cygwin接続</A> (Mac 版ではローカルシェル接続)</LI>
+ <LI><A HREF="usage/proxy.html">Proxy 接続</A></LI>
+ <LI><A HREF="usage/TTMenu/TTMenu.html">TeraTerm Menu</A></LI>
+ <LI><A HREF="usage/unicode.html">Unicode設定</A></LI>
+ <LI><A HREF="usage/transparent.html">look and feelの変更</A></LI>
+ <LI><A HREF="usage/character_encoding.html">使用可能文字コード</A></LI>
+ <LI><A HREF="usage/tips/index.html">ヒント</A></LI>
+   </ul></li>
+</UL>
+
+
+<div class="topic" id="vtwindow">VT window のコマンド</div>
+<UL>
+ <LI><A HREF="menu/file.html">[File] メニュー</A></LI>
+ <LI><A HREF="menu/edit.html">[Edit] メニュー</A></LI>
+ <LI><A HREF="menu/setup.html">[Setup] メニュー</A></LI>
+ <LI><A HREF="menu/control.html">[Control] メニュー</A></LI>
+ <LI><A HREF="menu/window.html">[Window] メニュー</A></LI>
+ <LI><A HREF="menu/help.html">[Help] メニュー</A></LI>
+     <LI><A HREF="ttxplugin/kanjimenu.html">[漢字コード] メニュー</A></LI>
+   </ul></li>
+</UL>
+
+
+<div class="topic" id="tekwindow">TEK window のコマンド</div>
+<UL>
+ <LI><A HREF="menutek/file.html">[File] メニュー</A></LI>
+ <LI><A HREF="menutek/edit.html">[Edit] メニュー</A></LI>
+ <LI><A HREF="menutek/setup.html">[Setup] メニュー</A></LI>
+ <LI><A HREF="menutek/vtwindow.html">[VT-window] コマンド</A></LI>
+ <LI><A HREF="menutek/window.html">[Window] メニュー</A></LI>
+ <LI><A HREF="menutek/help.html">[Help] メニュー</A></LI>
+</UL>
+
+
+<div class="topic" id="commandline">コマンドライン</div>
+<UL>
+ <LI><A HREF="commandline/teraterm.html">Tera Term</A></LI>
+ <LI><A HREF="macro/commandline.html">Tera Term Macro</A>
+ <LI><A HREF="commandline/ttssh.html">TTSSH</A></LI>
+ <LI><A HREF="commandline/ttproxy.html">TTProxy</A></LI>
+   </ul></li>
+</UL>
+
+
+<div class="topic" id="setup">設定ファイル</div>
+<UL>
+ <LI><A HREF="setup/folder.html">設定ファイルが置かれるフォルダ</A></LI>
+ <LI><A HREF="setup/teraterm.html">Tera Term 設定ファイル</A></LI>
+ <LI><A HREF="setup/keyboard.html">キーボード設定ファイル</A></LI>
+ <LI><A HREF="setup/knownfiles.html">TTSSH known_hosts ファイル</A></LI>
+ <LI><A HREF="setup/lng.html">言語ファイル</A></LI>
+ <LI><A HREF="setup/theme.html">テーマファイル</A></LI>
+</UL>
+
+
+<div class="topic" id="reference">参考資料</div>
+<UL>
+ <LI><A HREF="reference/menu_id.html">メニュー ID</A></LI>
+ <LI><A HREF="reference/RE.txt">鬼車 正規表現</A></LI>
+</UL>
+
+</LI>
+  <UL>
+ </UL>
+</UL>
+
+<div class="topic" id="macdevelop">開発者向け (Mac 版)</div>
+<UL>
+ <LI><A HREF="reference/mac-develop.html">ソースの構成</A></LI>
+ <LI><A HREF="reference/mac-develop-build.html">ビルド・テスト・リリース</A></LI>
+ <LI><A HREF="reference/mac-develop-i18n.html">画面の言語とヘルプ</A></LI>
+</UL>
+
+<div class="topic"><A HREF="macro/index.html">MACRO for Tera Term</A></div>
+
+<div class="topic">Keycode</div>
+
+<div class="topic"><A HREF="uninstall.html">アンインストール</A></div>
+
+</BODY>
+</HTML>

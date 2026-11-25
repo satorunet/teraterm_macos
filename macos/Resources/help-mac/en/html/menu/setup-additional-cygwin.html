@@ -1,0 +1,39 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+    <TITLE>Additional settings / "Local Shell" Tab ([Setup] Menu)</title>
+    <META http-equiv="Content-Style-Type" content="text/css">
+    <link rel="stylesheet" href="../style.css" type="text/css">
+  </head>
+
+  <body>
+    <h1><a href="setup-additional.html">Additional settings</a> / "Local Shell" Tab ([Setup] Menu)</h1>
+
+    <p>
+      Configures the shell opened by [File] menu "Local Shell Connection" (&#x2318;G). Changes apply to shells opened afterwards.
+    </p>
+
+    <dl>
+      <dt id="CygTerm">Local shell</dt>
+      <dd>
+	Tera Term Mac starts a macOS shell directly in the terminal.
+	<dl>
+	  <dt>SHELL</dt>
+	  <dd>Path of the shell to start. Use the "..." button to choose one. If empty, the shell in the SHELL environment variable (or /bin/zsh) is used.</dd>
+	  <dt>TERM</dt>
+	  <dd>Value of the TERM environment variable passed to the shell. The default is xterm-256color.</dd>
+	  <dt>ENV_1, ENV_2</dt>
+	  <dd>Environment variables passed to the shell, written as "name=value".</dd>
+	  <dt>LOGIN_SHELL</dt>
+	  <dd>Starts the shell as a login shell.</dd>
+	  <dt>HOME_CHDIR</dt>
+	  <dd>Starts the shell in your home folder.</dd>
+	</dl>
+	<p>These settings are stored in the app's preferences.</p>
+      </dd>
+    </dl>
+
+  </body>
+</html>

@@ -42,8 +42,9 @@ public struct WindowTitleInput: Equatable {
 
 public enum WindowTitle {
     /// DLG_MAIN_TITLE_CONNECTING / DLG_MAIN_TITLE_DISCONNECTED (ja_JP.lng)
-    public static let connectingText = "[接続中...]"
-    public static let disconnectedText = "[未接続]"
+    public static var connectingText: String { Lang.t("Tera Term", "DLG_MAIN_TITLE_CONNECTING", "[接続中...]") }
+    public static var disconnectedText: String { Lang.t("Tera Term", "DLG_MAIN_TITLE_DISCONNECTED", "[未接続]") }
+
 
     /// タイトルとリモートのタイトルを AcceptTitleChangeRequest で合わせたもの (TempTitleWithRemote)
     public static func titleWithRemote(_ i: WindowTitleInput) -> String {

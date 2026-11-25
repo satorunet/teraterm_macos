@@ -23,7 +23,14 @@ public struct TTLLogOptions {
     public var append = false
     public var plainText = false
     public var timestamp = false
-    public var hideDialog = false
+    /// "Logging" ダイアログの表示状態 (tttypes.h enum LogDialogShowState, 23aa80682 #1576)
+    /// 0: SHOWSTATE_HIDDEN 1: SHOWSTATE_MINIMIZED (既定) 2: SHOWSTATE_NORMAL
+    public var dialogShowState = 1
+    /// ダイアログを出さない (以前の LogHideDialog。dialogShowState == 0)
+    public var hideDialog: Bool {
+        get { dialogShowState == 0 }
+        set { if newValue { dialogShowState = 0 } else if dialogShowState == 0 { dialogShowState = 1 } }
+    }
     public var includeScreenBuffer = false
     /// 0: ローカル時刻 1: UTC 2: 経過時間 (ログ開始から) 3: 経過時間 (接続から)
     public var timestampType = 0

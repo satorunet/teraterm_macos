@@ -26,8 +26,8 @@ class SheetDialog: NSObject, NSWindowDelegate {
     let panel: NSPanel
     private var parentWindow: NSWindow?
     var presentsAsWindow = false
-    let okButton = NSButton(title: "OK", target: nil, action: nil)
-    let cancelButton = NSButton(title: "キャンセル", target: nil, action: nil)
+    let okButton = NSButton(title: Lang.t("Tera Term", "BTN_OK", "OK"), target: nil, action: nil)
+    let cancelButton = NSButton(title: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), target: nil, action: nil)
 
     override init() {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
@@ -111,24 +111,24 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     private(set) var historyList = false
     /// /B (Telnet バイナリ): ホスト欄に "host /B" と書いたか、/B 付きの履歴を選んだ
     private(set) var telnetBinary = false
-    private let historyCheck = NSButton(checkboxWithTitle: "ホストリストへ追加", target: nil, action: nil)
+    private let historyCheck = NSButton(checkboxWithTitle: Lang.t("TTSSH", "DLG_HOST_TCPIPHISTORY", "ホストリストへ追加"), target: nil, action: nil)
     private var completion: ((ConnectionSpec?, String?) -> Void)?
 
     private let tcpRadio = NSButton(radioButtonWithTitle: "TCP/IP", target: nil, action: nil)
-    private let serialRadio = NSButton(radioButtonWithTitle: "シリアル", target: nil, action: nil)
-    private let shellRadio = NSButton(radioButtonWithTitle: "ローカルシェル (このMacのターミナル)", target: nil, action: nil)
+    private let serialRadio = NSButton(radioButtonWithTitle: Lang.t("TTSSH", "DLG_HOST_SERIAL", "シリアル"), target: nil, action: nil)
+    private let shellRadio = NSButton(radioButtonWithTitle: Lang.m("CONN_LOCAL_SHELL_RADIO", "ローカルシェル (このMacのターミナル)"), target: nil, action: nil)
 
     private let hostBox = NSComboBox()
     private let sshRadio = NSButton(radioButtonWithTitle: "SSH", target: nil, action: nil)
     private let telnetRadio = NSButton(radioButtonWithTitle: "Telnet", target: nil, action: nil)
-    private let otherRadio = NSButton(radioButtonWithTitle: "その他 (生TCP)", target: nil, action: nil)
+    private let otherRadio = NSButton(radioButtonWithTitle: Lang.m("CONN_OTHER_RAW_TCP", "その他 (生TCP)"), target: nil, action: nil)
     private let portField = field("22", width: 70)
     private let userField = field(ConnHistory.lastUser, width: 160)
     private let passField: NSSecureTextField = {
         let f = NSSecureTextField(string: "")
         f.translatesAutoresizingMaskIntoConstraints = false
         f.widthAnchor.constraint(equalToConstant: 160).isActive = true
-        f.placeholderString = "空なら端末で入力"
+        f.placeholderString = Lang.m("CONN_PASSWORD_PLACEHOLDER", "空なら端末で入力")
         return f
     }()
     private let keyField = field(ConnHistory.lastKeyFile, width: 220)
@@ -154,12 +154,12 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         for r in [tcpRadio, serialRadio, shellRadio] { r.target = self; r.action = #selector(modeChanged) }
         for r in [sshRadio, telnetRadio, otherRadio] { r.target = self; r.action = #selector(serviceChanged) }
 
-        hostBox.addItems(withObjectValues: ConnHistory.hosts)
+        setHostDropdown()
         hostBox.stringValue = ConnHistory.hosts.first ?? ""
         hostBox.completes = true
         hostBox.translatesAutoresizingMaskIntoConstraints = false
         hostBox.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        hostBox.placeholderString = "ホスト名か IP アドレス"
+        hostBox.placeholderString = Lang.m("CONN_HOST_PLACEHOLDER", "ホスト名か IP アドレス")
         hostBox.delegate = self
 
         // CheckRadioButton: TTSSH が有効 (前回 SSH) なら SSH、でなければ ts.Telnet で Telnet / その他。
@@ -171,19 +171,19 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         portField.stringValue = ssh ? "22" : String(settings.tcpPort)
         historyCheck.state = settings.historyList ? .on : .off
 
-        let keyButton = NSButton(title: "選ぶ…", target: self, action: #selector(chooseKey))
+        let keyButton = NSButton(title: Lang.m("CONN_CHOOSE", "選ぶ…"), target: self, action: #selector(chooseKey))
 
         // シリアル
         let ports = SerialPort.list()
         let last = ConnHistory.serial
         if ports.isEmpty {
-            portPopup.addItem(withTitle: "(シリアルポートが見つかりません)")
+            portPopup.addItem(withTitle: Lang.m("CONN_NO_SERIAL_PORT", "(シリアルポートが見つかりません)"))
             portPopup.isEnabled = false
         } else {
             for p in ports { portPopup.addItem(withTitle: p) }
             if ports.contains(last.path) { portPopup.selectItem(withTitle: last.path) }
         }
-        let refresh = NSButton(title: "再検索", target: self, action: #selector(refreshPorts))
+        let refresh = NSButton(title: Lang.m("CONN_RESCAN", "再検索"), target: self, action: #selector(refreshPorts))
         baudPopup.selectItem(withTitle: String(last.baud))
         dataPopup.selectItem(withTitle: String(last.dataBits))
         parityPopup.selectItem(withTitle: last.parity)
@@ -203,18 +203,18 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         }
 
         let tcpGrid = NSGridView(views: [
-            [label("ホスト:"), hostBox],
+            [label(Lang.t("TTSSH", "DLG_HOST_TCPIPHOST", "ホスト:")), hostBox],
             [NSGridCell.emptyContentView, historyCheck],
-            [label("サービス:"), row([sshRadio, telnetRadio, otherRadio, label("  TCPポート:"), portField])],
-            [label("ユーザー名:"), row([userField, label("パスワード:"), passField])],
-            [label("秘密鍵:"), row([keyField, keyButton])],
+            [label(Lang.t("TTSSH", "DLG_HOST_TCPIPSERVICE", "サービス:")), row([sshRadio, telnetRadio, otherRadio, label("  " + Lang.t("TTSSH", "DLG_HOST_TCPIPPORT", "TCPポート:")), portField])],
+            [label(Lang.m("CONN_USER_NAME_LABEL", "ユーザー名:")), row([userField, label(Lang.m("CONN_PASSWORD_LABEL", "パスワード:")), passField])],
+            [label(Lang.t("TTSSH", "DLG_AUTH_PRIVATEKEY", "秘密鍵:")), row([keyField, keyButton])],
         ])
         tcpGrid.rowSpacing = 8
         tcpGrid.column(at: 0).xPlacement = .trailing
         let serialGrid = NSGridView(views: [
-            [label("ポート:"), row([portPopup, refresh])],
-            [label("速度:"), row([baudPopup, label("データ:"), dataPopup, label("パリティ:"), parityPopup])],
-            [label("ストップ:"), row([stopPopup, label("フロー制御:"), flowPopup])],
+            [label(Lang.t("Tera Term", "DLG_SERIAL_PORT", "ポート:")), row([portPopup, refresh])],
+            [label(Lang.t("Tera Term", "DLG_SERIAL_BAUD", "速度:")), row([baudPopup, label(Lang.t("Tera Term", "DLG_SERIAL_DATA", "データ:")), dataPopup, label(Lang.t("Tera Term", "DLG_SERIAL_PARITY", "パリティ:")), parityPopup])],
+            [label(Lang.t("Tera Term", "DLG_SERIAL_STOP", "ストップ:")), row([stopPopup, label(Lang.t("Tera Term", "DLG_SERIAL_FLOW", "フロー制御:")), flowPopup])],
         ])
         serialGrid.rowSpacing = 8
         serialGrid.column(at: 0).xPlacement = .trailing
@@ -234,11 +234,36 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         tcpRadio.state = mode == "tcp" ? .on : .off
         serialRadio.state = mode == "serial" ? .on : .off
         shellRadio.state = mode == "shell" ? .on : .off
-        okButton.title = "接続"
+        okButton.title = Lang.m("CONN_CONNECT", "接続")
         layout(body)
         modeChanged()
         serviceChanged()
     }
+
+    /// ttxssh.c SetHostDropdown: ホストリストの最後に "<Edit host list...>" (選ぶとホストリストの編集。5.3)
+    private static let editHostListItem = "<Edit host list...>"
+    private func setHostDropdown() {
+        hostBox.removeAllItems()
+        hostBox.addItems(withObjectValues: ConnHistory.hosts)
+        hostBox.addItem(withObjectValue: Self.editHostListItem)
+    }
+    /// "<Edit host list...>" を選ぶ前の入力 (編集から戻ったら元に戻す)
+    private var hostBeforeEdit = ""
+
+    /// ttxssh.c OpenEditHistory: 編集したらドロップダウンを作り直し、一番最初を選ぶ
+    private func openEditHistory() {
+        hostBox.stringValue = hostBeforeEdit
+        let d = HostListEditDialog()
+        d.onSaved = { [weak self] in
+            guard let self = self else { return }
+            self.setHostDropdown()
+            self.hostBox.stringValue = ConnHistory.hosts.first ?? ""
+            self.hostBeforeEdit = self.hostBox.stringValue
+        }
+        d.begin(on: panel)
+    }
+
+    func comboBoxWillPopUp(_ notification: Notification) { hostBeforeEdit = hostBox.stringValue }
 
     func controlTextDidChange(_ obj: Notification) {
         if (obj.object as AnyObject?) === hostBox { telnetBinary = false }
@@ -246,6 +271,11 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
 
     func comboBoxSelectionDidChange(_ notification: Notification) {
         // 履歴の "user@host:port /telnet" を各欄に戻す
+        if hostBox.indexOfSelectedItem == hostBox.numberOfItems - 1,
+           (hostBox.objectValueOfSelectedItem as? String) == Self.editHostListItem {
+            DispatchQueue.main.async { self.openEditHistory() }
+            return
+        }
         DispatchQueue.main.async {
             let v = self.hostBox.stringValue
             guard let s = ConnectionSpec.parse(v) else { return }
@@ -290,7 +320,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     @objc private func refreshPorts() {
         portPopup.removeAllItems()
         let ports = SerialPort.list()
-        if ports.isEmpty { portPopup.addItem(withTitle: "(シリアルポートが見つかりません)") } else { portPopup.addItems(withTitles: ports) }
+        if ports.isEmpty { portPopup.addItem(withTitle: Lang.m("CONN_NO_SERIAL_PORT", "(シリアルポートが見つかりません)")) } else { portPopup.addItems(withTitles: ports) }
         modeChanged()
     }
 
@@ -311,11 +341,15 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
             guard portPopup.isEnabled, let path = portPopup.titleOfSelectedItem else { NSSound.beep(); return }
             var s = SerialParams()
             s.path = path
+            // FlowCtrlRTS / FlowCtrlDTR (#934) は設定のまま。フロー制御を変えたら既定に戻す (serial_pp.cpp IDC_SERIALFLOW)
+            let last = ConnHistory.serial
+            s.rts = last.rts; s.dtr = last.dtr
             s.baud = Int(baudPopup.titleOfSelectedItem ?? "9600") ?? 9600
             s.dataBits = Int(dataPopup.titleOfSelectedItem ?? "8") ?? 8
             s.parity = parityPopup.titleOfSelectedItem ?? "none"
             s.stopBits = Int(stopPopup.titleOfSelectedItem ?? "1") ?? 1
             s.flow = ["none", "xon", "rts"][max(0, flowPopup.indexOfSelectedItem)]
+            if s.flow != last.flow { s.rts = SerialParams.defaultRTS(flow: s.flow); s.dtr = SerialParams.defaultDTR(flow: s.flow) }
             ConnHistory.serial = s
             ConnHistory.lastMode = "serial"
             spec = .serial(s)
@@ -335,7 +369,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
                 let a = NSAlert()
                 a.alertStyle = .warning
                 a.messageText = "Tera Term"
-                a.informativeText = "TCPポート番号には数値を入力してください."
+                a.informativeText = Lang.t("TTSSH", "MSG_TCPPORT_NAN_ERROR", "TCPポート番号には数値を入力してください.")
                 a.beginSheetModal(for: panel, completionHandler: nil)
                 return
             }
@@ -373,3 +407,28 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
 }
 
 // 端末の設定は SetupSheet.swift (Tera Term: その他の設定)
+
+// MARK: - 確認用 (TERAMAC_GUIDESNAP: かんたんマニュアルの画面写真)
+
+extension ConnectDialog {
+    /// 例の値 (example.com / user、USB シリアルの例) を入れる。保存はしない
+    func debugGuideFill(serial: Bool) {
+        tcpRadio.state = serial ? .off : .on
+        serialRadio.state = serial ? .on : .off
+        shellRadio.state = .off
+        if serial {
+            portPopup.removeAllItems()
+            portPopup.addItem(withTitle: "/dev/cu.usbserial-1410")
+            baudPopup.selectItem(withTitle: "115200")
+            modeChanged()
+            for v in serialViews { (v as? NSControl)?.isEnabled = true }
+        } else {
+            hostBox.stringValue = "example.com"
+            sshRadio.state = .on; telnetRadio.state = .off; otherRadio.state = .off
+            portField.stringValue = "22"
+            userField.stringValue = "user"
+            keyField.stringValue = ""
+            modeChanged()
+        }
+    }
+}

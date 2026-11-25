@@ -30,6 +30,8 @@ struct TermSettings {
     var trimTrailingNLOnPaste = false
     /// BracketedControlOnly: 制御文字を含むときだけブラケットで囲む
     var bracketedControlOnly = false
+    /// BracketedSupport: ブラケットペーストに対応する (off なら相手が求めても囲まない。ttset.c 既定 on)
+    var bracketedSupport = true
     /// PasteDelayPerLine: 貼り付けで 1 行送るごとに待つミリ秒
     var pasteDelayPerLine = 10
     /// EnableContinuedLineCopy: 折り返して続く行をつなげてコピーする
@@ -104,6 +106,7 @@ struct TermSettings {
     var clearScrollBufferFromRemote = true          // ClearScrollBufferFromRemote
     var printerCtrlSequence = false                 // PrinterCtrlSequence
     var beep = "on"                                 // Beep off/on/visual
+    var beepVBellWait = 10                          // BeepVBellWait: ビジュアルベルの反転の長さ (ミリ秒。ttset.c 既定 10、1 未満は 1)
     // コピーと貼り付け
     var confirmPasteMouseRButton = false            // ConfirmPasteMouseRButton
     var disablePasteMouseMButton = true             // DisablePasteMouseMButton
@@ -133,6 +136,9 @@ struct TermSettings {
     var logAppend = false                           // LogAppend
     var logTypePlainText = false                    // LogTypePlainText
     var logHideDialog = false                       // LogHideDialog
+    var maxBroadcatHistory = 99                     // MaxBroadcatHistory (本家の綴りのまま。ブロードキャストの履歴の最大数)
+    var iniAutoBackup = true                        // IniAutoBackup (設定の保存で上書きするときバックアップを作る。ttset.c 既定 on)
+    var logDialogShowState = "minimized"            // LogDialogShowState minimized/normal (LogHideDialog=on なら無視。23aa80682 #1576)
     var logIncludeScreenBuffer = false              // LogIncludeScreenBuffer
     var logTimestampType = "Local"                  // LogTimestampType Local/UTC/LoggingElapsed/ConnectionElapsed
     var logRotate = 0                               // LogRotate (0: しない 1: サイズ)
@@ -156,6 +162,12 @@ struct TermSettings {
     // 設定画面にない INI の設定
     var confirmDisconnect = true                    // ConfirmDisconnect
     var sendBreakTime = 1000                        // SendBreakTime (ミリ秒)
+    // シリアルポートの自動再接続 (ttset.c: AutoComPortReconnect*。vtwin.cpp SerialReconnect)
+    var autoComPortReconnect = true                 // AutoComPortReconnect
+    var autoComPortReconnectDelayNormal = 500       // AutoComPortReconnectDelayNormal (ミリ秒)
+    var autoComPortReconnectDelayIllegal = 2000     // AutoComPortReconnectDelayIllegal (ミリ秒)
+    var autoComPortReconnectRetryInterval = 1000    // AutoComPortReconnectRetryInterval (ミリ秒)
+    var autoComPortReconnectRetryCount = 3          // AutoComPortReconnectRetryCount
 
     private static let d = UserDefaults.standard
 
@@ -198,8 +210,8 @@ struct TermSettings {
         let d = Self.d
         if let v = d.string(forKey: "fontName"), NSFont(name: v, size: 12) != nil { s.fontName = v }
         if d.object(forKey: "fontSize") != nil { s.fontSize = CGFloat(max(6, min(72, d.double(forKey: "fontSize")))) }
-        if d.object(forKey: "cols") != nil { s.cols = max(10, min(500, d.integer(forKey: "cols"))) }
-        if d.object(forKey: "rows") != nil { s.rows = max(2, min(300, d.integer(forKey: "rows"))) }
+        if d.object(forKey: "cols") != nil { s.cols = max(10, min(TermLimits.widthMax, d.integer(forKey: "cols"))) }
+        if d.object(forKey: "rows") != nil { s.rows = max(2, min(TermLimits.heightMax, d.integer(forKey: "rows"))) }
         if let v = d.string(forKey: "encoding"), let e = TermEncoding(rawValue: v) { s.encoding = e }
         if let v = d.string(forKey: "recvNewline") { s.recvNewline = v }
         if let v = d.string(forKey: "sendNewline") { s.sendNewline = v }
@@ -351,6 +363,9 @@ enum ConnHistory {
             s.parity = d.string(forKey: "serialParity") ?? "none"
             if d.object(forKey: "serialStop") != nil { s.stopBits = d.integer(forKey: "serialStop") }
             s.flow = d.string(forKey: "serialFlow") ?? "none"
+            // FlowCtrlRTS / FlowCtrlDTR (#934)。保存がなければフロー制御から決める
+            s.rts = d.object(forKey: "serialRTS") != nil ? d.integer(forKey: "serialRTS") : SerialParams.defaultRTS(flow: s.flow)
+            s.dtr = d.object(forKey: "serialDTR") != nil ? d.integer(forKey: "serialDTR") : SerialParams.defaultDTR(flow: s.flow)
             return s
         }
         set {
@@ -360,6 +375,8 @@ enum ConnHistory {
             d.set(newValue.parity, forKey: "serialParity")
             d.set(newValue.stopBits, forKey: "serialStop")
             d.set(newValue.flow, forKey: "serialFlow")
+            d.set(newValue.rts, forKey: "serialRTS")
+            d.set(newValue.dtr, forKey: "serialDTR")
         }
     }
 }
@@ -405,6 +422,16 @@ struct ColorPair: Equatable {
 }
 
 extension TermSettings {
+    /// "Logging" ダイアログの表示状態 0 非表示 1 最小化 2 表示 (ts.LogDialogShowState)。
+    /// ttset.c: LogHideDialog=on なら非表示、でなければ LogDialogShowState=normal なら表示、ほかは最小化
+    var logShowState: Int {
+        get { logHideDialog ? 0 : (logDialogShowState.caseInsensitiveCompare("normal") == .orderedSame ? 2 : 1) }
+        set {
+            logHideDialog = newValue == 0
+            if newValue != 0 { logDialogShowState = newValue == 2 ? "normal" : "minimized" }
+        }
+    }
+
     /// on/off の設定 (UserDefaults と TERATERM.INI [Tera Term] で同じキー名)
     static let boolFields: [(String, WritableKeyPath<TermSettings, Bool>)] = [
         ("TermIsWin", \.termIsWin), ("AutoWinResize", \.autoWinResize), ("AutoWinSwitch", \.autoWinSwitch),
@@ -431,6 +458,9 @@ extension TermSettings {
         ("LogIncludeScreenBuffer", \.logIncludeScreenBuffer),
         ("UnicodeEmojiOverride", \.unicodeEmojiOverride),
         ("EnableClickableUrl", \.enableClickableUrl), ("ConfirmDisconnect", \.confirmDisconnect),
+        ("AutoComPortReconnect", \.autoComPortReconnect),
+        ("BracketedSupport", \.bracketedSupport),
+        ("IniAutoBackup", \.iniAutoBackup),
     ]
     static let intFields: [(String, WritableKeyPath<TermSettings, Int>)] = [
         ("TCPPort", \.tcpPort), ("TelKeepAliveInterval", \.telKeepAliveInterval), ("TitleFormat", \.titleFormat),
@@ -440,6 +470,12 @@ extension TermSettings {
         ("UnicodeEmojiWidth", \.unicodeEmojiWidth), ("DecSpMappingDir", \.decSpMappingDir),
         ("UnicodeToDecSpMapping", \.unicodeToDecSpMapping),
         ("MouseWheelScrollLine", \.mouseWheelScrollLine), ("SendBreakTime", \.sendBreakTime),
+        ("AutoComPortReconnectDelayNormal", \.autoComPortReconnectDelayNormal),
+        ("AutoComPortReconnectDelayIllegal", \.autoComPortReconnectDelayIllegal),
+        ("AutoComPortReconnectRetryInterval", \.autoComPortReconnectRetryInterval),
+        ("AutoComPortReconnectRetryCount", \.autoComPortReconnectRetryCount),
+        ("BeepVBellWait", \.beepVBellWait),
+        ("MaxBroadcatHistory", \.maxBroadcatHistory),
     ]
     static let stringFields: [(String, WritableKeyPath<TermSettings, String>)] = [
         ("TerminalID", \.terminalID), ("Title", \.title), ("MetaKey", \.metaKey), ("TermType", \.termType),
@@ -449,7 +485,7 @@ extension TermSettings {
         ("MouseCursor", \.mouseCursor), ("FontQuality", \.fontQuality),
         ("ViewlogEditor", \.viewlogEditor), ("ViewlogEditorArg", \.viewlogEditorArg),
         ("LogDefaultName", \.logDefaultName), ("LogDefaultPath", \.logDefaultPath),
-        ("LogTimestampType", \.logTimestampType), ("KanjiIn", \.kanjiIn), ("KanjiOut", \.kanjiOut),
+        ("LogTimestampType", \.logTimestampType), ("LogDialogShowState", \.logDialogShowState), ("KanjiIn", \.kanjiIn), ("KanjiOut", \.kanjiOut),
         ("TeraMacThemeName", \.themeName),
     ]
     static let colorPairFields: [(String, WritableKeyPath<TermSettings, ColorPair>)] = [

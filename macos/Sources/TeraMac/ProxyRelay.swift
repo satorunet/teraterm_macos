@@ -18,10 +18,10 @@ enum ProxyRelay {
         let a = CommandLine.arguments
         guard a.count >= 2, a[1] == argument else { return }
         guard a.count >= 4, let port = Int(a[3]) else {
-            fail("使い方: \(argument) <ホスト> <ポート>")
+            fail(Lang.m("CONN_RELAY_USAGE", "使い方: %s <ホスト> <ポート>", argument))
         }
         guard let cfg = ProxyConfig(environment: ProcessInfo.processInfo.environment), cfg.isEnabled else {
-            fail("プロキシの設定がありません")
+            fail(Lang.m("CONN_RELAY_NO_CONFIG", "プロキシの設定がありません"))
         }
         exit(run(config: cfg, host: a[2], port: port))
     }
@@ -34,16 +34,17 @@ enum ProxyRelay {
     private static func run(config: ProxyConfig, host: String, port: Int) -> Int32 {
         signal(SIGPIPE, SIG_IGN)
         let timeoutMs = config.timeout > 0 ? Int32(config.timeout * 1000) : -1
-        let fd = connectTCP(config.host, config.effectivePort, timeoutMs: timeoutMs)
-        guard fd >= 0 else { fail("プロキシ \(config.host):\(config.effectivePort) に接続できません") }
+        // IDN (#1493): プロキシのホスト名は ACE 形式で引く。接続先 (%h) は ssh に ACE で渡してある
+        let fd = connectTCP(IDN.hostNameToASCII(config.host), config.effectivePort, timeoutMs: timeoutMs)
+        guard fd >= 0 else { fail(Lang.m("CONN_RELAY_CONNECT_FAILED", "プロキシ %s:%d に接続できません", config.host, config.effectivePort)) }
         defer { close(fd) }
 
         // プロキシとのやりとり
-        let h = ProxyHandshake(config: config, host: host, port: port)
+        let h = ProxyHandshake(config: config, host: IDN.hostNameToASCII(host), port: port)
         var out = h.start()
         var leftover: [UInt8] = []
         handshake: while true {
-            if !out.send.isEmpty && !writeAll(fd, out.send) { fail("プロキシに送れません") }
+            if !out.send.isEmpty && !writeAll(fd, out.send) { fail(Lang.m("CONN_RELAY_SEND_FAILED", "プロキシに送れません")) }
             if let r = out.result {
                 switch r {
                 case .connected(let rest): leftover = rest
@@ -53,8 +54,8 @@ enum ProxyRelay {
             }
             var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
             let n = poll(&p, 1, timeoutMs)
-            if n == 0 { fail("プロキシからの応答がありません (タイムアウト)") }
-            if n < 0 { if errno == EINTR { continue }; fail("プロキシとの通信に失敗しました") }
+            if n == 0 { fail(Lang.m("CONN_RELAY_TIMEOUT", "プロキシからの応答がありません (タイムアウト)")) }
+            if n < 0 { if errno == EINTR { continue }; fail(Lang.m("CONN_RELAY_IO_FAILED", "プロキシとの通信に失敗しました")) }
             var buf = [UInt8](repeating: 0, count: 4096)
             let r = read(fd, &buf, buf.count)
             out = r > 0 ? h.feed(Array(buf[0..<r])) : h.closed()

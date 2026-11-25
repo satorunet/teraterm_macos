@@ -167,22 +167,22 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case general, ui, sequence, copyPaste, visual, log, localShell, encoding, font, theme, keyboard, mouse, tcpip, terminal, serial, window
         var title: String {
             switch self {
-            case .general: return "全般"
+            case .general: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_GENERAL", "全般")
             case .ui: return "UI"
-            case .localShell: return "ローカルシェル"
-            case .sequence: return "制御シーケンス"
-            case .copyPaste: return "コピーと貼り付け"
-            case .visual: return "表示"
-            case .log: return "ログ"
-            case .encoding: return "エンコーディング"
-            case .font: return "フォント"
-            case .theme: return "テーマ"
-            case .keyboard: return "キーボード"
-            case .mouse: return "マウス"
-            case .tcpip: return "TCP/IP"
-            case .terminal: return "端末"
-            case .serial: return "シリアルポート"
-            case .window: return "ウィンドウ"
+            case .localShell: return Lang.m("SETUP_TAB_LOCAL_SHELL", "ローカルシェル")
+            case .sequence: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_SEQUENCE", "制御シーケンス")
+            case .copyPaste: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_COPYPASTE", "コピーと貼り付け")
+            case .visual: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_VISUAL", "表示")
+            case .log: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_LOG", "ログ")
+            case .encoding: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_ENCODING", "エンコーディング")
+            case .font: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_FONT", "フォント")
+            case .theme: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_THEME", "テーマ")
+            case .keyboard: return Lang.t("Tera Term", "DLG_KEYB_TITLE", "キーボード")
+            case .mouse: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_MOUSE", "マウス")
+            case .tcpip: return Lang.t("Tera Term", "DLG_TCPIP_TITLE", "TCP/IP")
+            case .terminal: return Lang.t("Tera Term", "DLG_TERM_TITLE", "端末")
+            case .serial: return Lang.t("Tera Term", "DLG_SERIAL_TITLE", "シリアルポート")
+            case .window: return Lang.t("Tera Term", "DLG_WIN_TITLE", "ウィンドウ")
             }
         }
     }
@@ -223,7 +223,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
     func begin(on w: NSWindow, completion: @escaping (TermSettings?) -> Void) {
         self.completion = completion
-        panel.title = "Tera Term: その他の設定"
+        panel.title = Lang.t("Tera Term", "DLG_TABSHEET_TITLE", "Tera Term: その他の設定")
         build()
         selectPage(at: Page.allCases.firstIndex(of: startPage) ?? 0)
         // 端末にくっつくシートではなく、別のウィンドウにする (動かして端末を見ながら設定できる)
@@ -399,7 +399,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         // エンコーディング
         sendPopup.isEnabled = differentCheck.state == .on
         if differentCheck.state == .off { sendPopup.selectItem(at: recvPopup.indexOfSelectedItem) }
-        let all = TermEncoding.allCases
+        let all = TermEncoding.guiList.map { $0.code }
         let recv = all[max(0, recvPopup.indexOfSelectedItem)], send = all[max(0, sendPopup.indexOfSelectedItem)]
         let uni = recv == .utf8 || send == .utf8
         for c in [ambPopup, emojiCheck, boxCheck, punctCheck, middleDotCheck, decRadios[0], decRadios[1], decRadios[2]] as [NSControl] { c.isEnabled = uni }
@@ -441,9 +441,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // 全般 (general_pp.cpp)
     private let fileDirField = SetupUI.field(width: 320)
     private func generalPage() -> NSView {
-        let portPopup = pop(["TCP/IP", "Serial"], ["tcpip", "serial"], \.portType)
-        let titleBits = ["ホスト/ポート名を表示する(&D)", "セッション番号を表示する(&N)", "&VT/TEK を表示する",
-                         "タイトルとホスト名の場所を入れ換える(&T)", "TCP ポート番号を表示する(&P)", "シリアルポートのスピードを表示する(&R)"]
+        let portPopup = pop([Lang.t("Tera Term", "DLG_GEN_PORT_TCPIP", "TCP/IP"), Lang.t("Tera Term", "DLG_GEN_PORT_SERIAL", "Serial")], ["tcpip", "serial"], \.portType)
+        let titleBits = [Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_DISPHOSTNAME", "ホスト/ポート名を表示する(&D)"), Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_DISPSESSION", "セッション番号を表示する(&N)"), Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_DISPVTTEK", "&VT/TEK を表示する"),
+                         Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_SWAPHOSTTITLE", "タイトルとホスト名の場所を入れ換える(&T)"), Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_DISPTCPPORT", "TCP ポート番号を表示する(&P)"), Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_DISPSERIALSPEED", "シリアルポートのスピードを表示する(&R)")]
         var bitChecks: [NSButton] = []
         for (i, t) in titleBits.enumerated() {
             let c = SetupUI.check(t)
@@ -456,22 +456,22 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         fileDirField.stringValue = fileDir
         let dirButton = SetupUI.button("...", target: self, action: #selector(chooseFileDir))
         return SetupUI.column([
-            cb("ブレーク送信のアクセラレータキーを無効にする(&S)", \.disableAcceleratorSendBreak),
-            cb("ブロードキャストを受け入れる(&B)", \.acceptBroadcast),
-            cb("最下行でだけ自動スクロールする(&U)", \.autoScrollOnlyInBottomLine),
-            cb("ウィンドウサイズ変更時に表示内容をクリアする(&C)", \.clearOnResize),
-            SetupUI.row([SetupUI.label("新しい接続のデフォルト(&C):"), portPopup]),
-            SetupUI.box("タイトル形式", SetupUI.column(bitChecks, spacing: 4)),
-            SetupUI.label("通知"),
-            SetupUI.indent(cb("通知音", \.notifySound)),
-            SetupUI.label("ファイル転送のフォルダ"),
+            cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_DISABLESENDBREAK", "ブレーク送信のアクセラレータキーを無効にする(&S)"), \.disableAcceleratorSendBreak),
+            cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_ACCEPTBROADCAST", "ブロードキャストを受け入れる(&B)"), \.acceptBroadcast),
+            cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_AUTOSCROLL_ONLY_IN_BOTTOM_LINE", "最下行でだけ自動スクロールする(&U)"), \.autoScrollOnlyInBottomLine),
+            cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_CLEAR_ON_RESIZE", "ウィンドウサイズ変更時に表示内容をクリアする(&C)"), \.clearOnResize),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_GEN_PORT", "新しい接続のデフォルト(&C):")), portPopup]),
+            SetupUI.box(Lang.t("Tera Term", "DLG_TAB_GENERAL_TITLEFMT_GROUP", "タイトル形式"), SetupUI.column(bitChecks, spacing: 4)),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_GENERAL_NOTIFICATION_TITLE", "通知")),
+            SetupUI.indent(cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_NOTIFIY_SOUND", "通知音"), \.notifySound)),
+            SetupUI.label(Lang.m("SETUP_FILE_TRANSFER_DIR", "ファイル転送のフォルダ")),
             SetupUI.indent(SetupUI.row([fileDirField, dirButton])),
         ], spacing: 8)
     }
 
     @objc private func chooseFileDir() {
         let p = NSOpenPanel()
-        p.message = "新しいディレクトリを選択してください"
+        p.message = Lang.t("Tera Term", "DLG_SELECT_DIR_TITLE", "新しいディレクトリを選択してください")
         p.canChooseDirectories = true
         p.canChooseFiles = false
         p.canCreateDirectories = true
@@ -480,8 +480,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     }
 
     // 制御シーケンス (addsetting.cpp CSequencePropPageDlg)
-    private let mouseTrackCheck = SetupUI.check("マウスイベント通知要求を受け入れる(&M)")
-    private let disableMouseCtrlCheck = SetupUI.check("Controlキーを押している間はマウスイベントを通知しない(&D)")
+    private let mouseTrackCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_MOUSE_EVENT_TRACKING", "マウスイベント通知要求を受け入れる(&M)"))
+    private let disableMouseCtrlCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_DISABLE_MOUSE_TRACKING_CTRL", "Controlキーを押している間はマウスイベントを通知しない(&D)"))
     private func sequencePage() -> NSView {
         bind(mouseTrackCheck, \.mouseEventTracking)
         bind(disableMouseCtrlCheck, \.disableMouseTrackingByCtrl)
@@ -489,28 +489,28 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             mouseTrackCheck,
             SetupUI.indent(disableMouseCtrlCheck),
             SetupUI.grid([
-                [SetupUI.label("ウィンドウタイトルの変更要求を受け入れる(&T)"),
-                 pop(["無効", "上書き", "前に追加", "後に追加"], ["off", "overwrite", "ahead", "last"], \.acceptTitleChangeRequest)],
-                [SetupUI.label("ウィンドウタイトルの報告要求(&I)"),
-                 pop(["無視", "応答", "空白"], ["ignore", "accept", "empty"], \.titleReportSequence)],
+                [SetupUI.label(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_TITLE_CHANGING", "ウィンドウタイトルの変更要求を受け入れる(&T)")),
+                 pop([Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_TITLE_CHANGING_OFF", "無効"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_TITLE_CHANGING_OVERWRITE", "上書き"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_TITLE_CHANGING_AHEAD", "前に追加"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_TITLE_CHANGING_LAST", "後に追加")], ["off", "overwrite", "ahead", "last"], \.acceptTitleChangeRequest)],
+                [SetupUI.label(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_TITLE_REPORT", "ウィンドウタイトルの報告要求(&I)")),
+                 pop([Lang.t("Tera Term", "DLG_TAB_SEQUENCE_TITLE_REPORT_IGNORE", "無視"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_TITLE_REPORT_ACCEPT", "応答"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_TITLE_REPORT_EMPTY", "空白")], ["ignore", "accept", "empty"], \.titleReportSequence)],
             ]),
-            cb("ウィンドウ操作制御シーケンス(&W)", \.windowCtrlSequence),
-            cb("ウィンドウ情報報告シーケンス(&R)", \.windowReportSequence),
-            cb("カーソル形状/点滅変更制御シーケンス(&C)", \.cursorCtrlSequence),
-            SetupUI.row([SetupUI.label("リモートからのクリップボードアクセス(&L)"),
-                         pop(["無効", "書込のみ", "読込のみ", "読込/書込"], ["off", "write", "read", "on"], \.clipboardAccessFromRemote)]),
-            cb("リモートからのクリップボードアクセスを通知する(&N)", \.notifyClipboardAccess),
-            cb("リモートからのスクロールバッファの消去を受け入れる(&S)", \.clearScrollBufferFromRemote),
-            cb("印字開始シーケンスを無効化(&I)", \.printerCtrlSequence, invert: true),
-            SetupUI.row([SetupUI.label("ベル(&B)"), pop(["無視", "サウンド", "ビジュアルベル"], ["off", "on", "visual"], \.beep)]),
+            cb(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_WINDOW_CTRL", "ウィンドウ操作制御シーケンス(&W)"), \.windowCtrlSequence),
+            cb(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_WINDOW_REPORT", "ウィンドウ情報報告シーケンス(&R)"), \.windowReportSequence),
+            cb(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CURSOR_CTRL", "カーソル形状/点滅変更制御シーケンス(&C)"), \.cursorCtrlSequence),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CLIPBOARD_ACCESS", "リモートからのクリップボードアクセス(&L)")),
+                         pop([Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CLIPBOARD_ACCESS_OFF", "無効"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CLIPBOARD_ACCESS_WRITE", "書込のみ"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CLIPBOARD_ACCESS_READ", "読込のみ"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CLIPBOARD_ACCESS_ON", "読込/書込")], ["off", "write", "read", "on"], \.clipboardAccessFromRemote)]),
+            cb(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_CLIPBOARD_NOTIFY", "リモートからのクリップボードアクセスを通知する(&N)"), \.notifyClipboardAccess),
+            cb(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_ACCEPT_CLEAR_SBUFF", "リモートからのスクロールバッファの消去を受け入れる(&S)"), \.clearScrollBufferFromRemote),
+            cb(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_PRINT_START", "印字開始シーケンスを無効化(&I)"), \.printerCtrlSequence, invert: true),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_SEQUENCE_BEEP_LABEL", "ベル(&B)")), pop([Lang.t("Tera Term", "DLG_TAB_SEQUENCE_BEEP_DISABLE", "無視"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_BEEP_SOUND", "サウンド"), Lang.t("Tera Term", "DLG_TAB_SEQUENCE_BEEP_VISUALBELL", "ビジュアルベル")], ["off", "on", "visual"], \.beep)]),
         ], spacing: 8)
     }
 
     // コピーと貼り付け (addsetting.cpp CCopypastePropPageDlg)
-    private let disableRButton = SetupUI.check("右クリックでの貼り付けを無効にする(&D)")
-    private let confirmRButton = SetupUI.check("右クリックでの貼り付けを確認する(&C)")
-    private let confirmChangePasteCheck = SetupUI.check("危険なクリップボードの貼り付けを確認する(&P)")
-    private let confirmCRCheck = SetupUI.check("改行を含む貼り付けをいつも確認する")
+    private let disableRButton = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_MOUSEPASTE", "右クリックでの貼り付けを無効にする(&D)"))
+    private let confirmRButton = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_CONFIRMPASTE", "右クリックでの貼り付けを確認する(&C)"))
+    private let confirmChangePasteCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_CONFIRM_CHANGE_PASTE", "危険なクリップボードの貼り付けを確認する(&P)"))
+    private let confirmCRCheck = SetupUI.check(Lang.m("SETUP_CONFIRM_PASTE_CR", "改行を含む貼り付けをいつも確認する"))
     private let keywordField = SetupUI.field(width: 300)
     private lazy var keywordButton = SetupUI.button("...", target: self, action: #selector(chooseKeywordFile))
     private func copyPastePage() -> NSView {
@@ -522,20 +522,20 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         custom(load: { [unowned self] in self.keywordField.stringValue = self.s.confirmChangePasteStringFile },
                store: { [unowned self] in self.s.confirmChangePasteStringFile = self.keywordField.stringValue })
         return SetupUI.column([
-            cb("継続行コピーを有効にする(&L)", \.continuedLineCopy),
+            cb(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_CONTINUE", "継続行コピーを有効にする(&L)"), \.continuedLineCopy),
             disableRButton,
             SetupUI.indent(confirmRButton),
-            cb("中クリックでの貼り付けを無効にする(&M)", \.disablePasteMouseMButton),
-            cb("左クリックでのみ選択を開始する(&O)", \.selectOnlyByLButton),
-            cb("貼り付け時に末尾の改行を削除する(&T)", \.trimTrailingNLOnPaste),
-            cb("ブラケットペーストは制御文字を含むときだけ囲む", \.bracketedControlOnly),
+            cb(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_MOUSEPASTEM", "中クリックでの貼り付けを無効にする(&M)"), \.disablePasteMouseMButton),
+            cb(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_SELECTLBUTTON", "左クリックでのみ選択を開始する(&O)"), \.selectOnlyByLButton),
+            cb(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_TRIM_TRAILING_NL", "貼り付け時に末尾の改行を削除する(&T)"), \.trimTrailingNLOnPaste),
+            cb(Lang.m("SETUP_BRACKETED_CONTROL_ONLY", "ブラケットペーストは制御文字を含むときだけ囲む"), \.bracketedControlOnly),
             confirmChangePasteCheck,
             SetupUI.indent(confirmCRCheck),
-            SetupUI.indent(SetupUI.row([SetupUI.label("キーワードファイル(&S)"), keywordField, keywordButton])),
-            SetupUI.row([SetupUI.label("区切り文字(&I)"), text(\.delimList, width: 320)]),
-            SetupUI.row([SetupUI.label("貼り付けの行間遅延(&A)"), num(\.pasteDelayPerLine, range: 0...5000), SetupUI.label("ミリ秒")]),
-            cb("マウスでウィンドウ選択時の文字選択を有効にする(&B)", \.selectOnActivate),
-            cb("マウスで文字選択時、自動でクリップボードへのコピーを行う(&Y)", \.copyOnSelect),
+            SetupUI.indent(SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_STRINGFILE", "キーワードファイル(&S)")), keywordField, keywordButton])),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_DELIMITER", "区切り文字(&I)")), text(\.delimList, width: 320)]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_PASTEDELAY", "貼り付けの行間遅延(&A)")), num(\.pasteDelayPerLine, range: 0...5000), SetupUI.label(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_PASTEDELAY2", "ミリ秒"))]),
+            cb(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_SELECT_ON_ACTIVATE", "マウスでウィンドウ選択時の文字選択を有効にする(&B)"), \.selectOnActivate),
+            cb(Lang.t("Tera Term", "DLG_TAB_COPYPASTE_AUTO_TEXT_COPY", "マウスで文字選択時、自動でクリップボードへのコピーを行う(&Y)"), \.copyOnSelect),
         ], spacing: 8)
     }
 
@@ -547,7 +547,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     }
 
     // 表示 (addsetting.cpp CVisualPropPageDlg)
-    private let boldCheckVisual = SetupUI.check("太字属性フォントを有効にする")
+    private let boldCheckVisual = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_VISUAL_BOLD_FONT", "太字属性フォントを有効にする"))
     private var ansiWork: [NSColor] = []
     private let ansiPopup = SetupUI.popup((0..<16).map(String.init))
     private let ansiR = SetupUI.field(width: 44), ansiG = SetupUI.field(width: 44), ansiB = SetupUI.field(width: 44)
@@ -576,23 +576,23 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                    self.s.ansi16 = self.ansiWork.map(TermSettings.rgbString) != std.map(TermSettings.rgbString) ? self.ansiWork : nil
                })
         return SetupUI.column([
-            SetupUI.label("ウィンドウの不透明度"),
-            SetupUI.indent(alphaRow("アクテイブ時(&A)", \.alphaBlendActive)),
-            SetupUI.indent(alphaRow("非アクティブ時(&C)", \.alphaBlendInactive)),
-            SetupUI.row([SetupUI.label("マウスカーソル(&M)"),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA", "ウィンドウの不透明度")),
+            SetupUI.indent(alphaRow(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA_ACTIVE", "アクテイブ時(&A)"), \.alphaBlendActive)),
+            SetupUI.indent(alphaRow(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA_INACTIVE", "非アクティブ時(&C)"), \.alphaBlendInactive)),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_MOUSE", "マウスカーソル(&M)")),
                          pop(["ARROW", "IBEAM", "CROSS", "HAND"], ["ARROW", "IBEAM", "CROSS", "HAND"], \.mouseCursor)]),
-            SetupUI.row([SetupUI.label("AN&SIカラー"), ansiPopup, SetupUI.label("赤(&R)"), ansiR, SetupUI.label("緑(&G)"), ansiG,
-                         SetupUI.label("青(&B)"), ansiB]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_ANSICOLOR", "AN&SIカラー")), ansiPopup, SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_RED", "赤(&R)")), ansiR, SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_GREEN", "緑(&G)")), ansiG,
+                         SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_BLUE", "青(&B)")), ansiB]),
             SetupUI.indent(ansiSample),
-            SetupUI.row([SetupUI.label("フォントの品質(&F)"),
-                         pop(["デフォルト", "アンチエイリアスなし", "アンチエイリアス"], ["default", "nonantialiased", "antialiased"], \.fontQuality)]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY", "フォントの品質(&F)")),
+                         pop([Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_DEFAULT", "デフォルト"), Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_NONANTIALIASED", "アンチエイリアスなし"), Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_ANTIALIASED", "アンチエイリアス")], ["default", "nonantialiased", "antialiased"], \.fontQuality)]),
             SetupUI.label("Character attributes"),
             SetupUI.indent(SetupUI.grid([
-                [cb("太字属性色を有効にする(&O)", \.enableBoldAttrColor), boldCheckVisual],
-                [cb("下線属性色を有効にする", \.underlineAttrColor), cb("下線属性に下線を付加する", \.underlineAttrFont)],
-                [cb("点滅属性色を有効にする(&L)", \.enableBlinkAttrColor), cb("反転属性色を有効にする(&V)", \.enableReverseAttrColor)],
-                [cb("URL属性色を有効にする(&U)", \.enableURLColor), cb("URL文字列に下線を付加する(&U)", \.urlUnderline)],
-                [cb("ANSIカラーを有効にする(&N)", \.enableANSIColor), NSGridCell.emptyContentView],
+                [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_BOLD_COLOR", "太字属性色を有効にする(&O)"), \.enableBoldAttrColor), boldCheckVisual],
+                [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_UNDERLINE_COLOR", "下線属性色を有効にする"), \.underlineAttrColor), cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_UNDERLINE_FONT", "下線属性に下線を付加する"), \.underlineAttrFont)],
+                [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_BLINK", "点滅属性色を有効にする(&L)"), \.enableBlinkAttrColor), cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_REVERSE", "反転属性色を有効にする(&V)"), \.enableReverseAttrColor)],
+                [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_URL_COLOR", "URL属性色を有効にする(&U)"), \.enableURLColor), cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_URL_FONT", "URL文字列に下線を付加する(&U)"), \.urlUnderline)],
+                [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_ANSI", "ANSIカラーを有効にする(&N)"), \.enableANSIColor), NSGridCell.emptyContentView],
             ], leading: true)),
         ], spacing: 8)
     }
@@ -618,12 +618,12 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private var bgColorForSample: NSColor { workColors.first?.bg ?? s.bg }
 
     // ログ (log_pp.cpp)
-    private let logBinaryCheck = SetupUI.check("バイナリ(&R)")
-    private let logPlainCheck = SetupUI.check("プレーンテキスト(&P)")
-    private let logTimestampCheck = SetupUI.check("タイムスタンプ(&T)")
-    private lazy var logTimestampPopup = pop(["ローカルタイム", "UTC", "経過時間(Logging)", "経過時間(Connection)"],
+    private let logBinaryCheck = SetupUI.check(Lang.t("Tera Term", "DLG_FOPT_BINARY", "バイナリ(&R)"))
+    private let logPlainCheck = SetupUI.check(Lang.t("Tera Term", "DLG_FOPT_PLAIN", "プレーンテキスト(&P)"))
+    private let logTimestampCheck = SetupUI.check(Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP", "タイムスタンプ(&T)"))
+    private lazy var logTimestampPopup = pop([Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_LOCAL", "ローカルタイム"), "UTC", Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_ELAPSED_LOGGING", "経過時間(Logging)"), Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_ELAPSED_CONNECTION", "経過時間(Connection)")],
                                              ["Local", "UTC", "LoggingElapsed", "ConnectionElapsed"], \.logTimestampType)
-    private let logRotateCheck = SetupUI.check("ログのローテート(&L)")
+    private let logRotateCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_LOG_ROTATE", "ログのローテート(&L)"))
     /// LogRotateSize はバイトで持ち、画面には単位 (Byte/KB/MB) で割った値を出す (log_pp.cpp)
     private lazy var logRotateSize: NSTextField = {
         let f = SetupUI.field(width: 80)
@@ -653,7 +653,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         logEditorField.delegate = self
         custom(load: { [unowned self] in self.logEditorField.stringValue = self.s.viewlogEditor },
                store: { [unowned self] in self.s.viewlogEditor = self.logEditorField.stringValue })
-        logEditorField.placeholderString = "テキストエディット"
+        logEditorField.placeholderString = Lang.m("SETUP_LOG_EDITOR_PLACEHOLDER", "テキストエディット")
         logNameCombo.addItems(withObjectValues: ["teraterm.log", "%H%M%S.log", "%y%m%d%H%M%S.log", "%Y%m%d_%H%M%S.log", "%y%m%d_%H%M%S.log",
                                                  "teraterm_%y%m%d%H%M%S.log", "%y%m%d_%H%M%S_&h.log", "%Y%m%d_%H%M%S_%z.log",
                                                  "%y%m%d_%H%M%S_%z.log", "%Y%m%dT%H%M%S%z.log"])
@@ -664,24 +664,26 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         custom(load: { [unowned self] in self.logPathField.stringValue = self.s.logDefaultPath },
                store: { [unowned self] in self.s.logDefaultPath = self.logPathField.stringValue })
         return SetupUI.column([
-            SetupUI.label("ログ表示用エディタ"),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_EDITOR", "ログ表示用エディタ")),
             SetupUI.indent(SetupUI.grid([
-                [SetupUI.label("実行ファイル(&E)"), SetupUI.row([logEditorField, SetupUI.button("...", target: self, action: #selector(chooseEditor))])],
-                [SetupUI.label("引き数(&R)"), text(\.viewlogEditorArg, width: 300)],
+                [SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_EDITOR_EXE", "実行ファイル(&E)")), SetupUI.row([logEditorField, SetupUI.button("...", target: self, action: #selector(chooseEditor))])],
+                [SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_EDITOR_ARG", "引き数(&R)")), text(\.viewlogEditorArg, width: 300)],
             ])),
-            SetupUI.label("標準ログファイル名(strftimeフォーマット可) (&F)"),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_FILENAME", "標準ログファイル名(strftimeフォーマット可) (&F)")),
             SetupUI.indent(logNameCombo),
-            SetupUI.label("標準のログ保存先フォルダ(&S)"),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_FILEPATH", "標準のログ保存先フォルダ(&S)")),
             SetupUI.indent(SetupUI.row([logPathField, SetupUI.button("...", target: self, action: #selector(chooseLogDir))])),
-            cb("自動的にログ採取を開始する(&U)", \.logAutoStart),
+            cb(Lang.t("Tera Term", "DLG_TAB_LOG_AUTOSTART", "自動的にログ採取を開始する(&U)"), \.logAutoStart),
             SetupUI.box("Log option", SetupUI.grid([
-                [logBinaryCheck, cb("追記(&A)", \.logAppend)],
-                [logPlainCheck, cb("ダイアログを非表示(&D)", \.logHideDialog)],
-                [cb("現在バッファを含む(&C)", \.logIncludeScreenBuffer), NSGridCell.emptyContentView],
+                [logBinaryCheck, cb(Lang.t("Tera Term", "DLG_FOPT_APPEND", "追記(&A)"), \.logAppend)],
+                // Hide dialog → "Logging dialog state" のドロップダウン (ttermpro.rc IDC_OPT_LOGGINGDIALOG_DROPDOWN, 23aa80682 #1576)
+                [logPlainCheck, NSGridCell.emptyContentView],
+                [SetupUI.label(Lang.m("MISC_LOGGINGDIALOG", "ログ記録中ダイアログ")), popInt(LogDialog.showStateTitles, [0, 1, 2], \.logShowState)],
+                [cb(Lang.t("Tera Term", "DLG_FOPT_ALLBUFFINFIRST", "現在バッファを含む(&C)"), \.logIncludeScreenBuffer), NSGridCell.emptyContentView],
                 [logTimestampCheck, logTimestampPopup],
             ], leading: true)),
             logRotateCheck,
-            SetupUI.indent(SetupUI.row([SetupUI.label("サイズ(&i)"), logRotateSize, logRotateType, SetupUI.label("世代(&R)"), logRotateStep])),
+            SetupUI.indent(SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_ROTATE_SIZE_TEXT", "サイズ(&i)")), logRotateSize, logRotateType, SetupUI.label(Lang.t("Tera Term", "DLG_TAB_LOG_ROTATESTEP", "世代(&R)")), logRotateStep])),
         ], spacing: 8)
     }
     @objc private func chooseEditor() {
@@ -696,24 +698,25 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     }
 
     // エンコーディング (coding_pp.cpp)
-    private let recvPopup = SetupUI.popup(TermEncoding.allCases.map { $0.rawValue })
+    // coding_pp.cpp: ttlib_charset.cpp KanjiList の CodeStrGUI を並べる (#510 で 1 バイトの文字コードが増えた)
+    private let recvPopup = SetupUI.popup(TermEncoding.guiList.map { $0.name })
     private let differentCheck = SetupUI.check("Tra&nsmit (Use different code)")
-    private let sendPopup = SetupUI.popup(TermEncoding.allCases.map { $0.rawValue })
+    private let sendPopup = SetupUI.popup(TermEncoding.guiList.map { $0.name })
     private let ambPopup = SetupUI.popup(["1 Cell", "2 Cell"])
     private let emojiCheck = SetupUI.check("Override Emoji Characters width")
     private lazy var emojiPopup = popInt(["1 Cell", "2 Cell"], [1, 2], \.unicodeEmojiWidth)
-    private let decRadios = [SetupUI.radio("UnicodeをDEC Special Graphicsへマッピングする"),
-                             SetupUI.radio("DEC Special GraphicsをUnicodeへマッピングする"),
-                             SetupUI.radio("DEC Special Graphicsをマッピングしない")]
-    private let boxCheck = SetupUI.check("罫線素片(U+2500-U+257F)")
-    private let punctCheck = SetupUI.check("Punctuation, Block Elements, Shade")
-    private let middleDotCheck = SetupUI.check("中点(U+00B7,U+2024,U+2219)")
-    private let kanaRecvCheck = SetupUI.check("半角カナ(&F)")
-    private let kanaSendCheck = SetupUI.check("半角カナ(&D)")
+    private let decRadios = [SetupUI.radio(Lang.t("Tera Term", "DLG_CODING_DECSP_UNICODE_TO_DEC", "UnicodeをDEC Special Graphicsへマッピングする")),
+                             SetupUI.radio(Lang.t("Tera Term", "DLG_CODING_DECSP_DEC_TO_UNICODE", "DEC Special GraphicsをUnicodeへマッピングする")),
+                             SetupUI.radio(Lang.t("Tera Term", "DLG_CODING_DECSP_DO_NOT_MAP", "DEC Special Graphicsをマッピングしない"))]
+    private let boxCheck = SetupUI.check(Lang.t("Tera Term", "DLG_CODING_UNICODE_TO_DEC_BOXDRAWING", "罫線素片(U+2500-U+257F)"))
+    private let punctCheck = SetupUI.check(Lang.t("Tera Term", "DLG_CODING_UNICODE_TO_DEC_PUNCTUATION", "Punctuation, Block Elements, Shade"))
+    private let middleDotCheck = SetupUI.check(Lang.t("Tera Term", "DLG_CODING_UNICODE_TO_DEC_MIDDLEDOT", "中点(U+00B7,U+2024,U+2219)"))
+    private let kanaRecvCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_KANA", "半角カナ(&F)"))
+    private let kanaSendCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_KANASEND", "半角カナ(&D)"))
     private lazy var kanjiInPopup = pop(["^[$@", "^[$B"], ["@", "B"], \.kanjiIn)
     private lazy var kanjiOutPopup = pop(["^[(B", "^[(J"], ["B", "J"], \.kanjiOut)
     private func encodingPage() -> NSView {
-        let all = TermEncoding.allCases
+        let all = TermEncoding.guiList.map { $0.code }
         for p in [recvPopup, sendPopup, ambPopup] { p.target = self; p.action = #selector(changed(_:)) }
         differentCheck.target = self; differentCheck.action = #selector(changed(_:))
         bind(emojiCheck, \.unicodeEmojiOverride)
@@ -731,8 +734,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                        if c.state == .on { self.s.unicodeToDecSpMapping |= 1 << i } else { self.s.unicodeToDecSpMapping &= ~(1 << i) } })
         }
         custom(load: { [unowned self] in
-            self.recvPopup.selectItem(at: all.firstIndex(of: self.s.encoding) ?? 0)
-            self.sendPopup.selectItem(at: all.firstIndex(of: self.s.encodingSend) ?? 0)
+            // 同じ文字コードが 2 つあるとき (CP1251) は本家と同じく後ろのもの
+            self.recvPopup.selectItem(at: all.lastIndex(of: self.s.encoding) ?? 0)
+            self.sendPopup.selectItem(at: all.lastIndex(of: self.s.encodingSend) ?? 0)
             self.differentCheck.state = self.s.encoding != self.s.encodingSend ? .on : .off
             self.ambPopup.selectItem(at: self.s.ambiguousWide ? 1 : 0)
         }, store: { [unowned self] in
@@ -752,8 +756,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             SetupUI.box("DEC Special Graphics", SetupUI.column(decRadios + [SetupUI.indent(SetupUI.column([boxCheck, punctCheck, middleDotCheck]))])),
             SetupUI.box("JIS", SetupUI.grid([
                 [SetupUI.label("Receive"), kanaRecvCheck],
-                [SetupUI.label("Transmit"), SetupUI.row([kanaSendCheck, SetupUI.label("漢字イン(&N):"), kanjiInPopup,
-                                                         SetupUI.label("漢字アウト(&O):"), kanjiOutPopup])],
+                [SetupUI.label("Transmit"), SetupUI.row([kanaSendCheck, SetupUI.label(Lang.t("Tera Term", "DLG_TERM_KIN", "漢字イン(&N):")), kanjiInPopup,
+                                                         SetupUI.label(Lang.t("Tera Term", "DLG_TERM_KOUT", "漢字アウト(&O):")), kanjiOutPopup])],
             ])),
         ], spacing: 8)
     }
@@ -787,14 +791,19 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         // 「戻す」ボタンは同じ行の右に置き、隠しても場所を空けたままにする (押したときに画面がずれないように)
         let spaceBox = SetupUI.row([cross, resetSpaceButton], spacing: 16)
         spaceBox.detachesHiddenViews = false
-        let fontRow = SetupUI.row([fontField, SetupUI.button("選択(&S)...", target: self, action: #selector(chooseFont)), resetFontButton])
+        let chooseButton = SetupUI.button(Lang.t("Tera Term", "DLG_TAB_FONT_BTN_SELECT", "選択(&S)..."), target: self, action: #selector(chooseFont))
+        // 狭いときはフォント名の欄を縮め、ボタンは潰さない
+        chooseButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        resetFontButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        fontField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let fontRow = SetupUI.row([fontField, chooseButton, resetFontButton])
         fontRow.detachesHiddenViews = false
         return SetupUI.column([
-            SetupUI.label("VTウィンドウフォント(&V)"),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_FONT_VTWINFONT", "VTウィンドウフォント(&V)")),
             SetupUI.indent(fontRow),
-            SetupUI.button("フォント設定/フォントフォルダ(\(fontsDir))を開く", target: self, action: #selector(openFontFolder)),
-            cb("描画幅に合わせてリサイズしたフォントを描画(&W)", \.drawingResizedFont),
-            SetupUI.box("文字間スペース", spaceBox),
+            SetupUI.button(Lang.t("Tera Term", "DLG_TAB_FONT_FOLDER", "フォント設定/フォントフォルダ(%s)を開く", fontsDir), target: self, action: #selector(openFontFolder)),
+            cb(Lang.t("Tera Term", "DLG_TAB_FONT_RESIZED_FONT", "描画幅に合わせてリサイズしたフォントを描画(&W)"), \.drawingResizedFont),
+            SetupUI.box(Lang.t("Tera Term", "DLG_TAB_FONT_CHARACTER_SPACE", "文字間スペース"), spaceBox),
         ], spacing: 10)
     }
     // 文字間スペース: 各欄の横の上下ボタンで 1 ずつ変えられる。変えるとその場で端末に映る
@@ -822,7 +831,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         return [t.fontDX, t.fontDW - t.fontDX, t.fontDY, t.fontDH - t.fontDY]
     }()
     private lazy var resetSpaceButton = SetupUI.button(
-        "デフォルト (\(Self.defaultSpace.map(String.init).joined(separator: ", "))) に戻す",
+        Lang.m("SETUP_RESET_SPACE", "デフォルト (%s) に戻す", Self.defaultSpace.map(String.init).joined(separator: ", ")),
         target: self, action: #selector(resetSpace))
     @objc private func resetSpace() {
         for (f, v) in zip(spaceFields, Self.defaultSpace) { f.stringValue = String(v) }
@@ -839,14 +848,17 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         // 既定と違うフォントのときだけ「戻す」ボタンを出す
         let d = Self.defaultFont
         resetFontButton.isHidden = s.fontName == d.name && s.fontSize == d.size
-        resetFontButton.title = "デフォルトのフォント (\(NSFont(name: d.name, size: d.size)?.displayName ?? d.name), \(Int(d.size))pt) に戻す"
+        // ボタンの文字は短く (同じ行の「選択...」を押しつぶさないように)。どのフォントに戻るかはツールチップで
+        resetFontButton.title = Lang.m("SETUP_RESET_FONT", "デフォルトのフォントに戻す")
+        resetFontButton.toolTip = Lang.m("SETUP_RESET_FONT_TO", "デフォルトのフォント (%s, %dpt) に戻す",
+                                         NSFont(name: d.name, size: d.size)?.displayName ?? d.name, Int(d.size))
     }
     /// 既定のフォント (初めて起動したときの設定 = 同梱の TERATERM.INI を重ねた初期値)
     private static let defaultFont: (name: String, size: CGFloat) = {
         let t = TermSettings.initial()
         return (t.fontName, t.fontSize)
     }()
-    private lazy var resetFontButton = SetupUI.button("デフォルトのフォントに戻す", target: self, action: #selector(resetFont))
+    private lazy var resetFontButton = SetupUI.button(Lang.m("SETUP_RESET_FONT", "デフォルトのフォントに戻す"), target: self, action: #selector(resetFont))
     @objc private func resetFont() {
         s.fontName = Self.defaultFont.name
         s.fontSize = Self.defaultFont.size
@@ -872,8 +884,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // テーマ (theme_pp.cpp)。下に Mac の配色の候補 (配色かんたん設定)
     private let themeEnableCheck = SetupUI.check("Enable")
     private lazy var themeEditorButton = SetupUI.button("Theme Editor", target: self, action: nil)
-    private let fastSizeMoveCheck = SetupUI.check("ウィンドウ移動/リサイズ時テーマを一時的にdisableする")
-    private let themeStartupPopup = SetupUI.popup(["使用しない", "固定テーマ(テーマファイル指定)", "ランダムテーマ"])
+    private let fastSizeMoveCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TAB_VISUAL_FAST_SIZE_MOVE", "ウィンドウ移動/リサイズ時テーマを一時的にdisableする"))
+    private let themeStartupPopup = SetupUI.popup([Lang.t("Tera Term", "DLG_TAB_VISUAL_THEME_STARTUP_NO_USE", "使用しない"), Lang.t("Tera Term", "DLG_TAB_VISUAL_THEME_STARTUP_FIXED_THEME", "固定テーマ(テーマファイル指定)"), Lang.t("Tera Term", "DLG_TAB_VISUAL_THEME_STARTUP_RANDOM_THEME", "ランダムテーマ")])
     private let themeFileField = SetupUI.field(width: 380)
     private lazy var themeFileButton = SetupUI.button("...", target: self, action: #selector(chooseThemeFile))
     private let bundledThemePopup = NSPopUpButton(frame: .zero, pullsDown: true)
@@ -886,8 +898,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         themeStartupPopup.target = self; themeStartupPopup.action = #selector(themeSettingChanged)
         themeFileField.delegate = self
         themeEditorButton.isEnabled = false   // テーマエディタ (themedlg.cpp) は未対応
-        themeEditorButton.toolTip = "Mac 版では未対応です"
-        bundledThemePopup.addItem(withTitle: "同梱のテーマ")
+        themeEditorButton.toolTip = Lang.m("SETUP_NOT_SUPPORTED_ON_MAC", "Mac 版では未対応です")
+        bundledThemePopup.addItem(withTitle: Lang.m("SETUP_BUNDLED_THEMES", "同梱のテーマ"))
         for p in ThemeFile.bundledThemes() {
             let item = NSMenuItem(title: ThemeFile.storedName(for: p), action: nil, keyEquivalent: "")
             item.representedObject = p
@@ -904,10 +916,10 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
         // Mac の配色の候補
         schemes = ColorScheme.presets + ColorScheme.terminalProfiles()
-        schemePopup.addItem(withTitle: "使用しない")
+        schemePopup.addItem(withTitle: Lang.t("Tera Term", "DLG_TAB_VISUAL_THEME_STARTUP_NO_USE", "使用しない"))
         for (i, sc) in schemes.enumerated() {
             if i == ColorScheme.presets.count { schemePopup.menu?.addItem(.separator()) }
-            let item = NSMenuItem(title: sc.name, action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: sc.title, action: nil, keyEquivalent: "")
             item.image = sc.swatch()
             item.tag = i
             schemePopup.menu?.addItem(item)
@@ -930,7 +942,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                 self.schemePopup.selectItem(withTag: i)
             } else { self.schemePopup.selectItem(at: 0) }
         }, store: { [unowned self] in self.s.cursorColor = self.cursorWell.color })
-        let note = NSTextField(wrappingLabelWithString: "配色を選ぶと、文字色・背景色・カーソルの色・ANSIカラーをその配色にします (OK で確定)。")
+        let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_SCHEME_NOTE", "配色を選ぶと、文字色・背景色・カーソルの色・ANSIカラーをその配色にします (OK で確定)。"))
         note.preferredMaxLayoutWidth = 440
         return SetupUI.column([
             SetupUI.label("Theme"),
@@ -945,8 +957,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                 ])),
             ], spacing: 8)),
             SetupUI.indent(preview),
-            SetupUI.box("配色 (Mac)", SetupUI.column([
-                SetupUI.row([SetupUI.label("配色"), schemePopup, SetupUI.label("カーソルの色"), cursorWell]),
+            SetupUI.box(Lang.m("SETUP_SCHEME_BOX", "配色 (Mac)"), SetupUI.column([
+                SetupUI.row([SetupUI.label(Lang.m("SETUP_SCHEME", "配色")), schemePopup, SetupUI.label(Lang.m("SETUP_CURSOR_COLOR", "カーソルの色")), cursorWell]),
                 note,
             ])),
         ], spacing: 10)
@@ -1042,25 +1054,40 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         preview.font = NSFont(name: s.fontName, size: 12) ?? preview.font
     }
 
-    // UI (ui_pp.cpp)。言語は macOS の設定に従うので日本語だけ。ダイアログフォントは Mac では変えられないので無い
+    // UI (ui_pp.cpp)。UI言語は本家の言語ファイル (lang_utf8/*.lng) から選ぶ。先頭は「自動」(macOS の言語設定に従う)。
+    // ダイアログフォントは Mac では変えられないので無い
+    private let uiLangPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    /// 開いたときに選んでいた番号 (OK で変わったときだけ Lang.chosen を変える)
+    private var uiLangInitial = 0
     private func uiPage() -> NSView {
-        let lang = SetupUI.popup(["日本語"])
-        lang.isEnabled = false
-        let note = NSTextField(wrappingLabelWithString: "Mac 版の表示言語は日本語です (メニューやダイアログの文字は macOS の設定に従います)。")
-        note.preferredMaxLayoutWidth = 420
-        note.textColor = .secondaryLabelColor
+        uiLangPopup.removeAllItems()
+        uiLangPopup.addItem(withTitle: Lang.m("SETUP_UI_LANG_AUTO", "自動 (macOS の設定に従う)"))
+        for l in Lang.available {
+            let item = NSMenuItem(title: l.name, action: nil, keyEquivalent: "")
+            item.representedObject = l.file
+            item.toolTip = l.file
+            uiLangPopup.menu?.addItem(item)
+        }
+        uiLangInitial = Lang.chosen.flatMap { c in Lang.available.firstIndex { $0.file == c }.map { $0 + 1 } } ?? 0
+        uiLangPopup.selectItem(at: uiLangInitial)
         let fontsDir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Fonts")
-        let link = NSButton(title: "フォント設定/フォントフォルダ(\(fontsDir))を開く", target: self, action: #selector(openFontFolder))
+        let link = NSButton(title: Lang.t("Tera Term", "DLG_TAB_FONT_FOLDER", "フォント設定/フォントフォルダ(%s)を開く", fontsDir),
+                            target: self, action: #selector(openFontFolder))
         link.isBordered = false
         link.contentTintColor = .linkColor
         link.attributedTitle = NSAttributedString(string: link.title, attributes: [
             .foregroundColor: NSColor.linkColor, .underlineStyle: NSUnderlineStyle.single.rawValue, .font: NSFont.systemFont(ofSize: 13)])
         return SetupUI.column([
-            SetupUI.label("UI言語(&L):"),
-            SetupUI.indent(lang),
-            SetupUI.indent(note),
+            SetupUI.label(Lang.t("Tera Term", "DLG_GEN_LANG_UI", "UI言語(&L):")),
+            SetupUI.indent(uiLangPopup),
             SetupUI.indent(link),
         ], spacing: 8)
+    }
+    /// OK: UI言語が変わっていれば切り替える (nil = 自動)
+    private func applyUILanguage() {
+        let i = uiLangPopup.indexOfSelectedItem
+        guard i >= 0, i != uiLangInitial else { return }
+        Lang.chosen = uiLangPopup.item(at: i)?.representedObject as? String
     }
 
     // ローカルシェル (Cygwin タブ cygwin_pp の場所。CygTerm の SHELL / TERM / ENV_1 / ENV_2 / LOGIN_SHELL / HOME_CHDIR)
@@ -1072,8 +1099,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private let homeChdirCheck = SetupUI.check("HOME_CHDIR")
     private func localShellPage() -> NSView {
         shellField.placeholderString = LocalShellSettings.defaultShell
-        shellEnv1Field.placeholderString = "名前=値"
-        shellEnv2Field.placeholderString = "名前=値"
+        shellEnv1Field.placeholderString = Lang.m("SETUP_ENV_PLACEHOLDER", "名前=値")
+        shellEnv2Field.placeholderString = Lang.m("SETUP_ENV_PLACEHOLDER", "名前=値")
         custom(load: { [unowned self] in
             let l = LocalShellSettings.load()
             self.shellField.stringValue = l.shell.isEmpty ? LocalShellSettings.defaultShell : l.shell
@@ -1095,11 +1122,11 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             if !self.previewing { l.save() }
         })
         let shellButton = SetupUI.button("...", target: self, action: #selector(chooseShell))
-        let note = NSTextField(wrappingLabelWithString: "ファイル > ローカルシェル で開くシェルの設定です (新しく開くときから)。")
+        let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_LOCAL_SHELL_NOTE", "ファイル > ローカルシェル で開くシェルの設定です (新しく開くときから)。"))
         note.preferredMaxLayoutWidth = 420
         note.textColor = .secondaryLabelColor
         return SetupUI.column([
-            SetupUI.box("ローカルシェル", SetupUI.column([
+            SetupUI.box(Lang.m("SETUP_TAB_LOCAL_SHELL", "ローカルシェル"), SetupUI.column([
                 SetupUI.grid([
                     [SetupUI.label("SHELL"), SetupUI.row([shellField, shellButton])],
                     [SetupUI.label("TERM"), shellTermField],
@@ -1122,13 +1149,13 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // キーボード (keyboard_pp.c)
     private func keyboardPage() -> NSView {
         SetupUI.column([
-            SetupUI.box("DELを送信するキー:", SetupUI.column([
-                cb("&Backspace キー", \.bsSendsDel), cb("&Delete キー", \.deleteKeySendsDel),
+            SetupUI.box(Lang.t("Tera Term", "DLG_KEYB_TRANSMIT", "DELを送信するキー:"), SetupUI.column([
+                cb(Lang.t("Tera Term", "DLG_KEYB_BS", "&Backspace キー"), \.bsSendsDel), cb(Lang.t("Tera Term", "DLG_KEYB_DEL", "&Delete キー"), \.deleteKeySendsDel),
             ])),
-            SetupUI.row([SetupUI.label("&Meta キー:"), pop(["off", "on", "left", "right"], ["off", "on", "left", "right"], \.metaKey),
-                         SetupUI.label("(Option キー)")]),
-            SetupUI.box("無効化するモード", SetupUI.column([
-                cb("アプリケーションキーパッド(&A)", \.disableAppKeypad), cb("アプリケーションカーソル(&C)", \.disableAppCursor),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_KEYB_META", "&Meta キー:")), pop(["off", "on", "left", "right"], ["off", "on", "left", "right"], \.metaKey),
+                         SetupUI.label(Lang.m("SETUP_META_OPTION_KEY", "(Option キー)"))]),
+            SetupUI.box(Lang.t("Tera Term", "DLG_KEYB_DISABLE", "無効化するモード"), SetupUI.column([
+                cb(Lang.t("Tera Term", "DLG_KEYB_APPKEY", "アプリケーションキーパッド(&A)"), \.disableAppKeypad), cb(Lang.t("Tera Term", "DLG_KEYB_APPCUR", "アプリケーションカーソル(&C)"), \.disableAppCursor),
             ])),
         ], spacing: 10)
     }
@@ -1136,27 +1163,27 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // マウス (mouse_pp.cpp)
     private func mousePage() -> NSView {
         SetupUI.column([
-            cb("クリッカブルURLを有効にする(&E)", \.enableClickableUrl),
-            SetupUI.row([SetupUI.label("ホイールのスクロール行数(&W)"), num(\.mouseWheelScrollLine, width: 50, range: 1...100)]),
+            cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_CLICKURL", "クリッカブルURLを有効にする(&E)"), \.enableClickableUrl),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_GENERAL_MOUSEWHEEL_SCROLL_LINE", "ホイールのスクロール行数(&W)")), num(\.mouseWheelScrollLine, width: 50, range: 1...100)]),
         ], spacing: 10)
     }
 
     // TCP/IP (tcpip_pp.cpp)
     private func tcpipPage() -> NSView {
-        let edit = SetupUI.button("ホストリストの編集", target: self, action: #selector(editHosts))
+        let edit = SetupUI.button(Lang.t("Tera Term", "DLG_TCPIP_EDITHISTORY", "ホストリストの編集"), target: self, action: #selector(editHosts))
         return SetupUI.column([
-            SetupUI.row([cb("新規接続時にホストリストに追加(&I)", \.historyList), edit]),
-            SetupUI.row([cb("T&elnet", \.telnet), SetupUI.label("ポート#(&P):"), num(\.tcpPort, width: 70, range: 1...65535)]),
-            SetupUI.row([SetupUI.label("Telnet &Keep-alive"), num(\.telKeepAliveInterval, width: 60), SetupUI.label("秒(0指定で無効)")]),
-            cb("自動的にウィンドウを閉じる(&W)", \.autoWinClose),
-            SetupUI.row([SetupUI.label("端末タイプ(&T):"), text(\.termType, width: 160)]),
+            SetupUI.row([cb(Lang.t("Tera Term", "DLG_TCPIP_HISTORY", "新規接続時にホストリストに追加(&I)"), \.historyList), edit]),
+            SetupUI.row([cb(Lang.t("Tera Term", "DLG_TCPIP_TELNET", "T&elnet"), \.telnet), SetupUI.label(Lang.t("Tera Term", "DLG_TCPIP_PORT", "ポート#(&P):")), num(\.tcpPort, width: 70, range: 1...65535)]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TCPIP_KEEPALIVE", "Telnet &Keep-alive")), num(\.telKeepAliveInterval, width: 60), SetupUI.label(Lang.t("Tera Term", "DLG_TCPIP_KEEPALIVE_SEC", "秒(0指定で無効)"))]),
+            cb(Lang.t("Tera Term", "DLG_TCPIP_AUTOCLOSE", "自動的にウィンドウを閉じる(&W)"), \.autoWinClose),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TCPIP_TERMTYPE", "端末タイプ(&T):")), text(\.termType, width: 160)]),
         ], spacing: 10)
     }
     @objc private func editHosts() { HostListEditDialog().begin(on: panel) }
 
     // 端末 (term_pp.cpp)
-    private let termIsWinCheck = SetupUI.check("= ウィンドウサイズ(&S):")
-    private let termResizeCheck = SetupUI.check("自動的に調整(&W):")
+    private let termIsWinCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_ISWIN", "= ウィンドウサイズ(&S):"))
+    private let termResizeCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_RESIZE", "自動的に調整(&W):"))
     private let colsField = SetupUI.field(width: 50), rowsField = SetupUI.field(width: 50)
     private func terminalPage() -> NSView {
         bind(termIsWinCheck, \.termIsWin)
@@ -1166,24 +1193,24 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             self.colsField.stringValue = String(self.s.cols); self.rowsField.stringValue = String(self.s.rows)
         }, store: { [unowned self] in
             // 0 以下は変えない。大きすぎるときは最大に
-            if let c = Int(self.colsField.stringValue), c > 0 { self.s.cols = max(10, min(500, c)) }
-            if let r = Int(self.rowsField.stringValue), r > 0 { self.s.rows = max(2, min(300, r)) }
+            if let c = Int(self.colsField.stringValue), c > 0 { self.s.cols = max(10, min(TermLimits.widthMax, c)) }   // term_pp.cpp: TermWidthMax
+            if let r = Int(self.rowsField.stringValue), r > 0 { self.s.rows = max(2, min(TermLimits.heightMax, r)) }
         })
         let recv = pop(["CR", "CR+LF", "LF", "AUTO"], ["AUTO", "CR", "LF", "AUTODETECT"], \.recvNewline)
         let send = pop(["CR", "CR+LF", "LF"], ["CR", "CRLF", "LF"], \.sendNewline)
         let ids = ["VT100", "VT100J", "VT101", "VT102", "VT102J", "VT220", "VT220J", "VT282", "VT320", "VT382", "VT420", "VT520", "VT525", "dumb"]
         return SetupUI.column([
-            SetupUI.box("端末サイズ(&T):", SetupUI.column([
+            SetupUI.box(Lang.t("Tera Term", "DLG_TERM_WIDTHLABEL", "端末サイズ(&T):"), SetupUI.column([
                 SetupUI.row([colsField, SetupUI.label("X"), rowsField]),
                 termIsWinCheck, termResizeCheck,
             ])),
-            SetupUI.box("改行コード", SetupUI.grid([[SetupUI.label("受信(&R):"), recv], [SetupUI.label("送信(&M):"), send]])),
+            SetupUI.box(Lang.t("Tera Term", "DLG_TERM_NEWLINE", "改行コード"), SetupUI.grid([[SetupUI.label(Lang.t("Tera Term", "DLG_TERM_CRRCV", "受信(&R):")), recv], [SetupUI.label(Lang.t("Tera Term", "DLG_TERM_CRSEND", "送信(&M):")), send]])),
             SetupUI.grid([
-                [SetupUI.label("端末ID(&I):"), pop(ids, ids, \.terminalID)],
-                [SetupUI.label("応答(&A):"), text(\.answerback, width: 200)],
+                [SetupUI.label(Lang.t("Tera Term", "DLG_TERM_ID", "端末ID(&I):")), pop(ids, ids, \.terminalID)],
+                [SetupUI.label(Lang.t("Tera Term", "DLG_TERM_ANSBACK", "応答(&A):")), text(\.answerback, width: 200)],
             ]),
-            cb("ローカルエコー(&L):", \.localEcho),
-            cb("自動切り替え(VT<->TEK)(&U):", \.autoWinSwitch),
+            cb(Lang.t("Tera Term", "DLG_TERM_LOCALECHO", "ローカルエコー(&L):"), \.localEcho),
+            cb(Lang.t("Tera Term", "DLG_TERM_AUTOSWITCH", "自動切り替え(VT<->TEK)(&U):"), \.autoWinSwitch),
         ], spacing: 10)
     }
 
@@ -1197,13 +1224,18 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private let statusChecks = ["CTS", "DSR", "RING", "RLSD"].map { NSButton(checkboxWithTitle: $0, target: nil, action: nil) }
     private let rtsCheck = NSButton(checkboxWithTitle: "RTS", target: nil, action: nil)
     private let dtrCheck = NSButton(checkboxWithTitle: "DTR", target: nil, action: nil)
+    /// serial_pp.cpp RtsList / DtrList (#934): FlowCtrlRTS / FlowCtrlDTR
+    private let rtsPopup = SetupUI.popup(["Disable", "Enable", "Handshake", "Toggle"])
+    private let dtrPopup = SetupUI.popup(["Disable", "Enable", "Handshake"])
+    /// 開いたときの RTS / DTR / フロー制御 (キャンセルで戻す。PSN_RESET)
+    private var serialOriginal: (rts: Int, dtr: Int, flow: String)?
     private let serialInfo = NSTextField(wrappingLabelWithString: "")
     private var statusTimer: Timer?
     private static let flowValues = ["xon", "rts", "dsr", "none"]
     private func serialPage() -> NSView {
         let open = session?.conn as? SerialConnection
         let ports = SerialPort.list()
-        portPopup.addItems(withTitles: ports.isEmpty ? ["(シリアルポートが見つかりません)"] : ports)
+        portPopup.addItems(withTitles: ports.isEmpty ? [Lang.m("SETUP_NO_SERIAL_PORT", "(シリアルポートが見つかりません)")] : ports)
         if !serial.path.isEmpty && !ports.contains(serial.path) { portPopup.addItem(withTitle: serial.path) }
         if !serial.path.isEmpty { portPopup.selectItem(withTitle: serial.path) }
         portPopup.isEnabled = open == nil && !ports.isEmpty   // 開いている間は変えられない
@@ -1216,51 +1248,79 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         stopPopup.selectItem(at: serial.stopBits == 2 ? 1 : 0)
         flowPopup.selectItem(at: Self.flowValues.firstIndex(of: serial.flow) ?? 3)
         for c in statusChecks { c.isEnabled = false }
-        for c in [rtsCheck, dtrCheck] {
-            c.target = self; c.action = #selector(modemLineChanged(_:)); c.state = .on
-            c.isEnabled = open != nil && open?.flow == "none"
-        }
+        for c in [rtsCheck, dtrCheck] { c.target = self; c.action = #selector(modemLineChanged(_:)) }
+        rtsPopup.selectItem(at: max(0, min(3, serial.rts)))
+        dtrPopup.selectItem(at: max(0, min(2, serial.dtr)))
+        for p in [rtsPopup, dtrPopup] { p.target = self; p.action = #selector(rtsDtrChanged(_:)) }
+        flowPopup.target = self; flowPopup.action = #selector(serialFlowChanged(_:))
+        if let o = open { serialOriginal = (o.params.rts, o.params.dtr, o.flow) }
+        setComStatus()
         serialInfo.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         serialInfo.preferredMaxLayoutWidth = 260
         if let o = open {
-            serialInfo.stringValue = "\(o.params.path)\n開いています\n\(serial.baud) bps \(serial.dataBits)\(serial.parity.prefix(1).uppercased())\(serial.stopBits)"
+            serialInfo.stringValue = Lang.m("SETUP_SERIAL_OPEN", "%s\n開いています\n%d bps %s", o.params.path, serial.baud,
+                                            "\(serial.dataBits)\(serial.parity.prefix(1).uppercased())\(serial.stopBits)")
             statusTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.pollModem() }
         } else {
-            serialInfo.stringValue = ports.isEmpty ? "" : "ポートは開いていません。\n設定は次にシリアルポートを開くときに使います。"
+            serialInfo.stringValue = ports.isEmpty ? "" : Lang.m("SETUP_SERIAL_NOT_OPEN", "ポートは開いていません。\n設定は次にシリアルポートを開くときに使います。")
         }
         let grid = SetupUI.grid([
-            [SetupUI.label("ポート(&P):"), portPopup],
-            [SetupUI.label("スピード(&E):"), baudCombo],
-            [SetupUI.label("データ(&D):"), dataPopup],
-            [SetupUI.label("パリティ(&A):"), parityPopup],
-            [SetupUI.label("ストップビット(&S):"), stopPopup],
-            [SetupUI.label("フロー制御(&F):"), flowPopup],
+            [SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_PORT", "ポート(&P):")), portPopup],
+            [SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_BAUD", "スピード(&E):")), baudCombo],
+            [SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_DATA", "データ(&D):")), dataPopup],
+            [SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_PARITY", "パリティ(&A):")), parityPopup],
+            [SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_STOP", "ストップビット(&S):")), stopPopup],
+            [SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_FLOW", "フロー制御(&F):")), flowPopup],
+            // e4ddcf535 / 47c5acf21 (#934): CTS RTS [RTS] / DSR DTR [DTR] / RING RLSD
+            [SetupUI.row([statusChecks[0], rtsCheck]), rtsPopup],
+            [SetupUI.row([statusChecks[1], dtrCheck]), dtrPopup],
+            [SetupUI.row([statusChecks[2], statusChecks[3]]), NSGridCell.emptyContentView],
         ])
-        let delay = SetupUI.box("送信遅延", SetupUI.row([
-            num(\.charDelayMs, width: 50, range: 0...9999), SetupUI.label("ミリ秒/字(&C)"),
-            num(\.lineDelayMs, width: 50, range: 0...9999), SetupUI.label("ミリ秒/行(&L)"),
+        let delay = SetupUI.box(Lang.t("Tera Term", "DLG_SERIAL_DELAY", "送信遅延"), SetupUI.row([
+            num(\.charDelayMs, width: 50, range: 0...9999), SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_DELAYCHAR", "ミリ秒/字(&C)")),
+            num(\.lineDelayMs, width: 50, range: 0...9999), SetupUI.label(Lang.t("Tera Term", "DLG_SERIAL_DELAYLINE", "ミリ秒/行(&L)")),
         ]))
-        let status = SetupUI.column([SetupUI.row(statusChecks), SetupUI.row([rtsCheck, dtrCheck])])
-        return SetupUI.row([SetupUI.column([grid, delay], spacing: 12), SetupUI.column([serialInfo, status], spacing: 12)],
+        return SetupUI.row([SetupUI.column([grid, delay], spacing: 12), SetupUI.column([serialInfo], spacing: 12)],
                            spacing: 24, align: .top)
     }
     private func pollModem() {
         guard let o = session?.conn as? SerialConnection, let st = o.modemStatus() else { return }
         for (i, c) in statusChecks.enumerated() { c.state = st & (1 << i) != 0 ? .on : .off }
     }
+    /// IDC_CHECK_RTS / IDC_CHECK_DTR: すぐに上げ下げする (EscapeCommFunction)
     @objc private func modemLineChanged(_ sender: NSButton) {
         guard let o = session?.conn as? SerialConnection else { return }
-        o.setModemLine(sender === rtsCheck ? TIOCM_RTS : TIOCM_DTR, sender.state == .on)
+        o.setLine(sender === rtsCheck ? TIOCM_RTS : TIOCM_DTR, sender.state == .on)
+    }
+    /// IDC_SERIALRTS / IDC_SERIALDTR を変えた: ポートにすぐかける (SetComStatus)
+    @objc private func rtsDtrChanged(_ sender: Any?) { setComStatus() }
+    /// IDC_SERIALFLOW を変えた: RTS / DTR を既定に戻す (RTS/CTS なら RTS は Handshake、DSR/DTR なら DTR は Handshake)
+    @objc private func serialFlowChanged(_ sender: Any?) {
+        let f = Self.flowValues[max(0, flowPopup.indexOfSelectedItem)]
+        rtsPopup.selectItem(at: SerialParams.defaultRTS(flow: f))
+        dtrPopup.selectItem(at: SerialParams.defaultDTR(flow: f))
+        setComStatus()
+    }
+    /// serial_pp.cpp SetComStatus: 開いているポートに RTS / DTR / フロー制御をかけ、チェックを合わせる。
+    /// チェックは Disable / Enable のときだけ押せる (Toggle の RTS はふだん下がっている)
+    private func setComStatus() {
+        let rts = max(0, rtsPopup.indexOfSelectedItem), dtr = max(0, dtrPopup.indexOfSelectedItem)
+        let open = session?.conn as? SerialConnection
+        open?.setRTSDTR(rts: rts, dtr: dtr, flow: Self.flowValues[max(0, flowPopup.indexOfSelectedItem)])
+        rtsCheck.state = rts == SerialParams.disable || rts == SerialParams.toggle ? .off : .on
+        dtrCheck.state = dtr == SerialParams.disable ? .off : .on
+        rtsCheck.isEnabled = open != nil && rts <= SerialParams.enable
+        dtrCheck.isEnabled = open != nil && dtr <= SerialParams.enable
     }
 
     // ウィンドウ (win_pp.cpp)
-    private let cursorRadios = [SetupUI.radio("四角(&L):"), SetupUI.radio("垂直線(&V):"), SetupUI.radio("下線(&O):")]
-    private let scrollCheck = SetupUI.check("スクロールバッファ(&S):")
+    private let cursorRadios = [SetupUI.radio(Lang.t("Tera Term", "DLG_WIN_BLOCK", "四角(&L):")), SetupUI.radio(Lang.t("Tera Term", "DLG_WIN_VERT", "垂直線(&V):")), SetupUI.radio(Lang.t("Tera Term", "DLG_WIN_HORZ", "下線(&O):"))]
+    private let scrollCheck = SetupUI.check(Lang.t("Tera Term", "DLG_WIN_SCROLL1", "スクロールバッファ(&S):"))
     private lazy var scrollField = num(\.scrollback, width: 80, range: 0...1_000_000)
-    private let boldCheckWindow = SetupUI.check("太字を有効(&D)")
-    private let textRadio = SetupUI.radio("文字(&X)")
-    private let backRadio = SetupUI.radio("背景(&K)")
-    private let attrPopup = SetupUI.popup(["標準", "太字", "点滅", "反転", "URL", "下線"])
+    private let boldCheckWindow = SetupUI.check(Lang.t("Tera Term", "DLG_WIN_BOLDFONT", "太字を有効(&D)"))
+    private let textRadio = SetupUI.radio(Lang.t("Tera Term", "DLG_WIN_TEXT", "文字(&X)"))
+    private let backRadio = SetupUI.radio(Lang.t("Tera Term", "DLG_WIN_BG", "背景(&K)"))
+    private let attrPopup = SetupUI.popup([Lang.t("Tera Term", "DLG_WIN_NORMAL", "標準"), Lang.t("Tera Term", "DLG_WIN_BOLD", "太字"), Lang.t("Tera Term", "DLG_WIN_BLINK", "点滅"), Lang.t("Tera Term", "DLG_WIN_REVERSEATTR", "反転"), "URL", Lang.t("Tera Term", "DLG_WIN_UNDERLINE", "下線")])
     private let rgbSliders = (0..<3).map { _ in NSSlider(value: 0, minValue: 0, maxValue: 255, target: nil, action: nil) }
     private let rgbLabels = (0..<3).map { _ in NSTextField(labelWithString: "0") }
     private let sampleView = ColorSampleView()
@@ -1297,23 +1357,23 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         sampleView.translatesAutoresizingMaskIntoConstraints = false
         sampleView.widthAnchor.constraint(equalToConstant: 200).isActive = true
         sampleView.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let swap = SetupUI.button("色入れ替え(&W)", target: self, action: #selector(swapColors))
+        let swap = SetupUI.button(Lang.t("Tera Term", "DLG_WIN_SWAP_COLORS", "色入れ替え(&W)"), target: self, action: #selector(swapColors))
         let left = SetupUI.column([
-            SetupUI.row([SetupUI.label("タイトル(&T):"), text(\.title, width: 200)]),
-            SetupUI.box("カーソルの形", SetupUI.column(cursorRadios + [cb("カーソルを点滅", \.cursorBlink)])),
-            cb("&16色モード(PC形式):", \.pcBoldColor),
-            cb("1&6色モード(aixterm形式):", \.aixterm16Color),
-            cb("&256色モード(xterm形式):", \.xterm256Color),
-            SetupUI.row([scrollCheck, scrollField, SetupUI.label("行(&N)")]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_TITLELABEL", "タイトル(&T):")), text(\.title, width: 200)]),
+            SetupUI.box(Lang.t("Tera Term", "DLG_WIN_CURSOR", "カーソルの形"), SetupUI.column(cursorRadios + [cb(Lang.m("SETUP_CURSOR_BLINK", "カーソルを点滅"), \.cursorBlink)])),
+            cb(Lang.t("Tera Term", "DLG_WIN_PCBOLD16", "&16色モード(PC形式):"), \.pcBoldColor),
+            cb(Lang.t("Tera Term", "DLG_WIN_AIXTERM16", "1&6色モード(aixterm形式):"), \.aixterm16Color),
+            cb(Lang.t("Tera Term", "DLG_WIN_XTERM256", "&256色モード(xterm形式):"), \.xterm256Color),
+            SetupUI.row([scrollCheck, scrollField, SetupUI.label(Lang.t("Tera Term", "DLG_WIN_SCROLL3", "行(&N)"))]),
             boldCheckWindow,
         ], spacing: 8)
-        let colorBox = SetupUI.box("カラー", SetupUI.column([
-            SetupUI.row([textRadio, backRadio, SetupUI.label("属性(&A)"), attrPopup]),
+        let colorBox = SetupUI.box(Lang.t("Tera Term", "DLG_WIN_COLOR", "カラー"), SetupUI.column([
+            SetupUI.row([textRadio, backRadio, SetupUI.label(Lang.t("Tera Term", "DLG_WIN_ATTRIB", "属性(&A)")), attrPopup]),
             swap,
-            SetupUI.row([SetupUI.label("赤(&R):"), rgbSliders[0], rgbLabels[0]]),
-            SetupUI.row([SetupUI.label("緑(&G):"), rgbSliders[1], rgbLabels[1]]),
-            SetupUI.row([SetupUI.label("青(&B):"), rgbSliders[2], rgbLabels[2]]),
-            cb("常に標準の背景色を使う(&U)", \.useNormalBGColor),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_R", "赤(&R):")), rgbSliders[0], rgbLabels[0]]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_G", "緑(&G):")), rgbSliders[1], rgbLabels[1]]),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_B", "青(&B):")), rgbSliders[2], rgbLabels[2]]),
+            cb(Lang.t("Tera Term", "DLG_WIN_ALWAYSBG", "常に標準の背景色を使う(&U)"), \.useNormalBGColor),
             sampleView,
         ], spacing: 6))
         return SetupUI.row([left, colorBox], spacing: 20, align: .top)
@@ -1351,8 +1411,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     /// ログの標準ファイル名の確認 (log_pp.cpp の OnOK)
     private func validate() -> String? {
         let n = logNameCombo.stringValue
-        if n.isEmpty || n.contains("/") || n.contains(":") { return "ログファイル名に使えない文字が含まれています。" }
-        if n.utf8.count > 255 { return "ログファイル名が長すぎます。" }
+        if n.isEmpty || n.contains("/") || n.contains(":") { return Lang.m("SETUP_LOGNAME_INVALID_CHARS", "ログファイル名に使えない文字が含まれています。") }
+        if n.utf8.count > 255 { return Lang.m("SETUP_LOGNAME_TOO_LONG", "ログファイル名が長すぎます。") }
         return nil
     }
 
@@ -1360,7 +1420,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         if let e = validate() {
             selectPage(at: Page.allCases.firstIndex(of: .log)!)
             let a = NSAlert()
-            a.messageText = "Tera Term: エラー"
+            a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: エラー")
             a.informativeText = e
             a.beginSheetModal(for: panel)
             return
@@ -1375,14 +1435,21 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         serial.parity = parityPopup.titleOfSelectedItem ?? "none"
         serial.stopBits = stopPopup.indexOfSelectedItem == 1 ? 2 : 1
         serial.flow = Self.flowValues[max(0, flowPopup.indexOfSelectedItem)]
+        serial.rts = max(0, rtsPopup.indexOfSelectedItem)
+        serial.dtr = max(0, dtrPopup.indexOfSelectedItem)
+        serialOriginal = nil
         fileDir = fileDirField.stringValue
         s.fileDir = fileDir
         finish()
         completion?(s)
+        applyUILanguage()
     }
 
     override func cancel() {
         revertPreview()
+        // PSN_RESET: 開いているポートの RTS / DTR / フロー制御を元に戻す
+        if let o = serialOriginal, let sc = session?.conn as? SerialConnection { sc.setRTSDTR(rts: o.rts, dtr: o.dtr, flow: o.flow) }
+        serialOriginal = nil
         finish()
         completion?(nil)
     }
@@ -1503,53 +1570,74 @@ final class HostListEditDialog: SheetDialog, NSTableViewDataSource, NSTableViewD
     private var hosts = ConnHistory.hosts
     private let table = NSTableView()
     private let entry = SetupUI.field(width: 300)
+    private let column = NSTableColumn(identifier: .init("h"))
+    /// OK で保存したあと (新しい接続ダイアログがホストの一覧を作り直す。ttxssh.c OpenEditHistory)
+    var onSaved: (() -> Void)?
 
     func begin(on w: NSWindow) {
-        panel.title = "Tera Term: ホストリストの編集"
-        let col = NSTableColumn(identifier: .init("h"))
-        col.width = 300
-        table.addTableColumn(col)
+        panel.title = "Tera Term: " + Lang.t("Tera Term", "DLG_TCPIP_EDITHISTORY", "ホストリストの編集")
+        column.width = 460
+        column.resizingMask = []
+        table.addTableColumn(column)
         table.headerView = nil
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.dataSource = self
         table.delegate = self
         table.target = self
         table.action = #selector(selected)
+        // 5.2: ホストリストを広くし、横にスクロールできるようにした。ダイアログは大きさを変えられる (WS_THICKFRAME)
         let sc = NSScrollView()
         sc.documentView = table
         sc.hasVerticalScroller = true
+        sc.hasHorizontalScroller = true
+        sc.autohidesScrollers = true
         sc.borderType = .bezelBorder
         sc.translatesAutoresizingMaskIntoConstraints = false
-        sc.widthAnchor.constraint(equalToConstant: 320).isActive = true
-        sc.heightAnchor.constraint(equalToConstant: 200).isActive = true
+        sc.widthAnchor.constraint(greaterThanOrEqualToConstant: 480).isActive = true
+        sc.heightAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
+        entry.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        fitColumn()
         let buttons = SetupUI.column([
-            SetupUI.button("追加(&A)", target: self, action: #selector(add)),
-            SetupUI.button("置換(&R)", target: self, action: #selector(replace)),
-            SetupUI.button("削除(&D)", target: self, action: #selector(remove)),
-            SetupUI.button("上へ(&U)", target: self, action: #selector(up)),
-            SetupUI.button("下へ(&N)", target: self, action: #selector(down)),
+            SetupUI.button(Lang.t("Tera Term", "DLG_TCPIP_ADD", "追加(&A)"), target: self, action: #selector(add)),
+            SetupUI.button(Lang.m("SETUP_HOSTLIST_REPLACE", "置換(&R)"), target: self, action: #selector(replace)),
+            SetupUI.button(Lang.t("Tera Term", "DLG_TCPIP_REMOVE", "削除(&D)"), target: self, action: #selector(remove)),
+            SetupUI.button(Lang.t("Tera Term", "DLG_TCPIP_UP", "上へ(&U)"), target: self, action: #selector(up)),
+            SetupUI.button(Lang.t("Tera Term", "DLG_TCPIP_DOWN", "下へ(&N)"), target: self, action: #selector(down)),
         ])
-        layout(SetupUI.column([entry, SetupUI.row([sc, buttons], align: .top)], spacing: 8))
+        let body = SetupUI.column([entry, SetupUI.row([sc, buttons], align: .top)], spacing: 8)
+        layout(body)
+        panel.styleMask.insert(.resizable)
+        panel.contentMinSize = panel.contentRect(forFrameRect: panel.frame).size
         present(on: w)
+    }
+    /// 一番長いホストに合わせて列を広げる (横スクロール。LB_SETHORIZONTALEXTENT)
+    private func fitColumn() {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let widest = hosts.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        column.width = max(460, ceil(widest) + 16)
     }
     func numberOfRows(in tableView: NSTableView) -> Int { hosts.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        NSTextField(labelWithString: hosts[row])
+        let l = NSTextField(labelWithString: hosts[row])
+        l.lineBreakMode = .byClipping
+        return l
     }
+    private func reload() { fitColumn(); table.reloadData() }
     @objc private func selected() { if table.selectedRow >= 0 { entry.stringValue = hosts[table.selectedRow] } }
     @objc private func add() {
         let v = entry.stringValue.trimmingCharacters(in: .whitespaces)
         guard !v.isEmpty else { return }
-        hosts.insert(v, at: max(0, table.selectedRow)); table.reloadData()
+        hosts.insert(v, at: max(0, table.selectedRow)); reload()
     }
     @objc private func replace() {
         let r = table.selectedRow, v = entry.stringValue.trimmingCharacters(in: .whitespaces)
         guard r >= 0, !v.isEmpty else { return }
-        hosts[r] = v; table.reloadData()
+        hosts[r] = v; reload()
     }
     @objc private func remove() {
         let r = table.selectedRow
         guard r >= 0 else { return }
-        hosts.remove(at: r); table.reloadData()
+        hosts.remove(at: r); reload()
     }
     @objc private func up() { move(-1) }
     @objc private func down() { move(1) }
@@ -1559,6 +1647,6 @@ final class HostListEditDialog: SheetDialog, NSTableViewDataSource, NSTableViewD
         hosts.swapAt(r, r + d); table.reloadData()
         table.selectRowIndexes([r + d], byExtendingSelection: false)
     }
-    override func ok() { ConnHistory.hosts = hosts; close() }
+    override func ok() { ConnHistory.hosts = hosts; close(); onSaved?() }
     override func cancel() { close() }
 }

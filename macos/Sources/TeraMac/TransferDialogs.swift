@@ -79,7 +79,7 @@ final class FilePanelFilter: NSObject, NSOpenSavePanelDelegate {
         popup.addItems(withTitles: [f.userFilterName, FileDialogFilter.allFilterName])
         popup.target = k
         popup.action = #selector(changed(_:))
-        let row = NSStackView(views: [NSTextField(labelWithString: "ファイルの種類:"), popup])
+        let row = NSStackView(views: [NSTextField(labelWithString: Lang.m("XFER_FILE_TYPE", "ファイルの種類:")), popup])
         row.spacing = 6
         var views: [NSView] = [row]
         if let old = p.accessoryView {
@@ -176,9 +176,9 @@ func transferDialogInt(_ s: String) -> Int {
 func showCantOpenFileError(over w: NSWindow?) {
     let a = NSAlert()
     a.alertStyle = .warning
-    a.messageText = "Tera Term: エラー"
-    a.informativeText = "ファイルが開けません"
-    a.addButton(withTitle: "OK")
+    a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: エラー")
+    a.informativeText = Lang.t("Tera Term", "MSG_CANTOPEN_FILE_ERROR", "ファイルが開けません")
+    a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
     a.runModal()
 }
 
@@ -284,14 +284,14 @@ final class SendFileDialog: TransferModalDialog {
     private let initialDir: String
     private let resolveDir: String
     private let filenameCombo = NSComboBox()
-    private let bulkRadio = NSButton(radioButtonWithTitle: "バルク(一括)読み込み", target: nil, action: nil)
-    private let seqRadio = NSButton(radioButtonWithTitle: "シーケンシャル(逐次)読み込み", target: nil, action: nil)
-    private let binaryCheck = NSButton(checkboxWithTitle: "バイナリ", target: nil, action: nil)
-    private let delayTypeLabel = NSTextField(labelWithString: "Delay type")
+    private let bulkRadio = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_SENDFILE_READING_METHOD_BULK", "バルク(一括)読み込み"), target: nil, action: nil)
+    private let seqRadio = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_SENDFILE_READING_METHOD_SEQUENTIAL", "シーケンシャル(逐次)読み込み"), target: nil, action: nil)
+    private let binaryCheck = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_SENDFILE_BINARY", "バイナリ"), target: nil, action: nil)
+    private let delayTypeLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_SENDFILE_DELAYTYPE_TITLE", "Delay type"))
     private let delayTypePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let sendSizeLabel = NSTextField(labelWithString: "Send size(bytes)")
+    private let sendSizeLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_SENDFILE_SEND_SIZE_TITLE", "Send size(bytes)"))
     private let sendSizeCombo = NSComboBox()
-    private let delayTimeLabel = NSTextField(labelWithString: "Delay time(ms)")
+    private let delayTimeLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_SENDFILE_DELAYTIME_TITLE", "Delay time(ms)"))
     private let delayTimeField = NSTextField(string: "")
 
     /// - Parameters:
@@ -300,7 +300,7 @@ final class SendFileDialog: TransferModalDialog {
         self.values = values
         self.initialDir = initialDir
         self.resolveDir = initialDir
-        super.init(title: "ファイル送信")
+        super.init(title: Lang.t("Tera Term", "DLG_FILETRANS_TITLE", "ファイル送信"))
         build()
     }
 
@@ -327,8 +327,9 @@ final class SendFileDialog: TransferModalDialog {
     /// SelectFile(): 「Tera Term: ファイル送信」の Open ダイアログ (ファイルが存在すること)
     static func selectFile(initial: String, initialDir: String) -> String? {
         let p = NSOpenPanel()
-        p.title = "Tera Term: ファイル送信"
-        p.message = "Tera Term: ファイル送信"
+        let title = "Tera Term: " + Lang.t("Tera Term", "DLG_FILETRANS_TITLE", "ファイル送信")
+        p.title = title
+        p.message = title
         p.canChooseFiles = true
         p.canChooseDirectories = false
         p.allowsMultipleSelection = false
@@ -344,7 +345,7 @@ final class SendFileDialog: TransferModalDialog {
     }
 
     private func build() {
-        let fileLabel = NSTextField(labelWithString: "Filename (drop file in this dialog)")
+        let fileLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_SENDFILE_FILENAME_TITLE", "Filename (drop file in this dialog)"))
         filenameCombo.completes = false
         filenameCombo.numberOfVisibleItems = 10
         filenameCombo.addItems(withObjectValues: SendFileDialog.history.items)
@@ -352,9 +353,10 @@ final class SendFileDialog: TransferModalDialog {
         let browse = makeButton("...", #selector(browse(_:)))
         let fileRow = NSStackView(views: [filenameCombo, browse])
 
-        let methodLabel = NSTextField(labelWithString: "ファイルの読み込み方法")
-        let tip = "Bulk read:\n・ファイルをメモリに読み込んでから送信する\n・テキストファイルのエンコードは自動判定される\n"
-            + "Sequential read:\n・ファイルから読み込みながら送信する\n・テキストファイルはACPとして読み込み,エンコードは自動判定されない"
+        let methodLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_SENDFILE_READING_METHOD_TITLE", "ファイルの読み込み方法"))
+        let tip = Lang.t("Tera Term", "DLG_SENDFILE_READING_METOHD_TOOLTIP",
+                         "Bulk read:\n・ファイルをメモリに読み込んでから送信する\n・テキストファイルのエンコードは自動判定される\n"
+                         + "Sequential read:\n・ファイルから読み込みながら送信する\n・テキストファイルはACPとして読み込み,エンコードは自動判定されない")
         for r in [bulkRadio, seqRadio] {
             r.target = self
             r.action = #selector(methodChanged(_:))
@@ -364,7 +366,12 @@ final class SendFileDialog: TransferModalDialog {
         seqRadio.state = values.sequential ? .on : .off
         binaryCheck.state = values.binary ? .on : .off
 
-        delayTypePopup.addItems(withTitles: ["no delay", "per character", "per line", "per sendsize"])
+        delayTypePopup.addItems(withTitles: [
+            Lang.t("Tera Term", "DLG_SENDFILE_DELAYTYPE_NO_DELAY", "no delay"),
+            Lang.t("Tera Term", "DLG_SENDFILE_DELAYTYPE_PER_CHAR", "per character"),
+            Lang.t("Tera Term", "DLG_SENDFILE_DELAYTYPE_PER_LINE", "per line"),
+            Lang.t("Tera Term", "DLG_SENDFILE_DELAYTYPE_PER_SENDSIZE", "per sendsize"),
+        ])
         delayTypePopup.selectItem(at: max(0, min(3, values.delayType)))
         delayTypePopup.target = self
         delayTypePopup.action = #selector(delayTypeChanged(_:))
@@ -378,8 +385,8 @@ final class SendFileDialog: TransferModalDialog {
         delayTimeField.formatter = DigitsFormatter()
         delayTimeField.widthAnchor.constraint(equalToConstant: 80).isActive = true
 
-        let ok = makeButton("OK", #selector(okPressed(_:)))
-        let cancel = makeButton("キャンセル", #selector(cancelPressed(_:)))
+        let ok = makeButton(Lang.t("Tera Term", "BTN_OK", "OK"), #selector(okPressed(_:)))
+        let cancel = makeButton(Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), #selector(cancelPressed(_:)))
         let stack = NSStackView(views: [
             fileLabel, TransferModalDialog.indent(fileRow),
             methodLabel, TransferModalDialog.indent(bulkRadio), TransferModalDialog.indent(seqRadio),
@@ -475,13 +482,13 @@ final class ReceiveFileDialog: TransferModalDialog {
     private var values: Values
     private let initialDir: String
     private let filenameCombo = NSComboBox()
-    private let binaryCheck = NSButton(checkboxWithTitle: "バイナリ", target: nil, action: nil)
+    private let binaryCheck = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_RECVFILE_BINARY", "バイナリ"), target: nil, action: nil)
     private let autoStopField = NSTextField(string: "")
 
     init(values: Values, initialDir: String) {
         self.values = values
         self.initialDir = initialDir
-        super.init(title: "ファイル受信")
+        super.init(title: Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_RECVFILE", "ファイル受信"))
         build()
     }
 
@@ -508,8 +515,9 @@ final class ReceiveFileDialog: TransferModalDialog {
     /// SelectFile(): 「Tera Term: ファイル受信」の保存ダイアログ (上書きの確認は NSSavePanel がする)
     static func selectFile(initial: String, initialDir: String) -> String? {
         let p = NSSavePanel()
-        p.title = "Tera Term: ファイル受信"
-        p.message = "Tera Term: ファイル受信"
+        let title = "Tera Term: " + Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_RECVFILE", "ファイル受信")
+        p.title = title
+        p.message = title
         p.canCreateDirectories = true
         p.directoryURL = URL(fileURLWithPath: initialDir, isDirectory: true)
         FilePanelFilter.attach(to: p, mask: filter)
@@ -523,7 +531,7 @@ final class ReceiveFileDialog: TransferModalDialog {
     }
 
     private func build() {
-        let fileLabel = NSTextField(labelWithString: "受信ファイル名(dialogにファイルをドロップ)")
+        let fileLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_RECVFILE_FILENAME_TITLE", "受信ファイル名(dialogにファイルをドロップ)"))
         filenameCombo.completes = false
         filenameCombo.numberOfVisibleItems = 10
         filenameCombo.addItems(withObjectValues: ReceiveFileDialog.history.items)
@@ -533,15 +541,15 @@ final class ReceiveFileDialog: TransferModalDialog {
         // バイナリは常にチェックして無効 (テキストモードは未実装)
         binaryCheck.state = .on
         binaryCheck.isEnabled = false
-        let autoLabel = NSTextField(labelWithString: "ファイル受信自動停止待ち時間(秒)")
+        let autoLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_RECVFILE_AUTOSTOP_LABEL", "ファイル受信自動停止待ち時間(秒)"))
         let f = DigitsFormatter()
         f.maxLength = 8
         autoStopField.formatter = f
         autoStopField.stringValue = "\(values.autoStopSec)"
         autoStopField.widthAnchor.constraint(equalToConstant: 80).isActive = true
 
-        let ok = makeButton("OK", #selector(okPressed(_:)))
-        let cancel = makeButton("キャンセル", #selector(cancelPressed(_:)))
+        let ok = makeButton(Lang.t("Tera Term", "BTN_OK", "OK"), #selector(okPressed(_:)))
+        let cancel = makeButton(Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), #selector(cancelPressed(_:)))
         let row = okCancelRow(ok: ok, cancel: cancel)
         let stack = NSStackView(views: [
             fileLabel, TransferModalDialog.indent(fileRow),
@@ -603,11 +611,11 @@ final class KermitGetDialog: TransferModalDialog {
     private(set) var filename = ""
 
     init() {
-        super.init(title: "Tera Term: Kermit 取得")
-        let label = NSTextField(labelWithString: "ファイル名:")
+        super.init(title: Lang.t("Tera Term", "DLG_GETFN_TITLE", "Tera Term: Kermit 取得"))
+        let label = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_GETFN_FILENAME", "ファイル名:"))
         field.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        let ok = makeButton("OK", #selector(okPressed(_:)))
-        let cancel = makeButton("キャンセル", #selector(cancelPressed(_:)))
+        let ok = makeButton(Lang.t("Tera Term", "BTN_OK", "OK"), #selector(okPressed(_:)))
+        let cancel = makeButton(Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), #selector(cancelPressed(_:)))
         let row = okCancelRow(ok: ok, cancel: cancel)
         let stack = NSStackView(views: [label, field, row])
         stack.orientation = .vertical
@@ -702,18 +710,19 @@ enum TransferFilePanels {
     static func xmodemReceive(fileDir: String, crc: Bool, binary: Bool, over w: NSWindow?,
                               done: @escaping ((file: String, crc: Bool, binary: Bool)?) -> Void) {
         let p = NSSavePanel()
-        p.title = "Tera Term: XMODEM受信"
-        p.message = "Tera Term: XMODEM受信"
+        let title = "Tera Term: " + Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_XRCV", "XMODEM受信")
+        p.title = title
+        p.message = title
         p.canCreateDirectories = true
         p.directoryURL = URL(fileURLWithPath: fileDir, isDirectory: true)
-        let check = NSButton(radioButtonWithTitle: "チェックサム", target: nil, action: nil)
-        let crcB = NSButton(radioButtonWithTitle: "CRC", target: nil, action: nil)
-        let bin = NSButton(checkboxWithTitle: "バイナリ", target: nil, action: nil)
+        let check = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_XOPT_CHECKSUM", "チェックサム"), target: nil, action: nil)
+        let crcB = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_XOPT_CRC", "CRC"), target: nil, action: nil)
+        let bin = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_XOPT_BINARY", "バイナリ"), target: nil, action: nil)
         let group = RadioGroup([check, crcB])
         check.state = crc ? .off : .on
         crcB.state = crc ? .on : .off
         bin.state = binary ? .on : .off
-        p.accessoryView = optionBox("オプション", [check, crcB, bin])
+        p.accessoryView = optionBox(Lang.t("Tera Term", "DLG_XOPT", "オプション"), [check, crcB, bin])
         begin(p, over: w) { ok in
             _ = group
             guard ok, let u = p.url else { done(nil); return }
@@ -724,10 +733,10 @@ enum TransferFilePanels {
     /// XMODEM 送信: 開くダイアログ + オプション (1K)
     static func xmodemSend(fileDir: String, filter: String, oneK: Bool, over w: NSWindow?,
                            done: @escaping ((file: String, oneK: Bool)?) -> Void) {
-        let p = openPanel(title: "Tera Term: XMODEM送信", multi: false, filter: filter, fileDir: fileDir)
-        let k = NSButton(checkboxWithTitle: "1K", target: nil, action: nil)
+        let p = openPanel(title: "Tera Term: " + Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_XSEND", "XMODEM送信"), multi: false, filter: filter, fileDir: fileDir)
+        let k = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_XOPT_1K", "1K"), target: nil, action: nil)
         k.state = oneK ? .on : .off
-        p.accessoryView = optionBox("オプション", [k])
+        p.accessoryView = optionBox(Lang.t("Tera Term", "DLG_XOPT", "オプション"), [k])
         p.isAccessoryViewDisclosed = true
         begin(p, over: w) { ok in
             guard ok, let u = p.url else { done(nil); return }
@@ -738,8 +747,8 @@ enum TransferFilePanels {
     /// ZMODEM 送信: 開くダイアログ (複数選択) + Option (バイナリ)
     static func zmodemSend(fileDir: String, filter: String, binary: Bool, over w: NSWindow?,
                            done: @escaping ((files: [String], binary: Bool)?) -> Void) {
-        let p = openPanel(title: "Tera Term: ZMODEM送信", multi: true, filter: filter, fileDir: fileDir)
-        let bin = NSButton(checkboxWithTitle: "バイナリ", target: nil, action: nil)
+        let p = openPanel(title: "Tera Term: " + Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_ZSEND", "ZMODEM送信"), multi: true, filter: filter, fileDir: fileDir)
+        let bin = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_XOPT_BINARY", "バイナリ"), target: nil, action: nil)
         bin.state = binary ? .on : .off
         p.accessoryView = optionBox("Option", [bin])
         p.isAccessoryViewDisclosed = true
@@ -769,7 +778,7 @@ final class ScpDialog: TransferModalDialog {
     private(set) var savedSendDir = ""
 
     init(scpSendDir: String, recvDir: String) {
-        super.init(title: "TTSSH: Secure Copy Protocol (SCP)")
+        super.init(title: Lang.t("TTSSH", "DLG_SCP_TITLE", "TTSSH: Secure Copy Protocol (SCP)"))
         sendTo.stringValue = scpSendDir
         recvTo.stringValue = recvDir
         build()
@@ -787,10 +796,10 @@ final class ScpDialog: TransferModalDialog {
             f.cell?.isScrollable = true
             f.cell?.wraps = false
         }
-        sendButton = makeButton("送信", #selector(sendPressed(_:)))
-        let cancel = makeButton("キャンセル", #selector(cancelPressed(_:)))
+        sendButton = makeButton(Lang.t("TTSSH", "DLG_SCP_SENDFILE_SEND", "送信"), #selector(sendPressed(_:)))
+        let cancel = makeButton(Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), #selector(cancelPressed(_:)))
         cancel.keyEquivalent = "\u{1B}"
-        recvButton = makeButton("受信", #selector(receivePressed(_:)))
+        recvButton = makeButton(Lang.t("TTSSH", "DLG_SCP_RECEIVEFILE_RECEIVE", "受信"), #selector(receivePressed(_:)))
         let selFile = makeButton("...", #selector(selectSendFile(_:)))
         let selDir = makeButton("...", #selector(selectRecvDir(_:)))
         for b in [sendButton!, cancel, recvButton!] { b.widthAnchor.constraint(equalToConstant: 100).isActive = true }
@@ -798,17 +807,17 @@ final class ScpDialog: TransferModalDialog {
         spacer1.widthAnchor.constraint(equalToConstant: selFile.fittingSize.width).isActive = true
         spacer2.widthAnchor.constraint(equalToConstant: selDir.fittingSize.width).isActive = true
 
-        let note = NSTextField(labelWithString: "このウィンドウにファイルをドラッグできます")
+        let note = NSTextField(labelWithString: Lang.t("TTSSH", "DLG_SCP_SENDFILE_DRAG", "このウィンドウにファイルをドラッグできます"))
         note.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         let noteRow = NSStackView(views: [label(""), note])
 
         let grid = NSGridView(views: [
-            [label("From:"), sendFrom, selFile, sendButton],
-            [label("To:"), sendTo, spacer1, cancel],
+            [label(Lang.t("TTSSH", "DLG_SCP_SENDFILE_FROM", "From:")), sendFrom, selFile, sendButton],
+            [label(Lang.t("TTSSH", "DLG_SCP_SENDFILE_TO", "To:")), sendTo, spacer1, cancel],
             [noteRow, NSGridCell.emptyContentView, NSGridCell.emptyContentView, NSGridCell.emptyContentView],
             [NSBox.transferSeparator(), NSGridCell.emptyContentView, NSGridCell.emptyContentView, NSGridCell.emptyContentView],
-            [label("From:"), recvFrom, spacer2, recvButton],
-            [label("To:"), recvTo, selDir, NSGridCell.emptyContentView],
+            [label(Lang.t("TTSSH", "DLG_SCP_RECEIVEFILE_FROM", "From:")), recvFrom, spacer2, recvButton],
+            [label(Lang.t("TTSSH", "DLG_SCP_RECEIVEFILE_TO", "To:")), recvTo, selDir, NSGridCell.emptyContentView],
         ])
         grid.rowSpacing = 8
         grid.columnSpacing = 8
@@ -834,8 +843,8 @@ final class ScpDialog: TransferModalDialog {
 
     @objc private func selectSendFile(_ sender: Any?) {
         let p = NSOpenPanel()
-        p.title = "送信ファイル選択"
-        p.message = "送信ファイル選択"
+        p.title = Lang.t("TTSSH", "DLG_SCP_SELECT_FILE_TITLE", "送信ファイル選択")
+        p.message = p.title
         p.canChooseFiles = true
         p.canChooseDirectories = false
         p.showsHiddenFiles = true   // OFN_FORCESHOWHIDDEN
@@ -846,8 +855,9 @@ final class ScpDialog: TransferModalDialog {
 
     @objc private func selectRecvDir(_ sender: Any?) {
         let p = NSOpenPanel()
-        p.title = "受信フォルダ選択"
-        p.message = "受信フォルダ選択"
+        p.title = Lang.t("TTSSH", "DLG_SCP_SELECT_DEST_TITLE", "受信フォルダ選択")
+        p.message = p.title
+
         p.canChooseFiles = false
         p.canChooseDirectories = true
         p.canCreateDirectories = true
@@ -964,4 +974,11 @@ enum SequentialSendPlan {
         if bracketed { chunks.append(.binary(Array("\u{1B}[201~".utf8))) }
         return SendFilePlan(chunks: chunks, delayMs: 0)
     }
+}
+
+// MARK: - 確認用 (TERAMAC_GUIDESNAP: かんたんマニュアルの画面写真)
+
+extension SendFileDialog {
+    /// ファイル名の欄を例の名前にする
+    func debugGuideFill(_ path: String) { filenameCombo.stringValue = path }
 }

@@ -20,6 +20,10 @@ struct MenuEntry: Codable, Equatable {
     var usePassword = false
     var useSSH = true
     var keyFile = ""
+    /// チャレンジレスポンス認証 (keyboard-interactive) を使う (ttpmenu.ini の Challenge=。ttpmenu 1.07)
+    var challenge = false
+    /// Pageant を使う (ttpmenu.ini の Pageant=。ttpmenu 1.08)。Mac では ssh-agent の公開鍵認証
+    var pageant = false
     var macroFile = ""
     var startup = false
     // 詳細設定
@@ -33,6 +37,8 @@ struct MenuEntry: Codable, Equatable {
         for w in option.split(separator: " ") {
             let l = w.lowercased()
             guard l.hasPrefix("/kr=") || l.hasPrefix("/kt=") else { continue }
+            // 本家の名前 (GetKanjiCodeFromStr。ISO8859-x / CPxxx なども) をまず見る
+            if let e = TermEncoding.exactKanjiCodeStr(String(w.dropFirst(4))) { return e }
             let v = l.dropFirst(4)
             if v.hasPrefix("utf8") || v.hasPrefix("utf-8") { return .utf8 }
             if v.hasPrefix("sjis") || v.hasPrefix("shift") { return .sjis }
@@ -49,20 +55,45 @@ struct MenuEntry: Codable, Equatable {
         return nil
     }
 
-    /// 接続先。ホスト名が空でオプションにも /C= などが無ければ nil
-    func spec(withUser: Bool) -> ConnectionSpec? {
+    /// 自動ログインの SSH の認証方法 (ttpmenu.cpp ConnectHost: Challenge → TTDUP_SSH_CHALLENGE、Pageant → TTDUP_SSH_PAGEANT)
+    var sshAuth: String? {
+        guard mode == .login && useSSH else { return nil }
+        return challenge ? "challenge" : (pageant ? "pageant" : nil)
+    }
+
+    /// dquote_stringW (ttdup.cpp): ",空白,;,^A-^_ を含むときは "" で囲む (中の " は "")。ttpmenu 1.13
+    static func dquote(_ s: String) -> String {
+        let needs = s.unicodeScalars.contains { $0 == "\"" || $0 == " " || $0 == ";" || (0x01...0x1F).contains($0.value) }
+        guard needs else { return s }
+        return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// 接続のコマンドライン (Tera Term + TTSSH の書き方。ttdup.cpp ConnectArgs)
+    func commandLine(withUser: Bool) -> String {
         var parts: [String] = []
         let h = host.trimmingCharacters(in: .whitespaces)
         if !h.isEmpty { parts.append(h) }
         parts.append(useSSH ? "/ssh" : "/telnet")
-        if useSSH && withUser && useUser && !user.isEmpty { parts.append("/user=\(user)") }
-        if useSSH && !keyFile.isEmpty { parts.append("/keyfile=\(keyFile)") }
+        if withUser, let a = sshAuth { parts.append("/auth=\(a)") }   // /auth=challenge / /auth=pageant
+        if useSSH && withUser && useUser && !user.isEmpty { parts.append("/user=" + MenuEntry.dquote(user)) }
+        // チャレンジ・Pageant のときは鍵ファイルを使わない (ダイアログでも入れられない)
+        if useSSH && !keyFile.isEmpty && !(withUser && sshAuth != nil) { parts.append("/keyfile=" + MenuEntry.dquote(keyFile)) }
         for w in option.split(separator: " ") {
             let l = w.lowercased()
             if l.hasPrefix("/kt=") || l.hasPrefix("/kr=") || l.hasPrefix("/passwd=") || l.hasPrefix("/auth=") { continue }
             parts.append(String(w))
         }
-        return ConnectionSpec.parse(parts.joined(separator: " "))
+        return parts.joined(separator: " ")
+    }
+
+    /// 接続先。ホスト名が空でオプションにも /C= などが無ければ nil
+    func spec(withUser: Bool) -> ConnectionSpec? {
+        ConnectionSpec.parse(commandLine(withUser: withUser))
+    }
+
+    /// ssh に足す引数 (/auth= を Connection.sshArguments と同じく ssh のオプションにする)
+    func sshArguments(withUser: Bool) -> [String] {
+        ConnectionSpec.sshArguments(TTCommandLine.parse(commandLine(withUser: withUser)))
     }
 
     var symbolName: String {
@@ -73,6 +104,31 @@ struct MenuEntry: Codable, Equatable {
             if let s = spec(withUser: false), case .serial = s { return "cable.connector" }
             return useSSH ? "lock.shield" : "network"
         }
+    }
+}
+
+extension MenuEntry {
+    /// 前の版で保存した項目 (challenge / pageant などがない) も読めるよう、ないキーは既定値にする
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MenuEntry()
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? d.id
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? d.name
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? d.host
+        mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? d.mode
+        useUser = try c.decodeIfPresent(Bool.self, forKey: .useUser) ?? d.useUser
+        user = try c.decodeIfPresent(String.self, forKey: .user) ?? d.user
+        usePassword = try c.decodeIfPresent(Bool.self, forKey: .usePassword) ?? d.usePassword
+        useSSH = try c.decodeIfPresent(Bool.self, forKey: .useSSH) ?? d.useSSH
+        keyFile = try c.decodeIfPresent(String.self, forKey: .keyFile) ?? d.keyFile
+        challenge = try c.decodeIfPresent(Bool.self, forKey: .challenge) ?? d.challenge
+        pageant = try c.decodeIfPresent(Bool.self, forKey: .pageant) ?? d.pageant
+        macroFile = try c.decodeIfPresent(String.self, forKey: .macroFile) ?? d.macroFile
+        startup = try c.decodeIfPresent(Bool.self, forKey: .startup) ?? d.startup
+        logFile = try c.decodeIfPresent(String.self, forKey: .logFile) ?? d.logFile
+        loginPrompt = try c.decodeIfPresent(String.self, forKey: .loginPrompt) ?? d.loginPrompt
+        passwordPrompt = try c.decodeIfPresent(String.self, forKey: .passwordPrompt) ?? d.passwordPrompt
+        option = try c.decodeIfPresent(String.self, forKey: .option) ?? d.option
     }
 }
 
@@ -224,19 +280,20 @@ enum TeraMenuLauncher {
             let pw = e.usePassword ? (Keychain.get(e.id) ?? e.optionPassword ?? "") : (e.optionPassword ?? "")
             var steps: [SessionWindowController.LoginStep] = []
             if case .ssh = spec {
-                if !pw.isEmpty { steps.append(.init(prompt: e.passwordPrompt.isEmpty ? "password:" : e.passwordPrompt, response: pw)) }
+                // Pageant (TTDUP_SSH_PAGEANT) はパスワードを渡さない
+                if !pw.isEmpty && e.sshAuth != "pageant" { steps.append(.init(prompt: e.passwordPrompt.isEmpty ? "password:" : e.passwordPrompt, response: pw)) }
             } else {
                 // Telnet: ユーザー名 → パスワードの順にプロンプトを待って送る
                 if e.useUser && !e.user.isEmpty { steps.append(.init(prompt: e.loginPrompt.isEmpty ? "login:" : e.loginPrompt, response: e.user)) }
                 if !pw.isEmpty { steps.append(.init(prompt: e.passwordPrompt.isEmpty ? "Password:" : e.passwordPrompt, response: pw)) }
             }
-            c.connect(spec, loginSteps: steps)
+            c.connect(spec, loginSteps: steps, sshArgs: e.sshArguments(withUser: true))
         case .macro:
             if !e.host.trimmingCharacters(in: .whitespaces).isEmpty, let spec = e.spec(withUser: true) { c.connect(spec) }
             let path = (e.macroFile as NSString).expandingTildeInPath
             if path.isEmpty || !FileManager.default.fileExists(atPath: path) {
                 let a = NSAlert()
-                a.messageText = "マクロファイルが見つかりません"
+                a.messageText = Lang.m("CONN_MACRO_NOT_FOUND", "マクロファイルが見つかりません")
                 a.informativeText = path
                 a.beginSheetModal(for: c.window!)
             } else {
@@ -280,7 +337,7 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
             let img = (NSApp.applicationIconImage.copy() as? NSImage) ?? NSImage()
             img.size = NSSize(width: 18, height: 18)
             b.image = img
-            b.toolTip = "Tera Term Mac メニュー"
+            b.toolTip = Lang.m("CONN_TTMENU_NAME", "Tera Term Mac メニュー")
             b.target = self
             b.action = #selector(statusClicked(_:))
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -296,7 +353,7 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
         if let f = store.font { m.font = f }
         let entries = store.entries
         if entries.isEmpty {
-            let i = NSMenuItem(title: "(登録がありません — リスト設定で追加)", action: #selector(showEditor(_:)), keyEquivalent: "")
+            let i = NSMenuItem(title: Lang.m("CONN_LIST_EMPTY", "(登録がありません — %sで追加)", Lang.t("TTMenu", "MENU_LISTCONFIG", "リスト設定")), action: #selector(showEditor(_:)), keyEquivalent: "")
             i.target = self
             m.addItem(i)
             return
@@ -319,7 +376,7 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
                     let sub = NSMenu()
                     if let font = store.font { sub.font = font }
                     if n.children.isEmpty {
-                        let empty = NSMenuItem(title: "(空)", action: nil, keyEquivalent: "")
+                        let empty = NSMenuItem(title: Lang.m("CONN_FOLDER_EMPTY", "(空)"), action: nil, keyEquivalent: "")
                         empty.isEnabled = false
                         sub.addItem(empty)
                     } else {
@@ -356,20 +413,20 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
             if let on = on { i.state = on ? .on : .off }
             m.addItem(i)
         }
-        add("リスト設定…", #selector(showEditor(_:)))
-        add("大きいアイコンで表示", #selector(toggleLargeIcon(_:)), store.largeIcon)
-        add("フォント指定…", #selector(chooseFont(_:)))
-        add("左クリックで一覧を表示", #selector(toggleLeftClick(_:)), store.leftClickList)
-        add("ホットキー (⌃⌥M) で一覧を表示", #selector(toggleHotkey(_:)), store.hotkey)
-        add("Mac にログインしたら Tera Term Mac を起動", #selector(toggleLoginItem(_:)), LoginItem.enabled)
-        add("バージョン情報", #selector(showVersion(_:)))
+        add(Lang.t("TTMenu", "MENU_LISTCONFIG", "リスト設定") + "…", #selector(showEditor(_:)))
+        add(Lang.t("TTMenu", "MENU_ICON", "大きいアイコンで表示"), #selector(toggleLargeIcon(_:)), store.largeIcon)
+        add(Lang.t("TTMenu", "MENU_FONT", "フォント指定") + "…", #selector(chooseFont(_:)))
+        add(Lang.t("TTMenu", "MENU_LEFTPOPUP", "左クリックで一覧を表示"), #selector(toggleLeftClick(_:)), store.leftClickList)
+        add(Lang.m("CONN_MENU_HOTKEY", "ホットキー (⌃⌥M) で一覧を表示"), #selector(toggleHotkey(_:)), store.hotkey)
+        add(Lang.m("CONN_MENU_LOGIN_ITEM", "Mac にログインしたら Tera Term Mac を起動"), #selector(toggleLoginItem(_:)), LoginItem.enabled)
+        add(Lang.t("TTMenu", "MENU_VERSION", "バージョン情報"), #selector(showVersion(_:)))
         m.addItem(.separator())
-        add("実行 (新しい接続)…", #selector(execute(_:)))
+        add(Lang.m("CONN_MENU_EXECUTE", "実行 (新しい接続)…"), #selector(execute(_:)))
         m.addItem(.separator())
-        add("終了", #selector(quit(_:)))
+        add(Lang.t("TTMenu", "MENU_CLOSE", "終了"), #selector(quit(_:)))
         if !store.leftClickList {
             // 左クリックで設定メニューを出す場合も、一覧はサブメニューで選べるように
-            let sub = NSMenuItem(title: "一覧", action: nil, keyEquivalent: "")
+            let sub = NSMenuItem(title: Lang.m("CONN_MENU_LIST", "一覧"), action: nil, keyEquivalent: "")
             sub.submenu = listMenu
             m.insertItem(sub, at: 0)
             m.insertItem(.separator(), at: 1)
@@ -399,7 +456,7 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
     /// アプリのメニューバーの「接続リスト」メニュー
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let edit = NSMenuItem(title: "リスト設定…", action: #selector(showEditor(_:)), keyEquivalent: "e")
+        let edit = NSMenuItem(title: Lang.t("TTMenu", "MENU_LISTCONFIG", "リスト設定") + "…", action: #selector(showEditor(_:)), keyEquivalent: "e")
         edit.target = self
         menu.addItem(edit)
         menu.addItem(.separator())
@@ -512,25 +569,30 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
     private let folderLabel = NSTextField(labelWithString: "")
     private let nameField = NSTextField()
     private let hostField = NSTextField()
-    private let loginRadio = NSButton(radioButtonWithTitle: "自動ログイン", target: nil, action: nil)
-    private let macroRadio = NSButton(radioButtonWithTitle: "マクロファイル指定", target: nil, action: nil)
-    private let directRadio = NSButton(radioButtonWithTitle: "起動のみ", target: nil, action: nil)
-    private let userCheck = NSButton(checkboxWithTitle: "ユーザー名", target: nil, action: nil)
+    private let loginRadio = NSButton(radioButtonWithTitle: Lang.t("TTMenu", "DLG_CONFIG_AUTO", "自動ログイン"), target: nil, action: nil)
+    private let macroRadio = NSButton(radioButtonWithTitle: Lang.t("TTMenu", "DLG_CONFIG_MACRO", "マクロファイル指定"), target: nil, action: nil)
+    private let directRadio = NSButton(radioButtonWithTitle: Lang.t("TTMenu", "DLG_CONFIG_LAUNCH", "起動のみ"), target: nil, action: nil)
+    private let userCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_USER", "ユーザー名"), target: nil, action: nil)
     private let userField = NSTextField()
-    private let passCheck = NSButton(checkboxWithTitle: "パスワード", target: nil, action: nil)
+    private let passCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_PASS", "パスワード"), target: nil, action: nil)
     private let passField = NSSecureTextField()
-    private let sshCheck = NSButton(checkboxWithTitle: "SSH を使う", target: nil, action: nil)
+    private let sshCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_SSH", "SSH を使う"), target: nil, action: nil)
     private let keyField = NSTextField()
     private let keyButton = NSButton(title: "…", target: nil, action: nil)
     private let macroField = NSTextField()
     private let macroButton = NSButton(title: "…", target: nil, action: nil)
-    private let startupCheck = NSButton(checkboxWithTitle: "起動時に実行", target: nil, action: nil)
+    private let startupCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_STARTUP", "起動時に実行"), target: nil, action: nil)
+    // IDC_CHALLENGE_CHECK / IDC_PAGEANT_CHECK (ttpmenu.rc: 鍵ファイルの下)
+    private let challengeCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_CHALLENGE", "チャレンジレスポンス認証"), target: nil, action: nil)
+    private let pageantCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_PAGEANT", "Pageantを使う"), target: nil, action: nil)
+    /// パスワード欄で Ctrl+A〜Ctrl+_ を制御文字として入れる (winmisc.cpp password_wnd_proc。ttpmenu 1.11)
+    private var passKeyMonitor: Any?
     private static let dragType = NSPasteboard.PasteboardType("net.satoru.teramac.menunode")
 
     init() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 520), styleMask: [.titled, .closable, .miniaturizable],
                          backing: .buffered, defer: false)
-        w.title = "リスト設定 - Tera Term Mac メニュー"
+        w.title = Lang.t("TTMenu", "DLG_CONFIG_TITLE", "リスト設定") + " - " + Lang.m("CONN_TTMENU_NAME", "Tera Term Mac メニュー")
         super.init(window: w)
         w.delegate = self
         build()
@@ -541,12 +603,14 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit { if let m = passKeyMonitor { NSEvent.removeMonitor(m) } }
+
     // MARK: 画面
 
     private func build() {
         // 左: 登録一覧 (フォルダ分けしたツリー)
         let col = NSTableColumn(identifier: .init("name"))
-        col.title = "登録一覧"
+        col.title = Lang.t("TTMenu", "DLG_CONFIG_ITEM", "登録一覧")
         col.width = 230
         outline.addTableColumn(col)
         outline.outlineTableColumn = col
@@ -573,14 +637,14 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
 
         let up = NSButton(title: "▲", target: self, action: #selector(moveNodeUp(_:)))
         let down = NSButton(title: "▼", target: self, action: #selector(moveNodeDown(_:)))
-        up.toolTip = "上へ"
-        down.toolTip = "下へ"
-        let newButton = NSButton(title: "新規", target: self, action: #selector(newEntry(_:)))
-        let folderButton = NSButton(title: "フォルダ", target: self, action: #selector(newFolder(_:)))
+        up.toolTip = Lang.t("Tera Term", "DLG_TCPIP_UP", "上へ")
+        down.toolTip = Lang.t("Tera Term", "DLG_TCPIP_DOWN", "下へ")
+        let newButton = NSButton(title: Lang.m("CONN_NEW", "新規"), target: self, action: #selector(newEntry(_:)))
+        let folderButton = NSButton(title: Lang.m("CONN_FOLDER", "フォルダ"), target: self, action: #selector(newFolder(_:)))
         folderButton.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: nil)
         folderButton.imagePosition = .imageLeading
-        folderButton.toolTip = "新しいフォルダ (一覧の右クリックでも作れます)"
-        let hint = NSTextField(wrappingLabelWithString: "右クリックでフォルダの作成・名前の変更。ドラッグでフォルダに入れられます")
+        folderButton.toolTip = Lang.m("CONN_NEW_FOLDER_TIP", "新しいフォルダ (一覧の右クリックでも作れます)")
+        let hint = NSTextField(wrappingLabelWithString: Lang.m("CONN_EDITOR_HINT", "右クリックでフォルダの作成・名前の変更。ドラッグでフォルダに入れられます"))
         hint.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         hint.textColor = .secondaryLabelColor
         hint.preferredMaxLayoutWidth = 250
@@ -589,10 +653,10 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         left.alignment = .leading
 
         // 中: 登録 (←) と削除
-        let setButton = NSButton(title: "← 登録", target: self, action: #selector(register(_:)))
-        setButton.toolTip = "右の内容を一覧に登録 (同じ名前なら上書き)"
-        let delButton = DropDeleteButton(title: "削除", target: self, action: #selector(deleteSelected(_:)))
-        delButton.toolTip = "選んでいる項目を削除 (一覧からここにドラッグしても削除できます)"
+        let setButton = NSButton(title: "← " + Lang.m("CONN_REGISTER", "登録"), target: self, action: #selector(register(_:)))
+        setButton.toolTip = Lang.m("CONN_REGISTER_TIP", "右の内容を一覧に登録 (同じ名前なら上書き)")
+        let delButton = DropDeleteButton(title: Lang.m("CONN_DELETE", "削除"), target: self, action: #selector(deleteSelected(_:)))
+        delButton.toolTip = Lang.m("CONN_DELETE_TIP", "選んでいる項目を削除 (一覧からここにドラッグしても削除できます)")
         delButton.dragType = MenuEditorWindowController.dragType
         delButton.onDrop = { [weak self] id in
             guard let self = self, let n = self.node(withID: id, in: self.roots) else { return }
@@ -600,7 +664,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             self.loadSelected()
             self.confirmDelete(n)
         }
-        delButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "削除")
+        delButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: Lang.m("CONN_DELETE", "削除"))
         delButton.imagePosition = .imageLeading
         let mid = NSStackView(views: [setButton, delButton])
         mid.orientation = .vertical
@@ -611,24 +675,34 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         }
         nameField.widthAnchor.constraint(equalToConstant: 300).isActive = true
         hostField.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        hostField.placeholderString = "ホスト名 / ホスト名:ポート番号"
+        hostField.placeholderString = Lang.m("CONN_HOST_PORT_PLACEHOLDER", "ホスト名 / ホスト名:ポート番号")
         userField.widthAnchor.constraint(equalToConstant: 180).isActive = true
         passField.widthAnchor.constraint(equalToConstant: 180).isActive = true
-        passField.placeholderString = "キーチェーンに保存"
+        passField.placeholderString = Lang.m("CONN_SAVED_IN_KEYCHAIN", "キーチェーンに保存")
         keyField.widthAnchor.constraint(equalToConstant: 180).isActive = true
         macroField.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        for r in [loginRadio, macroRadio, directRadio, userCheck, passCheck, sshCheck] { r.target = self; r.action = #selector(formChanged(_:)) }
+        for r in [loginRadio, macroRadio, directRadio, userCheck, passCheck, sshCheck, challengeCheck, pageantCheck] { r.target = self; r.action = #selector(formChanged(_:)) }
+        passKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            guard let self = self, e.window === self.window,
+                  let fe = self.window?.firstResponder as? NSTextView, fe.delegate === self.passField,
+                  e.modifierFlags.intersection([.control, .command, .option]) == .control,
+                  let c = e.characters?.unicodeScalars.first, (0x01...0x1F).contains(c.value) else { return e }
+            fe.insertText(String(c), replacementRange: fe.selectedRange())   // EM_REPLACESEL
+            return nil
+        }
         keyButton.target = self; keyButton.action = #selector(chooseKey(_:))
         macroButton.target = self; macroButton.action = #selector(chooseMacro(_:))
         folderLabel.textColor = .secondaryLabelColor
 
-        let keyLabel = NSTextField(labelWithString: "鍵ファイル")
+        let keyLabel = NSTextField(labelWithString: Lang.t("TTMenu", "DLG_CONFIG_KEYFILE", "鍵ファイル"))
         let pattern = NSStackView(views: [
             loginRadio,
             indent(hstack([userCheck, userField])),
             indent(hstack([passCheck, passField])),
             indent(sshCheck),
             indent(hstack([keyLabel, keyField, keyButton])),
+            indent(challengeCheck),
+            indent(pageantCheck),
             macroRadio,
             indent(hstack([macroField, macroButton])),
             directRadio,
@@ -637,14 +711,14 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         pattern.alignment = .leading
         pattern.spacing = 8
         let patternBox = NSBox()
-        patternBox.title = "起動方法"
+        patternBox.title = Lang.t("TTMenu", "DLG_CONFIG_PATTERN", "起動方法")
         patternBox.contentView = pad(pattern)
 
-        let details = NSButton(title: "詳細…", target: self, action: #selector(showDetails(_:)))
+        let details = NSButton(title: Lang.t("TTMenu", "DLG_CONFIG_DETAIL", "詳細") + "…", target: self, action: #selector(showDetails(_:)))
         let grid = NSGridView(views: [
-            [NSTextField(labelWithString: "フォルダ:"), folderLabel],
-            [NSTextField(labelWithString: "名前:"), nameField],
-            [NSTextField(labelWithString: "ホスト名:"), hostField],
+            [NSTextField(labelWithString: Lang.m("CONN_FOLDER_LABEL", "フォルダ:")), folderLabel],
+            [NSTextField(labelWithString: Lang.t("TTMenu", "DLG_CONFIG_NAME", "名前") + ":"), nameField],
+            [NSTextField(labelWithString: Lang.t("TTMenu", "DLG_CONFIG_HOST", "ホスト名") + ":"), hostField],
         ])
         grid.column(at: 0).xPlacement = .trailing
         grid.rowSpacing = 8
@@ -653,7 +727,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         right.alignment = .leading
         right.spacing = 12
         let configBox = NSBox()
-        configBox.title = "設定"
+        configBox.title = Lang.t("TTMenu", "DLG_CONFIG_CONFIG", "設定")
         configBox.contentView = pad(right)
 
         let top = NSStackView(views: [left, mid, configBox])
@@ -661,21 +735,21 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         top.alignment = .top
         top.spacing = 12
 
-        let connectButton = NSButton(title: "接続", target: self, action: #selector(connectForm(_:)))
+        let connectButton = NSButton(title: Lang.m("CONN_CONNECT", "接続"), target: self, action: #selector(connectForm(_:)))
         connectButton.keyEquivalent = "\r"
-        let closeButton = NSButton(title: "閉じる", target: self, action: #selector(closeEditor(_:)))
+        let closeButton = NSButton(title: Lang.t("Tera Term", "BTN_CLOSE", "閉じる"), target: self, action: #selector(closeEditor(_:)))
         closeButton.keyEquivalent = "\u{1B}"
         // ttpmenu.ini (TeraTerm Menu の接続先の一覧) の読み書きは 1 つのメニューにまとめる
         let iniMenu = NSPopUpButton(frame: .zero, pullsDown: true)
         iniMenu.addItem(withTitle: "ttpmenu.ini")
         iniMenu.item(at: 0)?.image = NSImage(systemSymbolName: "arrow.left.arrow.right", accessibilityDescription: nil)
-        let imp = NSMenuItem(title: "読み込み…", action: #selector(importTTMenu(_:)), keyEquivalent: "")
-        let exp = NSMenuItem(title: "書き出し…", action: #selector(exportTTMenu(_:)), keyEquivalent: "")
+        let imp = NSMenuItem(title: Lang.m("CONN_IMPORT", "読み込み…"), action: #selector(importTTMenu(_:)), keyEquivalent: "")
+        let exp = NSMenuItem(title: Lang.m("CONN_EXPORT", "書き出し…"), action: #selector(exportTTMenu(_:)), keyEquivalent: "")
         imp.target = self
         exp.target = self
         iniMenu.menu?.addItem(imp)
         iniMenu.menu?.addItem(exp)
-        iniMenu.toolTip = "接続先の一覧を ttpmenu.ini (TeraTerm Menu の形式) で読み書きします。ほかの Mac や Windows 版 TeraTerm Menu との受け渡しに"
+        iniMenu.toolTip = Lang.m("CONN_INI_TIP", "接続先の一覧を ttpmenu.ini (TeraTerm Menu の形式) で読み書きします。ほかの Mac や Windows 版 TeraTerm Menu との受け渡しに")
         let bottom = hstack([iniMenu, NSView(), closeButton, connectButton])
 
         let root = NSStackView(views: [top, bottom])
@@ -775,7 +849,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         var names: [String] = []
         var n = f
         while let x = n { names.insert(x.folder ?? "", at: 0); n = parent(of: x) }
-        return names.isEmpty ? "(最上位)" : names.joined(separator: " / ")
+        return names.isEmpty ? Lang.m("CONN_TOP_LEVEL_PAREN", "(最上位)") : names.joined(separator: " / ")
     }
 
     private var selectedNode: MenuNode? { outline.item(atRow: outline.selectedRow) as? MenuNode }
@@ -811,6 +885,8 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         passField.stringValue = e.usePassword ? (Keychain.get(e.id) ?? "") : ""
         sshCheck.state = e.useSSH ? .on : .off
         keyField.stringValue = e.keyFile
+        challengeCheck.state = e.challenge ? .on : .off
+        pageantCheck.state = e.pageant && !e.challenge ? .on : .off
         macroField.stringValue = e.macroFile
         startupCheck.state = e.startup ? .on : .off
         folderLabel.stringValue = folderPath(targetFolder)
@@ -828,6 +904,10 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         e.usePassword = passCheck.state == .on
         e.useSSH = sshCheck.state == .on
         e.keyFile = keyField.stringValue
+        if e.useSSH {   // ttpmenu.cpp: bTtssh のときだけチェックを読む
+            e.challenge = challengeCheck.state == .on
+            e.pageant = pageantCheck.state == .on
+        }
         e.macroFile = macroField.stringValue
         e.startup = startupCheck.state == .on
         if e.name.isEmpty { e.name = e.host }
@@ -853,7 +933,11 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         passCheck.isEnabled = login
         passField.isEnabled = login && passCheck.state == .on
         sshCheck.isEnabled = login || directRadio.state == .on
-        keyField.isEnabled = login && sshCheck.state == .on
+        // チャレンジ・Pageant を選ぶと鍵ファイルともう一方は使えない (IDC_CHALLENGE_CHECK / IDC_PAGEANT_CHECK の BN_CLICKED)
+        let ssh = login && sshCheck.state == .on
+        challengeCheck.isEnabled = ssh && pageantCheck.state != .on
+        pageantCheck.isEnabled = ssh && challengeCheck.state != .on
+        keyField.isEnabled = ssh && challengeCheck.state != .on && pageantCheck.state != .on
         keyButton.isEnabled = keyField.isEnabled
         macroField.isEnabled = macroRadio.state == .on
         macroButton.isEnabled = macroField.isEnabled
@@ -936,13 +1020,13 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         let a = NSAlert()
         if n.isFolder {
             let count = n.allEntryIDs.count
-            a.messageText = "フォルダ「\(n.folder ?? "")」を削除しますか?"
-            a.informativeText = count > 0 ? "中の接続先 \(count) 件も削除されます。" : "空のフォルダです。"
+            a.messageText = Lang.m("CONN_DELETE_FOLDER_Q", "フォルダ「%s」を削除しますか?", n.folder ?? "")
+            a.informativeText = count > 0 ? Lang.m("CONN_DELETE_FOLDER_COUNT", "中の接続先 %d 件も削除されます。", count) : Lang.m("CONN_FOLDER_IS_EMPTY", "空のフォルダです。")
         } else {
-            a.messageText = "「\(entry(n)?.name ?? "")」を削除しますか?"
+            a.messageText = Lang.m("CONN_DELETE_ENTRY_Q", "「%s」を削除しますか?", entry(n)?.name ?? "")
         }
-        a.addButton(withTitle: "削除")
-        a.addButton(withTitle: "やめる")
+        a.addButton(withTitle: Lang.m("CONN_DELETE", "削除"))
+        a.addButton(withTitle: Lang.t("TTMenu", "BTN_CANCEL", "やめる"))
         a.beginSheetModal(for: window!) { resp in
             guard resp == .alertFirstButtonReturn else { return }
             let ids = Set(n.allEntryIDs)
@@ -963,7 +1047,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
 
     @objc private func newFolder(_ sender: Any?) {
         let into = folder(for: node(for: sender))
-        askName(title: "新しいフォルダ", message: into.map { "「\($0.folder ?? "")」の中に作ります" } ?? "", value: "新しいフォルダ") { name in
+        askName(title: Lang.m("CONN_NEW_FOLDER_NAME", "新しいフォルダ"), message: into.map { Lang.m("CONN_NEW_FOLDER_INSIDE", "「%s」の中に作ります", $0.folder ?? "") } ?? "", value: Lang.m("CONN_NEW_FOLDER_NAME", "新しいフォルダ")) { name in
             let f = MenuNode(folder: name)
             if let p = into { p.children.append(f) } else { self.roots.append(f) }
             self.save()
@@ -974,7 +1058,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
 
     @objc private func renameFolder(_ sender: Any?) {
         guard let n = node(for: sender), n.isFolder else { return }
-        askName(title: "フォルダの名前を変更", message: "", value: n.folder ?? "") { name in
+        askName(title: Lang.m("CONN_RENAME_FOLDER", "フォルダの名前を変更"), message: "", value: n.folder ?? "") { name in
             n.folder = name
             self.save()
             self.select(n)
@@ -989,8 +1073,8 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         f.stringValue = value
         a.accessoryView = f
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "キャンセル")
+        a.addButton(withTitle: Lang.t("TTMenu", "BTN_OK", "OK"))
+        a.addButton(withTitle: Lang.t("TTMenu", "BTN_CANCEL", "キャンセル"))
         a.window.initialFirstResponder = f
         a.beginSheetModal(for: window!) { r in
             let name = f.stringValue.trimmingCharacters(in: .whitespaces)
@@ -1051,17 +1135,17 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             menu.addItem(i)
         }
         let n = outline.clickedRow >= 0 ? outline.item(atRow: outline.clickedRow) as? MenuNode : nil
-        let place = folder(for: n).map { "「\($0.folder ?? "")」に" } ?? ""
-        add("\(place)新しいフォルダ…", #selector(newFolder(_:)), "folder.badge.plus")
-        add("\(place)新しい接続先", #selector(newEntry(_:)), "plus")
+        let place = folder(for: n).map { $0.folder ?? "" }
+        add(place.map { Lang.m("CONN_NEW_FOLDER_IN", "「%s」に新しいフォルダ…", $0) } ?? Lang.m("CONN_NEW_FOLDER_ITEM", "新しいフォルダ…"), #selector(newFolder(_:)), "folder.badge.plus")
+        add(place.map { Lang.m("CONN_NEW_ENTRY_IN", "「%s」に新しい接続先", $0) } ?? Lang.m("CONN_NEW_ENTRY", "新しい接続先"), #selector(newEntry(_:)), "plus")
         if let n = n {
             menu.addItem(.separator())
             if n.isFolder {
-                add("名前を変更…", #selector(renameFolder(_:)), "pencil")
-                add("フォルダを削除…", #selector(deleteSelected(_:)), "trash")
+                add(Lang.m("CONN_RENAME", "名前を変更…"), #selector(renameFolder(_:)), "pencil")
+                add(Lang.m("CONN_DELETE_FOLDER", "フォルダを削除…"), #selector(deleteSelected(_:)), "trash")
             } else {
-                add("接続", #selector(connectNode(_:)), "play")
-                add("削除…", #selector(deleteSelected(_:)), "trash")
+                add(Lang.m("CONN_CONNECT", "接続"), #selector(connectNode(_:)), "play")
+                add(Lang.m("CONN_DELETE_ELLIPSIS", "削除…"), #selector(deleteSelected(_:)), "trash")
             }
         }
     }
@@ -1070,17 +1154,17 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
 
     @objc private func importTTMenu(_ sender: Any?) {
         let p = NSOpenPanel()
-        p.message = "読み込む ttpmenu.ini を選んでください"
+        p.message = Lang.m("CONN_IMPORT_CHOOSE", "読み込む ttpmenu.ini を選んでください")
         p.allowedFileTypes = ["ini", "INI"]
         p.allowsOtherFileTypes = true
         p.beginSheetModal(for: window!) { r in
             guard r == .OK, let url = p.url else { return }
             guard let data = try? Data(contentsOf: url), let ini = IniFile(data: data) else {
-                self.info("読み込めませんでした", url.path); return
+                self.info(Lang.m("CONN_IMPORT_FAILED", "読み込めませんでした"), url.path); return
             }
             let res = TTMenuIni.read(ini)
             guard !res.entries.isEmpty else {
-                self.info("接続先が見つかりませんでした", "ttpmenu.ini ではないかもしれません。\n\(url.path)"); return
+                self.info(Lang.m("CONN_IMPORT_NO_ENTRIES", "接続先が見つかりませんでした"), Lang.m("CONN_IMPORT_NOT_TTPMENU", "ttpmenu.ini ではないかもしれません。\n%s", url.path)); return
             }
             // 開くパネルのシートが閉じてから出す
             DispatchQueue.main.async { self.confirmImport(url: url, ini: ini, result: res) }
@@ -1090,21 +1174,21 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
     /// 読み込む前に、何が入るかを見せて確かめる
     private func confirmImport(url: URL, ini: IniFile, result res: TTMenuIni.ImportResult) {
         let a = NSAlert()
-        a.messageText = "\(url.lastPathComponent) から \(res.entries.count) 件の接続先を読み込みます"
+        a.messageText = Lang.m("CONN_IMPORT_CONFIRM", "%s から %d 件の接続先を読み込みます", url.lastPathComponent, res.entries.count)
         let existing = Set(entries.map { $0.name })
         let adds = res.entries.filter { !existing.contains($0.name) }.count
-        a.informativeText = "新しく追加 \(adds) 件・同じ名前を上書き \(res.entries.count - adds) 件"
-            + (res.passwords.isEmpty ? "" : "\nパスワード \(res.passwords.count) 件はキーチェーンに保存します")
+        a.informativeText = Lang.m("CONN_IMPORT_SUMMARY", "新しく追加 %d 件・同じ名前を上書き %d 件", adds, res.entries.count - adds)
+            + (res.passwords.isEmpty ? "" : "\n" + Lang.m("CONN_IMPORT_PASSWORDS", "パスワード %d 件はキーチェーンに保存します", res.passwords.count))
 
         // 一覧 (追加/上書き・名前・ホスト) と注意
         var text = ""
         for e in res.entries {
-            text += (existing.contains(e.name) ? "上書き　" : "追加　　") + e.name
+            text += (existing.contains(e.name) ? Lang.m("CONN_IMPORT_ROW_REPLACE", "上書き") : Lang.m("CONN_IMPORT_ROW_ADD", "追加")) + "\t" + e.name
             if !e.host.isEmpty && e.host != e.name { text += "　(\(e.host))" }
-            if let f = res.folders[e.id] { text += "　[フォルダ: " + f.joined(separator: " / ") + "]" }
+            if let f = res.folders[e.id] { text += "　[" + Lang.m("CONN_FOLDER_LABEL", "フォルダ:") + " " + f.joined(separator: " / ") + "]" }
             text += "\n"
         }
-        if !res.notes.isEmpty { text += "\n注意:\n" + res.notes.map { "・" + $0 }.joined(separator: "\n") + "\n" }
+        if !res.notes.isEmpty { text += "\n" + Lang.m("CONN_IMPORT_NOTES", "注意:") + "\n" + res.notes.map { "・" + $0 }.joined(separator: "\n") + "\n" }
         let scroll = NSTextView.scrollableTextView()
         scroll.frame = NSRect(x: 0, y: 0, width: 440, height: min(220, CGFloat(res.entries.count + res.notes.count + 3) * 16 + 12))
         scroll.borderType = .bezelBorder
@@ -1120,8 +1204,8 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         // 入れる先
         let dest = NSPopUpButton(frame: .zero, pullsDown: false)
         let base = (url.lastPathComponent as NSString).deletingPathExtension
-        dest.addItem(withTitle: "最上位")
-        dest.addItem(withTitle: "新しいフォルダ「\(base)」")
+        dest.addItem(withTitle: Lang.m("CONN_TOP_LEVEL", "最上位"))
+        dest.addItem(withTitle: Lang.m("CONN_IMPORT_NEW_FOLDER", "新しいフォルダ「%s」", base))
         dest.lastItem?.tag = 1
         func addFolders(_ list: [MenuNode], _ prefix: String) {
             for n in list where n.isFolder {
@@ -1131,20 +1215,20 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             }
         }
         addFolders(roots, "")
-        let destNote = NSTextField(labelWithString: "(上書きする接続先は、今ある場所のまま)")
+        let destNote = NSTextField(labelWithString: Lang.m("CONN_IMPORT_DEST_NOTE", "(上書きする接続先は、今ある場所のまま)"))
         destNote.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         destNote.textColor = .secondaryLabelColor
-        let settings = NSButton(checkboxWithTitle: "全体の設定 (アイコンの大きさ・クリックの動き・ホットキー) も読み込む", target: nil, action: nil)
+        let settings = NSButton(checkboxWithTitle: Lang.m("CONN_IMPORT_SETTINGS", "全体の設定 (アイコンの大きさ・クリックの動き・ホットキー) も読み込む"), target: nil, action: nil)
         settings.state = .on
-        let destRow = NSStackView(views: [NSTextField(labelWithString: "入れる先:"), dest, destNote])
+        let destRow = NSStackView(views: [NSTextField(labelWithString: Lang.m("CONN_IMPORT_DEST", "入れる先:")), dest, destNote])
         let stack = NSStackView(views: [scroll, destRow, settings])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
         stack.frame = NSRect(x: 0, y: 0, width: 440, height: stack.fittingSize.height)
         a.accessoryView = stack
-        a.addButton(withTitle: "読み込む")
-        a.addButton(withTitle: "キャンセル")
+        a.addButton(withTitle: Lang.m("CONN_IMPORT_BUTTON", "読み込む"))
+        a.addButton(withTitle: Lang.t("TTMenu", "BTN_CANCEL", "キャンセル"))
         a.beginSheetModal(for: window!) { r in
             guard r == .alertFirstButtonReturn else { return }
             var folder = dest.selectedItem?.representedObject as? MenuNode
@@ -1175,7 +1259,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             }
             self.save()
             if let first = added.first.flatMap({ self.findNode(entryID: $0, in: self.roots) }) { self.select(first); self.loadSelected() }
-            self.info("読み込みました", "追加 \(added.count) 件・上書き \(replaced) 件")
+            self.info(Lang.m("CONN_IMPORT_DONE", "読み込みました"), Lang.m("CONN_IMPORT_DONE_DETAIL", "追加 %d 件・上書き %d 件", added.count, replaced))
         }
     }
 
@@ -1183,19 +1267,19 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         guard !entries.isEmpty else { NSSound.beep(); return }
         let p = NSSavePanel()
         p.nameFieldStringValue = "ttpmenu.ini"
-        p.message = "接続先の一覧を ttpmenu.ini に書き出します"
+        p.message = Lang.m("CONN_EXPORT_MESSAGE", "接続先の一覧を ttpmenu.ini に書き出します")
         let scope = NSPopUpButton(frame: .zero, pullsDown: false)
-        scope.addItem(withTitle: "すべての接続先 (\(entries.count) 件)")
+        scope.addItem(withTitle: Lang.m("CONN_EXPORT_ALL", "すべての接続先 (%d 件)", entries.count))
         if let f = folder(for: selectedNode) {
-            scope.addItem(withTitle: "フォルダ「\(f.folder ?? "")」の中だけ (\(f.allEntryIDs.count) 件)")
+            scope.addItem(withTitle: Lang.m("CONN_EXPORT_FOLDER", "フォルダ「%s」の中だけ (%d 件)", f.folder ?? "", f.allEntryIDs.count))
             scope.lastItem?.representedObject = f
         }
-        let check = NSButton(checkboxWithTitle: "パスワードも書き出す (簡易な暗号化なので取り扱い注意)", target: nil, action: nil)
+        let check = NSButton(checkboxWithTitle: Lang.m("CONN_EXPORT_PASSWORDS", "パスワードも書き出す (簡易な暗号化なので取り扱い注意)"), target: nil, action: nil)
         check.state = .off
-        let note = NSTextField(labelWithString: "フォルダ分けも書き出し、読み込むときに元のフォルダに戻します")
+        let note = NSTextField(labelWithString: Lang.m("CONN_EXPORT_NOTE", "フォルダ分けも書き出し、読み込むときに元のフォルダに戻します"))
         note.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         note.textColor = .secondaryLabelColor
-        let stack = NSStackView(views: [NSStackView(views: [NSTextField(labelWithString: "書き出す範囲:"), scope]), check, note])
+        let stack = NSStackView(views: [NSStackView(views: [NSTextField(labelWithString: Lang.m("CONN_EXPORT_SCOPE", "書き出す範囲:")), scope]), check, note])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
@@ -1221,7 +1305,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             let data = TTMenuIni.write(list, includePasswords: check.state == .on, folders: paths)
             do {
                 try data.write(to: url)
-                self.info("書き出しました", "\(list.count) 件の接続先を書き出しました\n\(url.path)")
+                self.info(Lang.m("CONN_EXPORT_DONE", "書き出しました"), Lang.m("CONN_EXPORT_DONE_DETAIL", "%d 件の接続先を書き出しました\n%s", list.count, url.path))
             } catch {
                 NSAlert(error: error).beginSheetModal(for: self.window!)
             }
@@ -1293,7 +1377,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         if let f = n.folder {
             symbol = "folder"
             title = f
-            cell.toolTip = "\(n.allEntryIDs.count) 件"
+            cell.toolTip = Lang.m("CONN_ENTRY_COUNT", "%d 件", n.allEntryIDs.count)
         } else {
             let e = entry(n)
             symbol = e?.symbolName ?? "questionmark"
@@ -1399,22 +1483,22 @@ final class MenuDetailsDialog: SheetDialog {
             f.translatesAutoresizingMaskIntoConstraints = false
             f.widthAnchor.constraint(equalToConstant: 320).isActive = true
         }
-        logField.placeholderString = "空ならログなし  例: ~/Documents/%Y%m%d.log"
-        optionField.placeholderString = "例: /KR=SJIS /KT=SJIS  /BAUD=115200"
+        logField.placeholderString = Lang.m("CONN_LOG_PLACEHOLDER", "空ならログなし  例: ~/Documents/%Y%m%d.log")
+        optionField.placeholderString = Lang.m("CONN_OPTION_PLACEHOLDER", "例: /KR=SJIS /KT=SJIS  /BAUD=115200")
         let logButton = NSButton(title: "…", target: self, action: #selector(chooseLog))
-        let defaults = NSButton(title: "標準に戻す", target: self, action: #selector(resetDefaults))
+        let defaults = NSButton(title: Lang.t("TTMenu", "BTN_DEFAULT", "標準に戻す"), target: self, action: #selector(resetDefaults))
         fill(entry)
         func row(_ v: [NSView]) -> NSStackView { let s = NSStackView(views: v); s.spacing = 6; return s }
         let help = NSTextField(wrappingLabelWithString:
-            "オプション: /KR= /KT= で文字コード (UTF8 / SJIS / EUC)、/BAUD= /C= でシリアル、/T=0 で生 TCP など、Tera Term のコマンドラインと同じ書き方です。")
+            Lang.m("CONN_OPTION_HELP", "オプション: /KR= /KT= で文字コード (UTF8 / SJIS / EUC)、/BAUD= /C= でシリアル、/T=0 で生 TCP など、Tera Term のコマンドラインと同じ書き方です。"))
         help.font = NSFont.systemFont(ofSize: 11)
         help.textColor = .secondaryLabelColor
         help.preferredMaxLayoutWidth = 440
         let grid = NSGridView(views: [
-            [NSTextField(labelWithString: "ログファイル:"), row([logField, logButton])],
-            [NSTextField(labelWithString: "ユーザー名プロンプト:"), userPrompt],
-            [NSTextField(labelWithString: "パスワードプロンプト:"), passPrompt],
-            [NSTextField(labelWithString: "オプション:"), optionField],
+            [NSTextField(labelWithString: Lang.t("TTMenu", "DLG_ETC_LOGFILE", "ログファイル") + ":"), row([logField, logButton])],
+            [NSTextField(labelWithString: Lang.m("CONN_USER_PROMPT", "ユーザー名プロンプト:")), userPrompt],
+            [NSTextField(labelWithString: Lang.m("CONN_PASSWORD_PROMPT", "パスワードプロンプト:")), passPrompt],
+            [NSTextField(labelWithString: Lang.t("TTMenu", "DLG_ETC_OPTION", "オプション") + ":"), optionField],
             [NSGridCell.emptyContentView, help],
             [NSGridCell.emptyContentView, defaults],
         ])
@@ -1512,6 +1596,8 @@ enum TTMenuIni {
             e.usePassword = flag("PasswdFlag")
             e.useSSH = flag("TeraTerm Mode")
             e.keyFile = str("PrivateKeyFile")
+            e.challenge = flag("Challenge")
+            e.pageant = flag("Pageant")
             e.macroFile = str("MacroFile")
             e.startup = flag("Startup")
             e.logFile = str("Log")
@@ -1521,15 +1607,15 @@ enum TTMenuIni {
             if e.usePassword {
                 if flag("LockBoxFlag") {
                     e.usePassword = false
-                    r.notes.append("「\(name)」のパスワードは LockBox で暗号化されているため読めません (リスト設定で入れ直してください)")
+                    r.notes.append(Lang.m("CONN_NOTE_LOCKBOX", "「%s」のパスワードは LockBox で暗号化されているため読めません (%sで入れ直してください)", name, Lang.t("TTMenu", "MENU_LISTCONFIG", "リスト設定")))
                 } else if let pw = decodePassword(str("Password")), !pw.isEmpty {
                     r.passwords[e.id] = pw
                 } else {
                     e.usePassword = false
                 }
             }
-            for (label, path) in [("鍵ファイル", e.keyFile), ("マクロ", e.macroFile), ("ログ", e.logFile)] where path.contains(":\\") {
-                r.notes.append("「\(name)」の\(label)は Windows のパスです: \(path)")
+            for (label, path) in [(Lang.t("TTMenu", "DLG_CONFIG_KEYFILE", "鍵ファイル"), e.keyFile), (Lang.m("CONN_MACRO", "マクロ"), e.macroFile), (Lang.m("CONN_LOG", "ログ"), e.logFile)] where path.contains(":\\") {
+                r.notes.append(Lang.m("CONN_NOTE_WINDOWS_PATH", "「%s」の%sは Windows のパスです: %s", name, label, path))
             }
             // このアプリが書き足すフォルダの情報 (TeraTerm Menu は知らない項目を無視するので害はない)
             let folder = str("Folder").split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -1569,8 +1655,8 @@ enum TTMenuIni {
                 "Log=\(e.logFile)",
                 "PrivateKeyFile=\(e.keyFile)",
                 "Folder=\((folders[e.id] ?? []).map { $0.replacingOccurrences(of: "/", with: "／") }.joined(separator: "/"))",
-                "Challenge=0",
-                "Pageant=0",
+                "Challenge=\(e.challenge ? 1 : 0)",
+                "Pageant=\(e.pageant ? 1 : 0)",
                 "",
             ]
         }

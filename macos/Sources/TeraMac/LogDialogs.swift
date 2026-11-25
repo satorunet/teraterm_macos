@@ -12,7 +12,8 @@ struct LogDefaults {
     var plainText = false           // LogTypePlainText
     var timestamp = false           // LogTimestamp
     var timestampType = 0           // LogTimestampType 0 ローカル 1 UTC 2 経過(Logging) 3 経過(Connection)
-    var hideDialog = false          // LogHideDialog
+    /// "Logging" ダイアログ 0 非表示 1 最小化 2 表示 (LogHideDialog / LogDialogShowState, 23aa80682 #1576)
+    var dialogShowState = 1
     var includeScreenBuffer = false // LogIncludeScreenBuffer (LogAllBuffIncludedInFirst)
     var defaultName = "teraterm.log" // LogDefaultName
 
@@ -29,7 +30,7 @@ struct LogDefaults {
         v.plainText = s.logTypePlainText
         v.timestamp = s.logTimestamp
         v.timestampType = timestampIndex(s.logTimestampType)
-        v.hideDialog = s.logHideDialog
+        v.dialogShowState = s.logShowState
         v.includeScreenBuffer = s.logIncludeScreenBuffer
         if !s.logDefaultName.isEmpty { v.defaultName = s.logDefaultName }
         return v
@@ -42,7 +43,7 @@ struct LogDefaults {
         s.logTypePlainText = plainText
         s.logTimestamp = timestamp
         s.logTimestampType = LogDefaults.timestampTypeNames[max(0, min(3, timestampType))]
-        s.logHideDialog = hideDialog
+        s.logShowState = dialogShowState
         s.logIncludeScreenBuffer = includeScreenBuffer
         let d = UserDefaults.standard
         d.set(binary, forKey: "LogBinary")
@@ -50,7 +51,8 @@ struct LogDefaults {
         d.set(plainText, forKey: "LogTypePlainText")
         d.set(timestamp, forKey: "logTimestamp")
         d.set(s.logTimestampType, forKey: "LogTimestampType")
-        d.set(hideDialog, forKey: "LogHideDialog")
+        d.set(s.logHideDialog, forKey: "LogHideDialog")
+        d.set(s.logDialogShowState, forKey: "LogDialogShowState")
         d.set(includeScreenBuffer, forKey: "LogIncludeScreenBuffer")
     }
 
@@ -62,7 +64,7 @@ struct LogDefaults {
         o.plainText = plainText
         o.timestamp = timestamp
         o.timestampType = timestampType
-        o.hideDialog = hideDialog
+        o.dialogShowState = dialogShowState
         o.includeScreenBuffer = includeScreenBuffer
         return o
     }
@@ -98,6 +100,12 @@ private final class LogDropView: NSView {
 }
 
 final class LogDialog: SheetDialog, NSComboBoxDelegate {
+    /// DLG_FOPT_LOGGINGDIALOG_HIDDEN / _MINIMIZED / _NORMAL (log_pp.cpp / logdlg.cpp loggingdialog_list)
+    static var showStateTitles: [String] {
+        [Lang.m("MISC_LOGGINGDIALOG_HIDDEN", "非表示"),
+         Lang.m("MISC_LOGGINGDIALOG_MINIMIZED", "最小化"),
+         Lang.m("MISC_LOGGINGDIALOG_NORMAL", "表示")]
+    }
     /// ファイル名の履歴 (HistoryStoreCreate(20))。保存はしない
     private static var history: [String] = []
 
@@ -107,17 +115,18 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
 
     private let nameCombo = NSComboBox()
     private let browseButton = NSButton(title: "...", target: nil, action: nil)
-    private let newRadio = NSButton(radioButtonWithTitle: "新規/上書き", target: nil, action: nil)
-    private let appendRadio = NSButton(radioButtonWithTitle: "追記", target: nil, action: nil)
-    private let textRadio = NSButton(radioButtonWithTitle: "テキスト", target: nil, action: nil)
-    private let binRadio = NSButton(radioButtonWithTitle: "バイナリ", target: nil, action: nil)
-    private let bomCheck = NSButton(checkboxWithTitle: "BOM", target: nil, action: nil)
+    private let newRadio = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_FOPT_NEW_OVERWRITE", "新規/上書き"), target: nil, action: nil)
+    private let appendRadio = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_FOPT_APPEND", "追記"), target: nil, action: nil)
+    private let textRadio = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_FOPT_TEXT", "テキスト"), target: nil, action: nil)
+    private let binRadio = NSButton(radioButtonWithTitle: Lang.t("Tera Term", "DLG_FOPT_BINARY", "バイナリ"), target: nil, action: nil)
+    private let bomCheck = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_FOPT_BOM", "BOM"), target: nil, action: nil)
     private let codePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let plainCheck = NSButton(checkboxWithTitle: "プレーンテキスト", target: nil, action: nil)
-    private let timestampCheck = NSButton(checkboxWithTitle: "タイムスタンプ", target: nil, action: nil)
+    private let plainCheck = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_FOPT_PLAIN", "プレーンテキスト"), target: nil, action: nil)
+    private let timestampCheck = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP", "タイムスタンプ"), target: nil, action: nil)
     private let timestampPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let hideCheck = NSButton(checkboxWithTitle: "ダイアログを非表示", target: nil, action: nil)
-    private let includeCheck = NSButton(checkboxWithTitle: "現在バッファを含む", target: nil, action: nil)
+    /// IDC_LOGGINGDIALOG_DROPDOWN (Hide dialog のチェックボックスから変わった。23aa80682 #1576)
+    private let showStatePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let includeCheck = NSButton(checkboxWithTitle: Lang.t("Tera Term", "DLG_FOPT_ALLBUFFINFIRST", "現在バッファを含む"), target: nil, action: nil)
 
     // work
     private var fileExist = false
@@ -152,9 +161,9 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
     // MARK: 作る
 
     private func build() {
-        panel.title = "ログ"
+        panel.title = Lang.t("Tera Term", "DLG_FOPT_TITLE", "ログ")
 
-        let nameLabel = NSTextField(labelWithString: "ログファイル名(dialogにファイルをドロップ)")
+        let nameLabel = NSTextField(labelWithString: Lang.t("Tera Term", "DLG_FOPT_FILENAME_TITLE", "ログファイル名(dialogにファイルをドロップ)"))
         nameCombo.translatesAutoresizingMaskIntoConstraints = false
         nameCombo.widthAnchor.constraint(equalToConstant: 380).isActive = true
         nameCombo.completes = false
@@ -169,7 +178,12 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
             b.target = self; b.action = #selector(arrange(_:))
         }
         codePopup.addItems(withTitles: ["UTF-8", "UTF-16LE", "UTF-16BE"])
-        timestampPopup.addItems(withTitles: ["ローカルタイム", "UTC", "経過時間(Logging)", "経過時間(Connection)"])
+        timestampPopup.addItems(withTitles: [
+            Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_LOCAL", "ローカルタイム"),
+            Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_UTC", "UTC"),
+            Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_ELAPSED_LOGGING", "経過時間(Logging)"),
+            Lang.t("Tera Term", "DLG_FOPT_TIMESTAMP_ELAPSED_CONNECTION", "経過時間(Connection)"),
+        ])
 
         func box(_ title: String, _ views: [NSView]) -> NSBox {
             let b = NSBox()
@@ -178,8 +192,16 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
             st.orientation = .vertical
             st.alignment = .leading
             st.spacing = 6
-            st.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 8, right: 8)
-            b.contentView = st
+            // contentView は自動レイアウトで大きさが決まらず、中身が潰れて見えなくなる。箱そのものに載せて四辺を留める
+            b.translatesAutoresizingMaskIntoConstraints = false
+            st.translatesAutoresizingMaskIntoConstraints = false
+            b.addSubview(st)
+            NSLayoutConstraint.activate([
+                st.leadingAnchor.constraint(equalTo: b.leadingAnchor, constant: 12),
+                st.trailingAnchor.constraint(lessThanOrEqualTo: b.trailingAnchor, constant: -12),
+                st.topAnchor.constraint(equalTo: b.topAnchor, constant: 22),
+                st.bottomAnchor.constraint(equalTo: b.bottomAnchor, constant: -10),
+            ])
             return b
         }
         func indent(_ views: [NSView]) -> NSView {
@@ -191,8 +213,8 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
             return st
         }
 
-        let modeBox = box("書き込みモード", [newRadio, appendRadio])
-        let typeBox = box("テキスト/バイナリモード", [
+        let modeBox = box(Lang.t("Tera Term", "DLG_FOPT_APPEND_LABEL", "書き込みモード"), [newRadio, appendRadio])
+        let typeBox = box(Lang.t("Tera Term", "DLG_FOPT_BINARY_LABEL", "テキスト/バイナリモード"), [
             textRadio,
             indent([bomCheck, codePopup]),
             indent([plainCheck]),
@@ -203,7 +225,10 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
         boxes.alignment = .top
         boxes.spacing = 12
 
-        let body = NSStackView(views: [nameLabel, nameRow, boxes, hideCheck, includeCheck])
+        // LTEXT "Logging &dialog state" の下に字下げしたドロップダウン (filesys_log.rc)
+        showStatePopup.addItems(withTitles: LogDialog.showStateTitles)
+        let showStateLabel = NSTextField(labelWithString: Lang.m("MISC_LOGGINGDIALOG", "ログ記録中ダイアログ"))
+        let body = NSStackView(views: [nameLabel, nameRow, boxes, showStateLabel, indent([showStatePopup]), includeCheck])
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 8
@@ -226,7 +251,7 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
         timestampCheck.state = defaults.timestamp ? .on : .off
         timestampPopup.selectItem(at: defaults.timestampType)
         plainCheck.state = defaults.plainText ? .on : .off
-        hideCheck.state = defaults.hideDialog ? .on : .off
+        showStatePopup.selectItem(at: max(0, min(2, defaults.dialogShowState)))
         includeCheck.state = defaults.includeScreenBuffer ? .on : .off
         bomCheck.state = .off   // BOM は毎回 off
         setBinary(defaults.binary)
@@ -353,7 +378,7 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
     @objc private func browse() {
         stopTimer()
         let sp = NSSavePanel()
-        sp.title = "Tera Term: ログ"
+        sp.title = "Tera Term: " + Lang.t("Tera Term", "DLG_FOPT_TITLE", "ログ")
         sp.canCreateDirectories = true
         sp.allowsOtherFileTypes = true
         let filterKeeper = FilePanelFilter.attach(to: sp, mask: "*.txt;*.log")
@@ -390,7 +415,7 @@ final class LogDialog: SheetDialog, NSComboBoxDelegate {
             defaults.plainText = plainCheck.state == .on
             defaults.timestamp = timestampCheck.state == .on
         }
-        defaults.hideDialog = hideCheck.state == .on
+        defaults.dialogShowState = max(0, showStatePopup.indexOfSelectedItem)
         defaults.includeScreenBuffer = includeCheck.state == .on
         defaults.timestampType = max(0, timestampPopup.indexOfSelectedItem)
         if let ss = session { defaults.store(into: &ss.settings) }
@@ -417,7 +442,7 @@ final class LogProgressWindow: NSObject, NSWindowDelegate {
     private let fileNameField = NSTextField(labelWithString: "")
     private let fullPathField = NSTextField(labelWithString: "")
     private let bytesField = NSTextField(labelWithString: "0")
-    private let pauseButton = NSButton(title: "一時停止", target: nil, action: nil)
+    private let pauseButton = NSButton(title: Lang.t("Tera Term", "DLG_FILETRANS_PAUSE", "一時停止"), target: nil, action: nil)
     private var timer: Timer?
 
     init(session: SessionWindowController, path: String) {
@@ -425,7 +450,7 @@ final class LogProgressWindow: NSObject, NSWindowDelegate {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 140),
                           styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         super.init()
-        window.title = "Tera Term: ログ記録中"
+        window.title = "Tera Term: " + Lang.t("Tera Term", "FILEDLG_TRANS_TITLE_LOG", "ログ記録中")
         window.isReleasedWhenClosed = false
         window.delegate = self
 
@@ -437,15 +462,15 @@ final class LogProgressWindow: NSObject, NSWindowDelegate {
         fullPathField.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
 
         let grid = NSGridView(views: [
-            [NSTextField(labelWithString: "ファイル名:"), fileNameField],
-            [NSTextField(labelWithString: "フルパス:"), fullPathField],
-            [NSTextField(labelWithString: "転送済容量:"), bytesField],
+            [NSTextField(labelWithString: Lang.t("Tera Term", "DLG_FILETRANS_FILENAME", "ファイル名:")), fileNameField],
+            [NSTextField(labelWithString: Lang.t("Tera Term", "DLG_FILETRANS_FULLPATH", "フルパス:")), fullPathField],
+            [NSTextField(labelWithString: Lang.t("Tera Term", "DLG_FILETRANS_TRNAS", "転送済容量:")), bytesField],
         ])
         grid.column(at: 0).xPlacement = .trailing
         grid.rowSpacing = 6
 
-        let hide = NSButton(title: "ダイアログを非表示", target: self, action: #selector(hideDialog))
-        let closeB = NSButton(title: "閉じる", target: self, action: #selector(closeLog))
+        let hide = NSButton(title: Lang.t("Tera Term", "DLG_FOPT_HIDEDIALOG", "ダイアログを非表示"), target: self, action: #selector(hideDialog))
+        let closeB = NSButton(title: Lang.t("Tera Term", "DLG_FILETRANS_CLOSE", "閉じる"), target: self, action: #selector(closeLog))
         pauseButton.target = self; pauseButton.action = #selector(togglePause)
         let buttons = NSStackView(views: [hide, NSView(), closeB, pauseButton])
         buttons.spacing = 8
@@ -479,14 +504,14 @@ final class LogProgressWindow: NSObject, NSWindowDelegate {
     func refresh() {
         guard let l = session?.teraLog else { return }
         bytesField.stringValue = "\(l.byteCount)"
-        pauseButton.title = l.paused ? "再開" : "一時停止"
+        pauseButton.title = l.paused ? Lang.t("Tera Term", "DLG_FILETRANS_START", "再開") : Lang.t("Tera Term", "DLG_FILETRANS_PAUSE", "一時停止")
     }
 
-    /// HideDialog でなければ表示してすぐ最小化する。HideDialog なら作るだけ
-    func start(hidden: Bool) {
-        guard !hidden else { return }
+    /// CFileTransDlg::Create: 非表示なら作るだけ。最小化なら表示してすぐ最小化、通常なら通常サイズで表示 (23aa80682 #1576)
+    func start(showState: Int) {
+        guard showState != 0 else { return }
         window.orderFront(nil)
-        window.miniaturize(nil)
+        if showState == 1 { window.miniaturize(nil) }
     }
 
     /// FLogShowDlg: 通常の大きさで前に出す (非表示にしていても)
@@ -538,13 +563,14 @@ final class CommentDialog: NSObject, NSWindowDelegate {
         panel = CommentPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 90),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
         super.init()
-        panel.title = "ログにコメントを付加"
+        panel.title = Lang.t("Tera Term", "DLG_COMMENT_TITLE", "ログにコメントを付加")
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.finish(nil) }
         field.translatesAutoresizingMaskIntoConstraints = false
         field.widthAnchor.constraint(equalToConstant: 360).isActive = true
         field.target = self; field.action = #selector(ok)
-        let okB = NSButton(title: "OK", target: self, action: #selector(ok))
+        let okB = NSButton(title: Lang.t("Tera Term", "BTN_OK", "OK"), target: self, action: #selector(ok))
+
         okB.keyEquivalent = "\r"
         let buttons = NSStackView(views: [NSView(), okB])
         let root = NSStackView(views: [field, buttons])
@@ -589,5 +615,16 @@ final class CommentDialog: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         finish(nil)
         return false
+    }
+}
+
+// MARK: - 確認用 (TERAMAC_GUIDESNAP: かんたんマニュアルの画面写真)
+
+extension LogDialog {
+    /// ファイル名の欄を例の名前にする (1 秒ごとの入れ直しも止める)
+    func debugGuideFill(_ path: String) {
+        stopTimer()
+        nameCombo.stringValue = path
+        arrangeFilename(path)
     }
 }

@@ -84,7 +84,7 @@ public struct TTLError: Error, CustomStringConvertible {
     public let message: String
     public let file: String
     public let text: String
-    public var description: String { "\(file) \(line) 行目: \(message)\n\(text)" }
+    public var description: String { Lang.m("XFER_MACRO_ERROR_AT", "%s %d 行目: %s\n%s", file, line, message, text) }
 }
 
 extension Array where Element == UInt8 {

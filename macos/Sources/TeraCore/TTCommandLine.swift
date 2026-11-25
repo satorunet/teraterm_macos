@@ -53,6 +53,8 @@ public struct TTCommandLine: Equatable {
     /// /KR= /KT=
     public var kanjiRecv: String?
     public var kanjiSend: String?
+    /// TTProxy の -proxy= / -noproxy / protocol://proxy:port/realhost で置き換えたプロキシ (nil なら設定のまま)
+    public var proxy: ProxyURL?
     /// 解釈しなかったオプション
     public var unknown: [String] = []
 
@@ -153,7 +155,10 @@ public struct TTCommandLine: Equatable {
         var hostNameFlag = false
         var justAfterHost = false
 
-        for raw in tokens(param) {
+        // TTProxy (TTXParseParam) が先に自分の語を取り除く
+        let px = ProxyCommandLine.strip(tokens(param))
+        r.proxy = px.proxy
+        for raw in px.rest {
             var t = dequote(raw)
             let l = t.lowercased()
 
@@ -270,6 +275,11 @@ public struct TTCommandLine: Equatable {
             }
         }
 
+        // TTProxy: ホストの指定がなければ protocol://proxy:port/realhost の realhost (SetConnectHostName)
+        if r.host == nil, let rh = px.realHost, !rh.isEmpty {
+            r.host = rh
+            if paramPort == nil { paramPort = .tcpip }
+        }
         if var h = r.host, paramPort == .tcpip {
             // ParseHostName
             let hl = h.lowercased()

@@ -1,4 +1,5 @@
 import AppKit
+import TeraCore
 
 /// Windows 版 Tera Term のように、ウィンドウの中 (タイトルバーの真下) に置くメニューバー。
 /// 中身は NSApp.mainMenu の同名のメニューそのものを開く (検証・チェック印・ウィンドウ / 漢字コードの
@@ -6,12 +7,23 @@ import AppKit
 /// target なしの項目は そのウィンドウの TerminalView → SessionWindowController の順で届く。
 /// 表示するかは本家と同じ PopupMenu の設定 (アプリ全体、既定 off = 表示)。隠したときは Ctrl+左クリックでメニュー全体をポップアップする。
 final class InWindowMenuBar: NSView {
-    /// (表示名, mainMenu のタイトル, Option+○ のキー)
-    static let entries: [(label: String, menu: String, key: String)] = [
-        ("ファイル(F)", "ファイル", "f"), ("編集(E)", "編集", "e"), ("設定(S)", "設定", "s"),
-        ("コントロール(O)", "コントロール", "o"), ("ウィンドウ(W)", "ウィンドウ", "w"),
-        ("漢字コード(K)", "漢字コード", "k"), ("ヘルプ(H)", "ヘルプ", "h"),
-    ]
+    /// (表示名, mainMenu のタイトル, Option+○ のキー)。言語を変えたら変わるので毎回作る
+    /// 表示名は本家の "ファイル(&F)" を "ファイル(F)"、"&File" を "File" にしたもの
+    static var entries: [(label: String, menu: String, key: String)] {
+        let list: [(String, String, String, String)] = [
+            ("Tera Term", "MENU_FILE", "ファイル", "f"), ("Tera Term", "MENU_EDIT", "編集", "e"),
+            ("Tera Term", "MENU_SETUP", "設定", "s"), ("Tera Term", "MENU_CONTROL", "コントロール", "o"),
+            ("Tera Term", "MENU_WINDOW", "ウィンドウ", "w"), ("TTXKanjiMenu", "MENU_KANJI", "漢字コード", "k"),
+            ("Tera Term", "MENU_HELP", "ヘルプ", "h"),
+        ]
+        return list.map { sec, key, def, k in
+            let raw = Lang.raw(sec, key) ?? "\(def)(&\(k.uppercased()))"
+            let label = raw.replacingOccurrences(of: "(&", with: "(").replacingOccurrences(of: "（&", with: "（")
+                .replacingOccurrences(of: "&&", with: "\u{1}").replacingOccurrences(of: "&", with: "")
+                .replacingOccurrences(of: "\u{1}", with: "&")
+            return (label, Lang.t(sec, key, def), k)
+        }
+    }
     static let height: CGFloat = 24
     static let defaultsKey = "showInWindowMenuBar"
     static let changedNotification = Notification.Name("TeraMacInWindowMenuBarChanged")
@@ -281,7 +293,7 @@ final class InWindowMenuBar: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let m = NSMenu()
-        let it = m.addItem(withTitle: "メニューバーを閉じる", action: #selector(hideBar(_:)), keyEquivalent: "")
+        let it = m.addItem(withTitle: Lang.m("MENU_CLOSE_MENUBAR", "メニューバーを閉じる"), action: #selector(hideBar(_:)), keyEquivalent: "")
         it.target = self
         return m
     }
@@ -302,7 +314,7 @@ final class InWindowMenuBar: NSView {
             m.addItem(top)
         }
         m.addItem(.separator())
-        let show = NSMenuItem(title: "メニューバーを開く", action: #selector(showBar(_:)), keyEquivalent: "")
+        let show = NSMenuItem(title: Lang.m("MENU_OPEN_MENUBAR", "メニューバーを開く"), action: #selector(showBar(_:)), keyEquivalent: "")
         show.target = barActionTarget
         m.addItem(show)
         return m
@@ -342,15 +354,16 @@ final class TerminalContainerView: NSView {
     /// タイトルバーの右端のボタン。押すたびにメニューバーを出す / 隠す
     private let menuButtonAccessory = NSTitlebarAccessoryViewController()
     private lazy var menuButton: NSButton = {
-        let img = NSImage(systemSymbolName: "line.horizontal.3", accessibilityDescription: "メニュー") ?? NSImage()
+        let img = NSImage(systemSymbolName: "line.horizontal.3", accessibilityDescription: Lang.m("MENU_MENU_BUTTON", "メニュー")) ?? NSImage()
         let b = HoverButton(image: img, target: self, action: #selector(openMenuFromButton(_:)))
         b.isBordered = false
         b.bezelStyle = .regularSquare
-        b.toolTip = "メニュー"
+        b.toolTip = Lang.m("MENU_MENU_BUTTON", "メニュー")
         b.frame = NSRect(x: 0, y: 0, width: 36, height: 22)
         return b
     }()
     private var observer: NSObjectProtocol?
+    private var langObserver: NSObjectProtocol?
 
     init(termView: TerminalView) {
         self.termView = termView
@@ -371,10 +384,23 @@ final class TerminalContainerView: NSView {
         observer = NotificationCenter.default.addObserver(forName: InWindowMenuBar.changedNotification, object: nil, queue: .main) { [weak self] _ in
             self?.barVisibilityChanged()
         }
+        // 言語が変わったら題とボタンの説明を描き直す (mainMenu は AppDelegate が先に作り直す)
+        langObserver = NotificationCenter.default.addObserver(forName: Lang.didChange, object: nil, queue: .main) { [weak self] _ in
+            self?.languageChanged()
+        }
         Self.installMonitors()
     }
     required init?(coder: NSCoder) { fatalError() }
-    deinit { if let o = observer { NotificationCenter.default.removeObserver(o) } }
+    deinit {
+        if let o = observer { NotificationCenter.default.removeObserver(o) }
+        if let o = langObserver { NotificationCenter.default.removeObserver(o) }
+    }
+
+    private func languageChanged() {
+        updateMenuButton()
+        menuButton.image?.accessibilityDescription = Lang.m("MENU_MENU_BUTTON", "メニュー")
+        bar.needsDisplay = true
+    }
 
     override var isFlipped: Bool { true }
 
@@ -396,7 +422,7 @@ final class TerminalContainerView: NSView {
     private func updateMenuButton() {
         let shown = InWindowMenuBar.isShown
         menuButton.contentTintColor = shown ? .controlAccentColor : .secondaryLabelColor
-        menuButton.toolTip = shown ? "メニューバーを閉じる" : "メニューバーを開く"
+        menuButton.toolTip = shown ? Lang.m("MENU_CLOSE_MENUBAR", "メニューバーを閉じる") : Lang.m("MENU_OPEN_MENUBAR", "メニューバーを開く")
     }
 
     private func layoutChildren() {

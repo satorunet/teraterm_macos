@@ -50,6 +50,26 @@ public struct Line {
 
 public enum CursorStyle { case block, underline, bar }
 
+/// OSC で変える色の 24 ビット値 (COLORREF)
+public struct RGB: Hashable {
+    public var r: UInt8, g: UInt8, b: UInt8
+    public init(_ r: UInt8, _ g: UInt8, _ b: UInt8) { self.r = r; self.g = g; self.b = b }
+}
+
+/// OSC 4 / 5 / 10〜19 で変える色 (vtdisp.h CS_VT_* / CS_TEK_*)
+public enum ColorSlot: Hashable {
+    /// 256 色表 (vt->ANSIColor) の番号。8 色モードのときは GetIndex256From16 したもの (表示に使う番号)
+    case ansi(Int)
+    case normalFG, normalBG, boldFG, boldBG, blinkFG, underFG, reverseBG, tekFG, tekBG
+}
+
+/// XtColor2TTColor の結果 (CS_ANSICOLOR_ALL / CS_SP_ALL はリセットだけ)
+public enum ColorTarget: Equatable {
+    case slot(ColorSlot)
+    case allANSI
+    case allSpecial
+}
+
 // MARK: - Tera Term の設定 (ts) に対応する型
 
 /// 端末ID (TerminalID。common/tttypes_termid.cpp)
@@ -153,13 +173,17 @@ public enum ClipboardNotice: Equatable {
     /// 拒否のときは警告 (NotifyWarnMessage)
     public var isWarning: Bool { self == .readRejected || self == .writeRejected }
     /// ja_JP.lng MSG_CBACCESS_TITLE / MSG_CBACCESS_REJECT_TITLE
-    public var title: String { isWarning ? "クリップボードアクセスの拒否" : "クリップボードアクセス" }
+    public var title: String {
+        isWarning ? Lang.t("Tera Term", "MSG_CBACCESS_REJECT_TITLE", "クリップボードアクセスの拒否")
+                  : Lang.t("Tera Term", "MSG_CBACCESS_TITLE", "クリップボードアクセス")
+    }
     public var message: String {
         switch self {
-        case .read: return "リモートホストがクリップボードの内容を読み取りました。"
-        case .write(let t): return "リモートホストがクリップボードに書き込みました。\n--\n" + t
-        case .readRejected: return "リモートホストからのクリップボード読み取りを拒否しました。"
-        case .writeRejected: return "リモートホストからのクリップボード書き込みを拒否しました。"
+        case .read: return Lang.t("Tera Term", "MSG_CBACCESS_READ", "リモートホストがクリップボードの内容を読み取りました。")
+        case .write(let t): return Lang.t("Tera Term", "MSG_CBACCESS_WRITE", "リモートホストがクリップボードに書き込みました。") + "\n--\n" + t
+        case .readRejected: return Lang.t("Tera Term", "MSG_CBACCESS_READ_REJECT", "リモートホストからのクリップボード読み取りを拒否しました。")
+        case .writeRejected: return Lang.t("Tera Term", "MSG_CBACCESS_WRITE_REJECT", "リモートホストからのクリップボード書き込みを拒否しました。")
+
         }
     }
 }
@@ -286,6 +310,9 @@ public final class Terminal {
     public var defaultCursorStyle: CursorStyle = .block { didSet { cursorStyle = defaultCursorStyle } }
     public private(set) var mouseMode = 0     // 0 / 1000 / 1002 / 1003
     public private(set) var mouseSGR = false
+    /// SGR-Pixels 形式 (DECSET 1016、vtterm.c IdMouseTrackExtSGRP。f10c93025 #575)。
+    /// mouseSGR も true になり、座標は文字の位置ではなくピクセル (ウインドウの点) で送る
+    public private(set) var mouseSGRPixels = false
     private var autowrap = true
     private var insertMode = false
     private var originMode = false
@@ -344,6 +371,17 @@ public final class Terminal {
     public var bellClock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     /// OSC の文字列の最大長 (MaxOSCBufferSize)
     public var maxOSCBufferSize = 4096
+    /// OSC 4 / 5 / 10 / 11 / 17 / 19 で変えた色 (vt->ANSIColor / vt->BGVT*Color)。ないものは設定の色
+    public private(set) var colorOverrides: [ColorSlot: RGB] = [:]
+    /// 8 色モード ((ts.ColorFlag & CF_FULLCOLOR) == 0: PcBoldColor・Aixterm16Color・Xterm256Color がどれもオフ)。
+    /// OSC 4 の 1〜7 と 9〜15 を入れ替えて覚える (DispSetColor の GetIndex256From16)
+    public var eightColorMode = false
+    /// 設定の色 (DispGetColor が返す ts.VTColor など。.ansi は表示の 256 色表の初期値)。問い合わせの応答に使う
+    public var configuredColor: ((ColorSlot) -> RGB)?
+    /// OSC で色が変わった (描き直す)
+    public var onColorsChanged: (() -> Void)?
+    /// dumb 端末の行頭に出すタイムスタンプ (FLogTimeStampStrW の "[...] ")。nil を返したら出さない (LogTimestamp がオフ)
+    public var dumbTimestamp: (() -> String?)?
 
     // MARK: エンコーディングタブ
     /// 受信の文字コード (KanjiReceive)。OSC 52 で受けた文字の変換と絵文字幅 (UTF-8 のときだけ) に使う
@@ -528,6 +566,11 @@ public final class Terminal {
 
     /// メニューの「端末リセット」(vtterm.c ResetTerminal)。画面の文字は消さない (RIS の ESC c とは違う)。
     /// lfMode: 送信改行が CR+LF なら LNM をオン (LFMode = ts.CRSend == IdCRLF)
+    /// ResetCharSet (CharSetInit): G0〜G3 と GL・シングルシフトを初めに戻す (漢字コードを変えたとき。TTXKanjiMenu CallResetCharSet)
+    public func resetCharSet() {
+        g = [.ascii, .ascii, .ascii, .ascii]; gl = 0; singleShift = nil
+    }
+
     public func menuReset(lfMode: Bool) {
         // BuffReset: 代替画面の退避は捨てる (表示中の内容はそのまま)
         if usingAlt { savedMainLines = nil; usingAlt = false }
@@ -538,8 +581,10 @@ public final class Terminal {
         insertMode = false; lnm = lfMode; autowrap = true
         appCursor = false; appKeypad = false; originMode = false
         reverseScreen = false
-        mouseMode = 0; mouseSGR = false
+        mouseMode = 0; mouseSGR = false; mouseSGRPixels = false
         bracketedPaste = false
+        // OnControlResetTerminal: DispResetColor(CS_ALL) で OSC 4/5/10/11/17/19 で変えた色も戻す (adfcf70eb)
+        resetColors()
         cursorVisible = true; cursorStyle = defaultCursorStyle; cursorBlink = defaultCursorBlink
         g = [.ascii, .ascii, .ascii, .ascii]; gl = 0; singleShift = nil
         printerMode = false; autoPrintMode = false; printExtent = true; printBuf = ""
@@ -552,7 +597,8 @@ public final class Terminal {
     // MARK: - サイズ変更
 
     public func resize(cols newCols: Int, rows newRows: Int) {
-        let nc = max(2, newCols), nr = max(1, newRows)
+        // buffer.c ChangeBuffer: TermWidthMax / TermHeightMax まで (4.106)
+        let nc = min(TermLimits.widthMax, max(2, newCols)), nr = min(TermLimits.heightMax, max(1, newRows))
         if nc == cols && nr == rows { return }
         func fit(_ l: inout Line) {
             if l.cells.count > nc {
@@ -788,6 +834,11 @@ public final class Terminal {
     private func process(_ sc: Unicode.Scalar) {
         let v = sc.value
         if terminalID == .dumb {
+            // VTParse (dd65db75a #255): dumb 端末でログのタイムスタンプ (LogTimestamp) がオンなら、
+            // 行頭 (CursorX == 0) に CR / LF でない文字が来たとき、その前に時刻を画面にも出す (ログにも入る)
+            if cx == 0 && !wrapPending && v != 0x0A && v != 0x0D, let stamp = dumbTimestamp?() {
+                for u in stamp.unicodeScalars { put(u) }
+            }
             // dumb 端末 (ParseControlDumb): エスケープシーケンスは解釈せず、LF / CR / BEL のほかの制御文字は U+2400〜 で見せる
             if v < 0x20 {
                 switch v {
@@ -856,13 +907,13 @@ public final class Terminal {
             }
 
         case .osc:
-            if v == 0x07 { oscDispatch(); state = .ground; return }
+            if v == 0x07 { oscDispatch(bel: true); state = .ground; return }
             if v == 0x1B { state = .oscEsc; return }
             if v == 0x18 || v == 0x1A { state = .ground; return }
             if oscLen < maxOSCBufferSize - 1 { oscBuf.unicodeScalars.append(sc); oscLen += 1 }
 
         case .oscEsc:
-            if sc == "\\" { oscDispatch(); state = .ground } else { state = .ground; process(sc) }
+            if sc == "\\" { oscDispatch(bel: false); state = .ground } else { state = .ground; process(sc) }
 
         case .str:
             if v == 0x1B { state = .strEsc } else if v == 0x07 || v == 0x18 || v == 0x1A { state = .ground }
@@ -1175,7 +1226,7 @@ public final class Terminal {
         appCursor = false; appKeypad = false; bracketedPaste = false
         cursorVisible = true; reverseScreen = false; autowrap = true
         insertMode = false; originMode = false; lnm = false
-        mouseMode = 0; mouseSGR = false; cursorStyle = defaultCursorStyle; cursorBlink = defaultCursorBlink
+        mouseMode = 0; mouseSGR = false; mouseSGRPixels = false; cursorStyle = defaultCursorStyle; cursorBlink = defaultCursorBlink
         g = [.ascii, .ascii, .ascii, .ascii]; gl = 0
         printerMode = false; autoPrintMode = false; printExtent = true; printBuf = ""
         saved = Saved(); savedAlt = Saved()
@@ -1536,7 +1587,9 @@ public final class Terminal {
                         leaveAlt(); restoreCursor()
                     }
                 case 1000, 1002, 1003: mouseMode = on ? m : 0
-                case 1006: mouseSGR = on
+                // 拡張マウスの形式 (MouseReportExtMode) はどれか 1 つ。リセットはどれでも「なし」に戻す
+                case 1006: mouseSGR = on; mouseSGRPixels = false
+                case 1016: mouseSGR = on; mouseSGRPixels = on      // SGR-Pixels (f10c93025 #575)
                 case 2004: bracketedPaste = on
                 default: break
                 }
@@ -1626,20 +1679,235 @@ public final class Terminal {
         }
     }
 
-    private func oscDispatch() {
-        guard let semi = oscBuf.firstIndex(of: ";") else { return }
-        let code = oscBuf[..<semi]
-        let body = String(oscBuf[oscBuf.index(after: semi)...])
-        switch code {
-        case "0", "1", "2":
+    /// XSequence (OSC Ps ; Pt)。bel: BEL で終わった (色の問い合わせの応答も BEL で終える。157a1093c)
+    private func oscDispatch(bel: Bool) {
+        // Ps のあとに ';' があるか (HasParamStr)。OSC 104 / 110 などは ';' なしでも動く
+        let semi = oscBuf.firstIndex(of: ";")
+        let code = String(oscBuf[..<(semi ?? oscBuf.endIndex)])
+        let body: String? = semi.map { String(oscBuf[oscBuf.index(after: $0)...]) }
+        guard !code.isEmpty, code.allSatisfy({ $0.isASCII && $0.isNumber }), let mode = Int(code.prefix(9)) else { return }
+        switch mode {
+        case 0, 1, 2:
             // XSequence: AcceptTitleChangeRequest が無効なら受け取らない。空ならリモートタイトルを消す
-            guard titleChangeMode != .off else { return }
+            guard let body = body, titleChangeMode != .off else { return }
             remoteTitle = body.isEmpty ? nil : body
             onTitle?(body)
-        case "52":
-            clipboardSequence(body)
+        case 4, 5:
+            // Change/Query color palette / special color: Pc ; spec ; Pc ; spec ...
+            guard let body = body else { return }
+            var num = 0
+            var spec: String?
+            for ch in body.unicodeScalars {
+                if spec == nil {
+                    if ch.value >= 0x30 && ch.value <= 0x39 { num = min(num &* 10 &+ Int(ch.value - 0x30), 0xFFFF_FFF) }
+                    else if ch == ";" { spec = "" }
+                    else { break }
+                } else if ch == ";" {
+                    colorSequence(mode, num, spec!, bel: bel)
+                    num = 0; spec = nil
+                } else {
+                    spec!.unicodeScalars.append(ch)
+                }
+            }
+            if let s = spec { colorSequence(mode, num, s, bel: bel) }
+        case 10...19:
+            // Change/Query VT-Window fg/bg, ... highlight fg: ';' で区切ると次の番号の色
+            guard let body = body else { return }
+            var m = mode
+            for spec in body.split(separator: ";", omittingEmptySubsequences: false) {
+                colorSequence(m, 0, String(spec), bel: bel)
+                m += 1
+            }
+        case 52:
+            if let body = body { clipboardSequence(body) }
+        case 104, 105:
+            // Reset color palette / special color
+            if let body = body {
+                var num: Int? = 0
+                for ch in body.unicodeScalars {
+                    if ch.value >= 0x30 && ch.value <= 0x39 {
+                        if let n = num { num = min(n &* 10 &+ Int(ch.value - 0x30), 0xFFFF_FFF) }
+                    } else if ch == ";" {
+                        // 数字でないものがあった番号は CS_UNSPEC (104 ならパレット全部、105 なら特殊色全部)
+                        resetColor(Terminal.xtColorSlot(mode, num))
+                        num = 0
+                    } else {
+                        num = nil
+                    }
+                }
+                if let n = num { resetColor(Terminal.xtColorSlot(mode, n)) }
+            } else {
+                resetColor(Terminal.xtColorSlot(mode, nil))
+            }
+        case 110...119:
+            // Reset VT-Window fg/bg ... highlight fg。続く数字 (; 区切り) もその番号の色を戻す
+            resetColor(Terminal.xtColorSlot(mode, nil))
+            if let body = body {
+                var num: Int? = 0
+                for ch in body.unicodeScalars {
+                    if ch.value >= 0x30 && ch.value <= 0x39 {
+                        num = min((num ?? 0) &* 10 &+ Int(ch.value - 0x30), 0xFFFF_FFF)
+                    } else if ch == ";" {
+                        if let n = num { resetColor(Terminal.xtColorSlot(n, nil)) }
+                        num = 0
+                    } else {
+                        num = nil
+                        break
+                    }
+                }
+                if let n = num { resetColor(Terminal.xtColorSlot(n, nil)) }
+            }
         default: break
         }
+    }
+
+    // MARK: - OSC の色 (vtterm.c XsProcColor / XtColor2TTColor / XsParseColor、vtdisp.c DispSetColor など)
+
+    /// XtColor2TTColor: OSC の番号と色番号から Tera Term の色 (CS_*)。xt は nil = 番号なし (CS_UNSPEC)
+    static func xtColorSlot(_ mode: Int, _ xt: Int?) -> ColorTarget? {
+        switch mode >= 100 ? mode - 100 : mode {
+        case 4:
+            switch xt {
+            case 256?: return .slot(.boldFG)
+            case 257?: return .slot(.underFG)
+            case 258?: return .slot(.blinkFG)
+            case 259?: return .slot(.reverseBG)     // xterm と同じ動作 (7751c9ea3 #616)
+            case nil: return mode == 104 ? .allANSI : nil
+            case let n?: return n <= 255 ? .slot(.ansi(n)) : nil
+            }
+        case 5:
+            switch xt {
+            case 0?: return .slot(.boldFG)
+            case 1?: return .slot(.underFG)
+            case 2?: return .slot(.blinkFG)
+            case 3?: return .slot(.reverseBG)
+            case nil: return mode == 105 ? .allSpecial : nil
+            default: return nil
+            }
+        case 10: return .slot(.normalFG)
+        case 11: return .slot(.normalBG)
+        case 15: return .slot(.tekFG)
+        case 16: return .slot(.tekBG)
+        case 17: return .slot(.boldBG)       // 太字属性の背景色 (ffc65ed6e #532)
+        case 19: return .slot(.boldFG)       // 太字属性の文字色 (ffc65ed6e #532)
+        default: return nil
+        }
+    }
+
+    /// 8 色モードの 16 色の番号 (GetIndex256From16: 明るい / 暗い組が入れ替わっている。82e8173c8)
+    static func index256From16(_ n: Int) -> Int {
+        let t = [0, 9, 10, 11, 12, 13, 14, 15, 8, 1, 2, 3, 4, 5, 6, 7]
+        return n >= 0 && n < 16 ? t[n] : n
+    }
+
+    /// シーケンスの色番号から、表示の 256 色表 (vt->ANSIColor) の番号
+    private func storedSlot(_ s: ColorSlot) -> ColorSlot {
+        if case .ansi(let n) = s, eightColorMode { return .ansi(Terminal.index256From16(n)) }
+        return s
+    }
+
+    /// XsProcColor: "?" なら問い合わせに答え、色の指定ならその色にする
+    private func colorSequence(_ mode: Int, _ num: Int, _ spec: String, bel: Bool) {
+        guard case .slot(let slot)? = Terminal.xtColorSlot(mode, num) else { return }
+        if spec == "?" {
+            // DispGetColor: パレットは今の色、ほかの色は設定の色 (ts.VTColor など) を返す (本家と同じ)
+            let c: RGB
+            if case .ansi = slot {
+                let st = storedSlot(slot)
+                c = colorOverrides[st] ?? configuredColor?(st) ?? RGB(0, 0, 0)
+            } else {
+                c = configuredColor?(slot) ?? RGB(0, 0, 0)
+            }
+            let rgb = String(format: "rgb:%04x/%04x/%04x", Int(c.r) * 257, Int(c.g) * 257, Int(c.b) * 257)
+            let str = mode == 4 || mode == 5 ? "\(mode);\(num);" + rgb : "\(mode);" + rgb
+            // SendOSCstr: BEL で来たら BEL、でなければ ST で終える
+            respond("\u{1B}]" + str + (bel ? "\u{07}" : "\u{1B}\\"))
+        } else if let c = Terminal.parseXColor(spec) {
+            colorOverrides[storedSlot(slot)] = c
+            dirty = true
+            onColorsChanged?()
+        }
+    }
+
+    /// DispResetColor
+    private func resetColor(_ t: ColorTarget?) {
+        guard let t = t else { return }
+        switch t {
+        case .slot(let s): colorOverrides[storedSlot(s)] = nil
+        case .allANSI:
+            colorOverrides = colorOverrides.filter { if case .ansi = $0.key { return false } else { return true } }
+        case .allSpecial:
+            // CS_SP_ALL: 太字の文字色・点滅の文字色・反転の背景色
+            for s in [ColorSlot.boldFG, .blinkFG, .reverseBG] { colorOverrides[s] = nil }
+        }
+        dirty = true
+        onColorsChanged?()
+    }
+
+    /// DispResetColor(CS_ALL): OSC で変えた色をすべて戻す (メニューのリセット)
+    public func resetColors() {
+        guard !colorOverrides.isEmpty else { return }
+        colorOverrides = [:]
+        dirty = true
+        onColorsChanged?()
+    }
+
+    /// XsParseColor: rgb:R/G/B (1〜4 桁) と #RGB (1〜4 桁ずつ)。sscanf の %Nx と同じく長さで決める
+    static func parseXColor(_ spec: String) -> RGB? {
+        let u = Array(spec.utf8)
+        func hex(_ s: ArraySlice<UInt8>) -> Int? {
+            guard !s.isEmpty else { return nil }
+            var v = 0
+            for b in s {
+                switch b {
+                case 0x30...0x39: v = v * 16 + Int(b - 0x30)
+                case 0x41...0x46: v = v * 16 + Int(b - 0x41 + 10)
+                case 0x61...0x66: v = v * 16 + Int(b - 0x61 + 10)
+                default: return nil
+                }
+            }
+            return v
+        }
+        var r = 0, g = 0, b = 0
+        if u.count >= 4, String(decoding: u[0..<4], as: UTF8.self).lowercased() == "rgb:" {
+            let w: Int
+            switch u.count {
+            case 9: w = 1
+            case 12: w = 2
+            case 15: w = 3
+            case 18: w = 4
+            default: return nil
+            }
+            // rgb:%Nx/%Nx/%Nx
+            let a = 4, sep1 = a + w, bb = sep1 + 1, sep2 = bb + w, c = sep2 + 1
+            guard u[sep1] == 0x2F, u[sep2] == 0x2F, let x = hex(u[a..<sep1]), let y = hex(u[bb..<sep2]), let z = hex(u[c..<(c + w)]) else { return nil }
+            switch w {
+            case 1: (r, g, b) = (x * 17, y * 17, z * 17)
+            case 2: (r, g, b) = (x, y, z)
+            case 3: (r, g, b) = (x >> 4, y >> 4, z >> 4)
+            default: (r, g, b) = (x >> 8, y >> 8, z >> 8)
+            }
+        } else if u.first == 0x23 {
+            let w: Int
+            switch u.count {
+            case 4: w = 1
+            case 7: w = 2
+            case 10: w = 3
+            case 13: w = 4
+            default: return nil
+            }
+            guard let x = hex(u[1..<(1 + w)]), let y = hex(u[(1 + w)..<(1 + 2 * w)]), let z = hex(u[(1 + 2 * w)..<(1 + 3 * w)]) else { return nil }
+            switch w {
+            case 1: (r, g, b) = (x << 4, y << 4, z << 4)
+            case 2: (r, g, b) = (x, y, z)
+            case 3: (r, g, b) = (x >> 4, y >> 4, z >> 4)
+            default: (r, g, b) = (x >> 8, y >> 8, z >> 8)
+            }
+        } else {
+            return nil
+        }
+        guard r <= 255, g <= 255, b <= 255 else { return nil }
+        return RGB(UInt8(r), UInt8(g), UInt8(b))
     }
 
     /// XsProcClipboard (OSC 52 ; Pc ; Pd)

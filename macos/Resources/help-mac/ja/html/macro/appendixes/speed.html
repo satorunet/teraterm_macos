@@ -1,0 +1,26 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+<title>マクロの実行速度について</title>
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link rel="stylesheet" href="../../style.css" type="text/css">
+</head>
+<body>
+
+<h1>マクロの実行速度について</h1>
+
+<p>
+  マクロの受信待ちはデータの受信をきっかけに動作しており、
+  文字列を送信、応答を受信して判定、次の文字列を送信、といった動作は、
+  余分な待ち時間なしに行うことができます。
+</p>
+
+<p>
+  受信したデータはすぐに処理し、受信を待つ間は CPU をほとんど使いません。
+  速さを調整する設定はありません。
+</p>
+
+</body>
+</html>

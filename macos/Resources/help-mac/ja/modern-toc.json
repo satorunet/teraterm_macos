@@ -1,0 +1,1570 @@
+[
+ {
+  "t": "かんたんマニュアル",
+  "items": [
+   {
+    "t": "かんたんマニュアルの目次",
+    "p": "easy/index.html"
+   },
+   {
+    "t": "ダウンロードとインストール",
+    "p": "easy/install.html"
+   },
+   {
+    "t": "SSH でサーバーにつなぐ",
+    "p": "easy/connect-ssh.html"
+   },
+   {
+    "t": "シリアル機器につなぐ",
+    "p": "easy/connect-serial.html"
+   },
+   {
+    "t": "画面の基本",
+    "p": "easy/terminal.html"
+   },
+   {
+    "t": "ログを取る",
+    "p": "easy/log.html"
+   },
+   {
+    "t": "ファイルを送る・受け取る",
+    "p": "easy/files.html"
+   },
+   {
+    "t": "見た目を変える・言語を変える",
+    "p": "easy/settings.html"
+   },
+   {
+    "t": "よく使う接続先を登録する",
+    "p": "easy/ttmenu.html"
+   },
+   {
+    "t": "マクロを動かしてみる",
+    "p": "easy/macro.html"
+   },
+   {
+    "t": "困ったとき",
+    "p": "easy/trouble.html"
+   }
+  ]
+ },
+ {
+  "t": "はじめに",
+  "items": [
+   {
+    "t": "Tera Term Mac とは",
+    "p": "about/foreword.html"
+   },
+   {
+    "t": "動作環境",
+    "p": "about/requirements.html"
+   },
+   {
+    "t": "インストール",
+    "p": "about/requirements.html#install"
+   },
+   {
+    "t": "アップデート",
+    "p": "about/requirements.html#update"
+   },
+   {
+    "t": "アンインストール",
+    "p": "uninstall.html"
+   },
+   {
+    "t": "Windows 版との違い",
+    "p": "about/module.html"
+   },
+   {
+    "t": "対応しているエミュレーション",
+    "p": "about/emulations.html"
+   },
+   {
+    "t": "設定のしかた",
+    "p": "usage/tips/teraterm_config_howto.html"
+   }
+  ]
+ },
+ {
+  "t": "接続する",
+  "items": [
+   {
+    "t": "新しい接続",
+    "p": "menu/file-new.html"
+   },
+   {
+    "t": "ホストリスト",
+    "p": "menu/file-new.html#HostList"
+   },
+   {
+    "t": "ホストリストの編集",
+    "p": "menu/setup-additional-tcpip_edithistory.html"
+   },
+   {
+    "t": "SSH で接続する",
+    "p": "usage/ssh.html"
+   },
+   {
+    "t": "SSH の設定",
+    "p": "menu/setup-ssh.html"
+   },
+   {
+    "t": "SSH の認証",
+    "p": "menu/setup-sshauth.html"
+   },
+   {
+    "t": "SSH ポート転送",
+    "p": "menu/setup-sshforward.html"
+   },
+   {
+    "t": "SSH 鍵の生成",
+    "p": "menu/setup-sshkeygenerator.html"
+   },
+   {
+    "t": "known_hosts ファイル",
+    "p": "setup/knownfiles.html"
+   },
+   {
+    "t": "telnet と TCP/IP の設定",
+    "p": "menu/setup-tcpip.html"
+   },
+   {
+    "t": "TCP/IP の詳細設定",
+    "p": "menu/setup-additional-tcpip.html"
+   },
+   {
+    "t": "23 番以外のポートで接続する",
+    "p": "usage/tips/not_port23.html"
+   },
+   {
+    "t": "シリアルポートで接続する",
+    "p": "menu/file-new.html#SerialPort"
+   },
+   {
+    "t": "シリアルポートの設定",
+    "p": "menu/setup-serialport.html"
+   },
+   {
+    "t": "ローカルシェル",
+    "p": "usage/cygwin.html"
+   },
+   {
+    "t": "ローカルシェルの設定",
+    "p": "menu/setup-additional-cygwin.html"
+   },
+   {
+    "t": "プロキシ経由で接続する",
+    "p": "usage/proxy.html"
+   },
+   {
+    "t": "プロキシの設定",
+    "p": "menu/setup-proxy.html"
+   },
+   {
+    "t": "TeraTerm Menu",
+    "p": "usage/TTMenu/TTMenu.html"
+   },
+   {
+    "t": "コマンドライン",
+    "p": "commandline/teraterm.html"
+   },
+   {
+    "t": "SSH のコマンドライン",
+    "p": "commandline/ttssh.html"
+   },
+   {
+    "t": "プロキシのコマンドライン",
+    "p": "commandline/ttproxy.html"
+   },
+   {
+    "t": "切断する",
+    "p": "menu/file.html#disconnect"
+   }
+  ]
+ },
+ {
+  "t": "端末を使う",
+  "items": [
+   {
+    "t": "コピーと貼り付け",
+    "p": "menu/edit.html"
+   },
+   {
+    "t": "コピーと貼り付けの設定",
+    "p": "menu/setup-additional-copy-and-paste.html"
+   },
+   {
+    "t": "キーボードとショートカット",
+    "p": "usage/keyboard.html"
+   },
+   {
+    "t": "キーボードの設定",
+    "p": "menu/setup-keyboard.html"
+   },
+   {
+    "t": "マウス",
+    "p": "usage/mouse.html"
+   },
+   {
+    "t": "ウィンドウとタブ",
+    "p": "menu/window.html"
+   },
+   {
+    "t": "ウィンドウ一覧",
+    "p": "menu/window-window.html"
+   },
+   {
+    "t": "端末の設定",
+    "p": "menu/setup-terminal.html"
+   },
+   {
+    "t": "文字コード",
+    "p": "usage/character_encoding.html"
+   },
+   {
+    "t": "Unicode の設定",
+    "p": "usage/unicode.html"
+   },
+   {
+    "t": "文字コードの詳細設定",
+    "p": "menu/setup-additional-coding.html"
+   },
+   {
+    "t": "フォント",
+    "p": "menu/setup-font.html"
+   },
+   {
+    "t": "ウィンドウと色",
+    "p": "menu/setup-window.html"
+   },
+   {
+    "t": "テーマと半透明",
+    "p": "usage/transparent.html"
+   },
+   {
+    "t": "端末のリセット・ブレーク送信",
+    "p": "menu/control.html"
+   },
+   {
+    "t": "ブロードキャスト",
+    "p": "menu/control-broadcast.html"
+   },
+   {
+    "t": "印刷",
+    "p": "menu/file-print.html"
+   },
+   {
+    "t": "TEK ウィンドウ",
+    "p": "menutek/file.html"
+   },
+   {
+    "t": "TEK ウィンドウの設定",
+    "p": "menutek/setup.html"
+   },
+   {
+    "t": "対応制御シーケンス",
+    "p": "about/ctrlseq.html"
+   },
+   {
+    "t": "[漢字コード] メニュー",
+    "p": "ttxplugin/kanjimenu.html"
+   },
+   {
+    "t": "Windows 版からの移行",
+    "p": "usage/migrate_to_5.html"
+   }
+  ]
+ },
+ {
+  "t": "メニューとダイアログ",
+  "items": [
+   {
+    "t": "B-Plus 送信",
+    "p": "menu/file-transfer-bplus-send.html"
+   },
+   {
+    "t": "Kermit 取得",
+    "p": "menu/file-transfer-kermit-get.html"
+   },
+   {
+    "t": "Kermit 送信",
+    "p": "menu/file-transfer-kermit-send.html"
+   },
+   {
+    "t": "Quick-VAN 送信",
+    "p": "menu/file-transfer-qv-send.html"
+   },
+   {
+    "t": "XMODEM 受信",
+    "p": "menu/file-transfer-xmodem-recv.html"
+   },
+   {
+    "t": "XMODEM 送信",
+    "p": "menu/file-transfer-xmodem-send.html"
+   },
+   {
+    "t": "ZMODEM 送信",
+    "p": "menu/file-transfer-zmodem-send.html"
+   },
+   {
+    "t": "シリアルポートの詳細設定",
+    "p": "menu/setup-additional-serialport.html"
+   },
+   {
+    "t": "テーマファイルの内容",
+    "p": "menu/setup-additional-visual-theme.html"
+   },
+   {
+    "t": "設定メニュー",
+    "p": "menu/setup.html"
+   },
+   {
+    "t": "TEK: VT ウィンドウへ",
+    "p": "menutek/vtwindow.html"
+   },
+   {
+    "t": "TEK: ウィンドウの設定",
+    "p": "menutek/setup-window.html"
+   },
+   {
+    "t": "TEK: ウィンドウメニュー",
+    "p": "menutek/window.html"
+   },
+   {
+    "t": "TEK: ウィンドウ一覧",
+    "p": "menutek/window-window.html"
+   },
+   {
+    "t": "TEK: フォント",
+    "p": "menutek/setup-font.html"
+   },
+   {
+    "t": "TEK: ヘルプメニュー",
+    "p": "menutek/help.html"
+   },
+   {
+    "t": "TEK: 印刷",
+    "p": "menutek/file-print.html"
+   },
+   {
+    "t": "TEK: 編集メニュー",
+    "p": "menutek/edit.html"
+   }
+  ]
+ },
+ {
+  "t": "ファイルとログ",
+  "items": [
+   {
+    "t": "ログを取る",
+    "p": "menu/file-log.html"
+   },
+   {
+    "t": "ログの取り方と再生",
+    "p": "usage/tips/loging_howto.html"
+   },
+   {
+    "t": "ログの設定",
+    "p": "menu/setup-additional-log.html"
+   },
+   {
+    "t": "ファイルを送る",
+    "p": "menu/file-sendfile.html"
+   },
+   {
+    "t": "ファイルを受け取る",
+    "p": "menu/file-receivefile.html"
+   },
+   {
+    "t": "ファイル転送プロトコル",
+    "p": "menu/file-transfer.html"
+   },
+   {
+    "t": "ZMODEM",
+    "p": "menu/file-transfer-zmodem.html"
+   },
+   {
+    "t": "XMODEM",
+    "p": "menu/file-transfer-xmodem.html"
+   },
+   {
+    "t": "YMODEM",
+    "p": "menu/file-transfer-ymodem.html"
+   },
+   {
+    "t": "Kermit",
+    "p": "menu/file-transfer-kermit.html"
+   },
+   {
+    "t": "B-Plus",
+    "p": "menu/file-transfer-bplus.html"
+   },
+   {
+    "t": "Quick-VAN",
+    "p": "menu/file-transfer-qv.html"
+   },
+   {
+    "t": "SCP でファイルを送る",
+    "p": "menu/file-ssh-scp.html"
+   },
+   {
+    "t": "ドラッグ&ドロップで送る",
+    "p": "usage/mouse.html#dragdropwindow"
+   },
+   {
+    "t": "ドロップ時の確認",
+    "p": "setup/teraterm-trans.html#draganddrop"
+   },
+   {
+    "t": "作業フォルダの変更",
+    "p": "menu/file-chdir.html"
+   },
+   {
+    "t": "中間ホスト経由のファイル転送",
+    "p": "usage/tips/forwarding-files.html"
+   }
+  ]
+ },
+ {
+  "t": "マクロ",
+  "items": [
+   {
+    "t": "マクロとは",
+    "p": "macro/index.html"
+   },
+   {
+    "t": "マクロの実行方法",
+    "p": "macro/howtorun.html"
+   },
+   {
+    "t": ".ttl ファイルを開く",
+    "p": "macro/howtoassoc.html"
+   },
+   {
+    "t": "マクロのコマンドライン",
+    "p": "macro/commandline.html"
+   },
+   {
+    "t": "TTL の文法",
+    "p": "macro/syntax/index.html"
+   },
+   {
+    "t": "TTL ファイル",
+    "p": "macro/syntax/file.html"
+   },
+   {
+    "t": "変数",
+    "p": "macro/syntax/variables.html"
+   },
+   {
+    "t": "式と演算子",
+    "p": "macro/syntax/expressions.html"
+   },
+   {
+    "t": "コマンド一覧 (分類別)",
+    "p": "macro/command/index.html"
+   },
+   {
+    "t": "補足説明",
+    "p": "macro/appendixes/index.html"
+   },
+   {
+    "t": "エラーメッセージ",
+    "p": "macro/appendixes/errormessages.html"
+   },
+   {
+    "t": "改行文字",
+    "p": "macro/appendixes/newline.html"
+   },
+   {
+    "t": "ASCII コード表",
+    "p": "macro/appendixes/ascii.html"
+   },
+   {
+    "t": "Mac 版の注意: 実行速度",
+    "p": "macro/appendixes/speed.html"
+   },
+   {
+    "t": "Mac 版の注意: パスの書き方",
+    "p": "macro/command/makepath.html"
+   },
+   {
+    "t": "Mac 版の注意: 環境変数",
+    "p": "macro/command/expandenv.html"
+   },
+   {
+    "t": "パスワードファイル (Mac)",
+    "p": "macro/command/getpassword.html"
+   },
+   {
+    "t": "マクロのウィンドウ (Mac)",
+    "p": "macro/command/show.html"
+   },
+   {
+    "t": "切断直後の再接続",
+    "p": "macro/appendixes/disconnecttiming.html"
+   },
+   {
+    "t": "負の整数定数についての注意",
+    "p": "macro/appendixes/negative.html"
+   },
+   {
+    "t": "定数の形式",
+    "p": "macro/syntax/formats.html"
+   },
+   {
+    "t": "名前の形式",
+    "p": "macro/syntax/identifiers.html"
+   },
+   {
+    "t": "行の形式",
+    "p": "macro/syntax/lineformats.html"
+   },
+   {
+    "t": "引数の形式",
+    "p": "macro/syntax/parameter.html"
+   },
+   {
+    "t": "データ型",
+    "p": "macro/syntax/types.html"
+   }
+  ]
+ },
+ {
+  "t": "マクロのコマンド",
+  "items": [
+   {
+    "t": "basename",
+    "p": "macro/command/basename.html"
+   },
+   {
+    "t": "beep",
+    "p": "macro/command/beep.html"
+   },
+   {
+    "t": "bplusrecv",
+    "p": "macro/command/bplusrecv.html"
+   },
+   {
+    "t": "bplussend",
+    "p": "macro/command/bplussend.html"
+   },
+   {
+    "t": "break",
+    "p": "macro/command/break.html"
+   },
+   {
+    "t": "bringupbox",
+    "p": "macro/command/bringupbox.html"
+   },
+   {
+    "t": "call",
+    "p": "macro/command/call.html"
+   },
+   {
+    "t": "callmenu",
+    "p": "macro/command/callmenu.html"
+   },
+   {
+    "t": "changedir",
+    "p": "macro/command/changedir.html"
+   },
+   {
+    "t": "checksum16, checksum16file",
+    "p": "macro/command/checksum16.html"
+   },
+   {
+    "t": "checksum32, checksum32file",
+    "p": "macro/command/checksum32.html"
+   },
+   {
+    "t": "checksum8, checksum8file",
+    "p": "macro/command/checksum8.html"
+   },
+   {
+    "t": "clearscreen",
+    "p": "macro/command/clearscreen.html"
+   },
+   {
+    "t": "clipb2var",
+    "p": "macro/command/clipb2var.html"
+   },
+   {
+    "t": "closesbox",
+    "p": "macro/command/closesbox.html"
+   },
+   {
+    "t": "closett",
+    "p": "macro/command/closett.html"
+   },
+   {
+    "t": "code2str",
+    "p": "macro/command/code2str.html"
+   },
+   {
+    "t": "connect",
+    "p": "macro/command/connect.html"
+   },
+   {
+    "t": "continue",
+    "p": "macro/command/continue.html"
+   },
+   {
+    "t": "crc16, crc16file",
+    "p": "macro/command/crc16.html"
+   },
+   {
+    "t": "crc32, crc32file",
+    "p": "macro/command/crc32.html"
+   },
+   {
+    "t": "cygconnect",
+    "p": "macro/command/cygconnect.html"
+   },
+   {
+    "t": "delpassword",
+    "p": "macro/command/delpassword.html"
+   },
+   {
+    "t": "delpassword2",
+    "p": "macro/command/delpassword2.html"
+   },
+   {
+    "t": "delvar",
+    "p": "macro/command/delvar.html"
+   },
+   {
+    "t": "dirname",
+    "p": "macro/command/dirname.html"
+   },
+   {
+    "t": "dirnamebox",
+    "p": "macro/command/dirnamebox.html"
+   },
+   {
+    "t": "disconnect",
+    "p": "macro/command/disconnect.html"
+   },
+   {
+    "t": "dispstr",
+    "p": "macro/command/dispstr.html"
+   },
+   {
+    "t": "do, loop",
+    "p": "macro/command/doloop.html"
+   },
+   {
+    "t": "enablekeyb",
+    "p": "macro/command/enablekeyb.html"
+   },
+   {
+    "t": "end",
+    "p": "macro/command/end.html"
+   },
+   {
+    "t": "exec",
+    "p": "macro/command/exec.html"
+   },
+   {
+    "t": "execcmnd",
+    "p": "macro/command/execcmnd.html"
+   },
+   {
+    "t": "exit",
+    "p": "macro/command/exit.html"
+   },
+   {
+    "t": "fileclose",
+    "p": "macro/command/fileclose.html"
+   },
+   {
+    "t": "fileconcat",
+    "p": "macro/command/fileconcat.html"
+   },
+   {
+    "t": "filecopy",
+    "p": "macro/command/filecopy.html"
+   },
+   {
+    "t": "filecreate",
+    "p": "macro/command/filecreate.html"
+   },
+   {
+    "t": "filedelete",
+    "p": "macro/command/filedelete.html"
+   },
+   {
+    "t": "filelock",
+    "p": "macro/command/filelock.html"
+   },
+   {
+    "t": "filemarkptr",
+    "p": "macro/command/filemarkptr.html"
+   },
+   {
+    "t": "filenamebox",
+    "p": "macro/command/filenamebox.html"
+   },
+   {
+    "t": "fileopen",
+    "p": "macro/command/fileopen.html"
+   },
+   {
+    "t": "fileread",
+    "p": "macro/command/fileread.html"
+   },
+   {
+    "t": "filereadln",
+    "p": "macro/command/filereadln.html"
+   },
+   {
+    "t": "filerename",
+    "p": "macro/command/filerename.html"
+   },
+   {
+    "t": "filesearch",
+    "p": "macro/command/filesearch.html"
+   },
+   {
+    "t": "fileseek",
+    "p": "macro/command/fileseek.html"
+   },
+   {
+    "t": "fileseekback",
+    "p": "macro/command/fileseekback.html"
+   },
+   {
+    "t": "filestat",
+    "p": "macro/command/filestat.html"
+   },
+   {
+    "t": "filestrseek",
+    "p": "macro/command/filestrseek.html"
+   },
+   {
+    "t": "filestrseek2",
+    "p": "macro/command/filestrseek2.html"
+   },
+   {
+    "t": "filetruncate",
+    "p": "macro/command/filetruncate.html"
+   },
+   {
+    "t": "fileunlock",
+    "p": "macro/command/fileunlock.html"
+   },
+   {
+    "t": "filewrite",
+    "p": "macro/command/filewrite.html"
+   },
+   {
+    "t": "filewriteln",
+    "p": "macro/command/filewriteln.html"
+   },
+   {
+    "t": "findfirst",
+    "p": "macro/command/findoperations.html"
+   },
+   {
+    "t": "flushrecv",
+    "p": "macro/command/flushrecv.html"
+   },
+   {
+    "t": "foldercreate",
+    "p": "macro/command/foldercreate.html"
+   },
+   {
+    "t": "folderdelete",
+    "p": "macro/command/folderdelete.html"
+   },
+   {
+    "t": "foldersearch",
+    "p": "macro/command/foldersearch.html"
+   },
+   {
+    "t": "for, next",
+    "p": "macro/command/fornext.html"
+   },
+   {
+    "t": "getdate",
+    "p": "macro/command/getdate.html"
+   },
+   {
+    "t": "getdir",
+    "p": "macro/command/getdir.html"
+   },
+   {
+    "t": "getenv",
+    "p": "macro/command/getenv.html"
+   },
+   {
+    "t": "getfileattr",
+    "p": "macro/command/getfileattr.html"
+   },
+   {
+    "t": "gethostname",
+    "p": "macro/command/gethostname.html"
+   },
+   {
+    "t": "getipv4addr",
+    "p": "macro/command/getipv4addr.html"
+   },
+   {
+    "t": "getipv6addr",
+    "p": "macro/command/getipv6addr.html"
+   },
+   {
+    "t": "getmodemstatus",
+    "p": "macro/command/getmodemstatus.html"
+   },
+   {
+    "t": "getpassword2",
+    "p": "macro/command/getpassword2.html"
+   },
+   {
+    "t": "getspecialfolder",
+    "p": "macro/command/getspecialfolder.html"
+   },
+   {
+    "t": "gettime",
+    "p": "macro/command/gettime.html"
+   },
+   {
+    "t": "gettitle",
+    "p": "macro/command/gettitle.html"
+   },
+   {
+    "t": "getttdir",
+    "p": "macro/command/getttdir.html"
+   },
+   {
+    "t": "getttpos",
+    "p": "macro/command/getttpos.html"
+   },
+   {
+    "t": "getver",
+    "p": "macro/command/getver.html"
+   },
+   {
+    "t": "goto",
+    "p": "macro/command/goto.html"
+   },
+   {
+    "t": "if, then, elseif, else, endif",
+    "p": "macro/command/ifthenelseif.html"
+   },
+   {
+    "t": "ifdefined",
+    "p": "macro/command/ifdefined.html"
+   },
+   {
+    "t": "include",
+    "p": "macro/command/include.html"
+   },
+   {
+    "t": "inputbox",
+    "p": "macro/command/inputbox.html"
+   },
+   {
+    "t": "int2str",
+    "p": "macro/command/int2str.html"
+   },
+   {
+    "t": "intdim",
+    "p": "macro/command/intdim.html"
+   },
+   {
+    "t": "ispassword",
+    "p": "macro/command/ispassword.html"
+   },
+   {
+    "t": "ispassword2",
+    "p": "macro/command/ispassword2.html"
+   },
+   {
+    "t": "kmtfinish",
+    "p": "macro/command/kmtfinish.html"
+   },
+   {
+    "t": "kmtget",
+    "p": "macro/command/kmtget.html"
+   },
+   {
+    "t": "kmtrecv",
+    "p": "macro/command/kmtrecv.html"
+   },
+   {
+    "t": "kmtsend",
+    "p": "macro/command/kmtsend.html"
+   },
+   {
+    "t": "listbox",
+    "p": "macro/command/listbox.html"
+   },
+   {
+    "t": "loadkeymap",
+    "p": "macro/command/loadkeymap.html"
+   },
+   {
+    "t": "logautoclosemode",
+    "p": "macro/command/logautoclosemode.html"
+   },
+   {
+    "t": "logclose",
+    "p": "macro/command/logclose.html"
+   },
+   {
+    "t": "loginfo",
+    "p": "macro/command/loginfo.html"
+   },
+   {
+    "t": "logopen",
+    "p": "macro/command/logopen.html"
+   },
+   {
+    "t": "logpause",
+    "p": "macro/command/logpause.html"
+   },
+   {
+    "t": "logrotate",
+    "p": "macro/command/logrotate.html"
+   },
+   {
+    "t": "logstart",
+    "p": "macro/command/logstart.html"
+   },
+   {
+    "t": "logwrite",
+    "p": "macro/command/logwrite.html"
+   },
+   {
+    "t": "messagebox",
+    "p": "macro/command/messagebox.html"
+   },
+   {
+    "t": "mpause",
+    "p": "macro/command/mpause.html"
+   },
+   {
+    "t": "passwordbox",
+    "p": "macro/command/passwordbox.html"
+   },
+   {
+    "t": "pause",
+    "p": "macro/command/pause.html"
+   },
+   {
+    "t": "quickvanrecv",
+    "p": "macro/command/quickvanrecv.html"
+   },
+   {
+    "t": "quickvansend",
+    "p": "macro/command/quickvansend.html"
+   },
+   {
+    "t": "random",
+    "p": "macro/command/random.html"
+   },
+   {
+    "t": "recvfile",
+    "p": "macro/command/recvfile.html"
+   },
+   {
+    "t": "recvln",
+    "p": "macro/command/recvln.html"
+   },
+   {
+    "t": "redim",
+    "p": "macro/command/redim.html"
+   },
+   {
+    "t": "regexoption",
+    "p": "macro/command/regexoption.html"
+   },
+   {
+    "t": "restoresetup",
+    "p": "macro/command/restoresetup.html"
+   },
+   {
+    "t": "return",
+    "p": "macro/command/return.html"
+   },
+   {
+    "t": "rotateleft",
+    "p": "macro/command/rotateleft.html"
+   },
+   {
+    "t": "rotateright",
+    "p": "macro/command/rotateright.html"
+   },
+   {
+    "t": "scprecv",
+    "p": "macro/command/scprecv.html"
+   },
+   {
+    "t": "scpsend",
+    "p": "macro/command/scpsend.html"
+   },
+   {
+    "t": "send",
+    "p": "macro/command/send.html"
+   },
+   {
+    "t": "sendbinary",
+    "p": "macro/command/sendbinary.html"
+   },
+   {
+    "t": "sendbreak",
+    "p": "macro/command/sendbreak.html"
+   },
+   {
+    "t": "sendbroadcast",
+    "p": "macro/command/sendbroadcast.html"
+   },
+   {
+    "t": "sendfile",
+    "p": "macro/command/sendfile.html"
+   },
+   {
+    "t": "sendkcode",
+    "p": "macro/command/sendkcode.html"
+   },
+   {
+    "t": "sendln",
+    "p": "macro/command/sendln.html"
+   },
+   {
+    "t": "sendlnbroadcast",
+    "p": "macro/command/sendlnbroadcast.html"
+   },
+   {
+    "t": "sendlnmulticast",
+    "p": "macro/command/sendlnmulticast.html"
+   },
+   {
+    "t": "sendmulticast",
+    "p": "macro/command/sendmulticast.html"
+   },
+   {
+    "t": "sendtext",
+    "p": "macro/command/sendtext.html"
+   },
+   {
+    "t": "setbaud",
+    "p": "macro/command/setbaud.html"
+   },
+   {
+    "t": "setdate",
+    "p": "macro/command/setdate.html"
+   },
+   {
+    "t": "setdebug",
+    "p": "macro/command/setdebug.html"
+   },
+   {
+    "t": "setdir",
+    "p": "macro/command/setdir.html"
+   },
+   {
+    "t": "setdlgpos",
+    "p": "macro/command/setdlgpos.html"
+   },
+   {
+    "t": "setdtr",
+    "p": "macro/command/setdtr.html"
+   },
+   {
+    "t": "setecho",
+    "p": "macro/command/setecho.html"
+   },
+   {
+    "t": "setenv",
+    "p": "macro/command/setenv.html"
+   },
+   {
+    "t": "setexitcode",
+    "p": "macro/command/setexitcode.html"
+   },
+   {
+    "t": "setfileattr",
+    "p": "macro/command/setfileattr.html"
+   },
+   {
+    "t": "setflowctrl",
+    "p": "macro/command/setflowctrl.html"
+   },
+   {
+    "t": "setmulticastname",
+    "p": "macro/command/setmulticastname.html"
+   },
+   {
+    "t": "setpassword",
+    "p": "macro/command/setpassword.html"
+   },
+   {
+    "t": "setpassword2",
+    "p": "macro/command/setpassword2.html"
+   },
+   {
+    "t": "setrts",
+    "p": "macro/command/setrts.html"
+   },
+   {
+    "t": "setserialdelaychar",
+    "p": "macro/command/setserialdelaychar.html"
+   },
+   {
+    "t": "setserialdelayline",
+    "p": "macro/command/setserialdelayline.html"
+   },
+   {
+    "t": "setspeed",
+    "p": "macro/command/setspeed.html"
+   },
+   {
+    "t": "setsync",
+    "p": "macro/command/setsync.html"
+   },
+   {
+    "t": "settime",
+    "p": "macro/command/settime.html"
+   },
+   {
+    "t": "settitle",
+    "p": "macro/command/settitle.html"
+   },
+   {
+    "t": "showtt",
+    "p": "macro/command/showtt.html"
+   },
+   {
+    "t": "sprintf",
+    "p": "macro/command/sprintf.html"
+   },
+   {
+    "t": "sprintf2",
+    "p": "macro/command/sprintf2.html"
+   },
+   {
+    "t": "statusbox",
+    "p": "macro/command/statusbox.html"
+   },
+   {
+    "t": "str2code",
+    "p": "macro/command/str2code.html"
+   },
+   {
+    "t": "str2int",
+    "p": "macro/command/str2int.html"
+   },
+   {
+    "t": "strcompare",
+    "p": "macro/command/strcompare.html"
+   },
+   {
+    "t": "strconcat",
+    "p": "macro/command/strconcat.html"
+   },
+   {
+    "t": "strcopy",
+    "p": "macro/command/strcopy.html"
+   },
+   {
+    "t": "strdim",
+    "p": "macro/command/strdim.html"
+   },
+   {
+    "t": "strinsert",
+    "p": "macro/command/strinsert.html"
+   },
+   {
+    "t": "strjoin",
+    "p": "macro/command/strjoin.html"
+   },
+   {
+    "t": "strlen",
+    "p": "macro/command/strlen.html"
+   },
+   {
+    "t": "strmatch",
+    "p": "macro/command/strmatch.html"
+   },
+   {
+    "t": "strremove",
+    "p": "macro/command/strremove.html"
+   },
+   {
+    "t": "strreplace",
+    "p": "macro/command/strreplace.html"
+   },
+   {
+    "t": "strscan",
+    "p": "macro/command/strscan.html"
+   },
+   {
+    "t": "strspecial",
+    "p": "macro/command/strspecial.html"
+   },
+   {
+    "t": "strsplit",
+    "p": "macro/command/strsplit.html"
+   },
+   {
+    "t": "strtrim",
+    "p": "macro/command/strtrim.html"
+   },
+   {
+    "t": "testlink",
+    "p": "macro/command/testlink.html"
+   },
+   {
+    "t": "tolower",
+    "p": "macro/command/tolower.html"
+   },
+   {
+    "t": "toupper",
+    "p": "macro/command/toupper.html"
+   },
+   {
+    "t": "unlink",
+    "p": "macro/command/unlink.html"
+   },
+   {
+    "t": "until, enduntil",
+    "p": "macro/command/until.html"
+   },
+   {
+    "t": "uptime",
+    "p": "macro/command/uptime.html"
+   },
+   {
+    "t": "var2clipb",
+    "p": "macro/command/var2clipb.html"
+   },
+   {
+    "t": "wait",
+    "p": "macro/command/wait.html"
+   },
+   {
+    "t": "wait4all",
+    "p": "macro/command/wait4all.html"
+   },
+   {
+    "t": "waitevent",
+    "p": "macro/command/waitevent.html"
+   },
+   {
+    "t": "waitln",
+    "p": "macro/command/waitln.html"
+   },
+   {
+    "t": "waitn",
+    "p": "macro/command/waitn.html"
+   },
+   {
+    "t": "waitrecv",
+    "p": "macro/command/waitrecv.html"
+   },
+   {
+    "t": "waitregex",
+    "p": "macro/command/waitregex.html"
+   },
+   {
+    "t": "while, endwhile",
+    "p": "macro/command/while.html"
+   },
+   {
+    "t": "xmodemrecv",
+    "p": "macro/command/xmodemrecv.html"
+   },
+   {
+    "t": "xmodemsend",
+    "p": "macro/command/xmodemsend.html"
+   },
+   {
+    "t": "yesnobox",
+    "p": "macro/command/yesnobox.html"
+   },
+   {
+    "t": "ymodemrecv",
+    "p": "macro/command/ymodemrecv.html"
+   },
+   {
+    "t": "ymodemsend",
+    "p": "macro/command/ymodemsend.html"
+   },
+   {
+    "t": "zmodemrecv",
+    "p": "macro/command/zmodemrecv.html"
+   },
+   {
+    "t": "zmodemsend",
+    "p": "macro/command/zmodemsend.html"
+   }
+  ]
+ },
+ {
+  "t": "設定",
+  "items": [
+   {
+    "t": "設定の保存",
+    "p": "menu/setup-save.html"
+   },
+   {
+    "t": "設定の読み込み",
+    "p": "menu/setup-restore.html"
+   },
+   {
+    "t": "設定フォルダを開く",
+    "p": "menu/setup-directory.html"
+   },
+   {
+    "t": "使うフォルダ",
+    "p": "setup/folder.html"
+   },
+   {
+    "t": "全般の設定",
+    "p": "menu/setup-general.html"
+   },
+   {
+    "t": "その他の設定",
+    "p": "menu/setup-additional.html"
+   },
+   {
+    "t": "一般タブ",
+    "p": "menu/setup-additional-general.html"
+   },
+   {
+    "t": "ウィンドウタブ",
+    "p": "menu/setup-additional-window.html"
+   },
+   {
+    "t": "表示タブ",
+    "p": "menu/setup-additional-visual.html"
+   },
+   {
+    "t": "テーマタブ",
+    "p": "menu/setup-additional-theme.html"
+   },
+   {
+    "t": "端末タブ",
+    "p": "menu/setup-additional-terminal.html"
+   },
+   {
+    "t": "制御シーケンスタブ",
+    "p": "menu/setup-additional-ctrlseq.html"
+   },
+   {
+    "t": "キーボードタブ",
+    "p": "menu/setup-additional-keyboard.html"
+   },
+   {
+    "t": "マウスタブ",
+    "p": "menu/setup-additional-mouse.html"
+   },
+   {
+    "t": "フォントタブ",
+    "p": "menu/setup-additional-font.html"
+   },
+   {
+    "t": "UI タブ (表示言語)",
+    "p": "menu/setup-additional-ui.html"
+   },
+   {
+    "t": "言語ファイル",
+    "p": "setup/lng.html"
+   },
+   {
+    "t": "キーマップの読み込み",
+    "p": "menu/setup-loadkeymap.html"
+   },
+   {
+    "t": "KEYBOARD.CNF",
+    "p": "setup/keyboard.html"
+   },
+   {
+    "t": "設定ファイル (TERATERM.INI)",
+    "p": "setup/teraterm.html"
+   },
+   {
+    "t": "TERATERM.INI の全項目",
+    "p": "setup/teraterm-ini.html"
+   },
+   {
+    "t": "テーマファイル",
+    "p": "setup/theme.html"
+   },
+   {
+    "t": "メニュー ID",
+    "p": "reference/menu_id.html"
+   },
+   {
+    "t": "INI: 通信",
+    "p": "setup/teraterm-com.html"
+   },
+   {
+    "t": "INI: その他",
+    "p": "setup/teraterm-misc.html"
+   },
+   {
+    "t": "INI: 印刷",
+    "p": "setup/teraterm-prn.html"
+   },
+   {
+    "t": "ログレベル",
+    "p": "setup/teraterm-ssh.html"
+   },
+   {
+    "t": "INI: 端末",
+    "p": "setup/teraterm-term.html"
+   },
+   {
+    "t": "INI: ウィンドウ",
+    "p": "setup/teraterm-win.html"
+   }
+  ]
+ },
+ {
+  "t": "困ったとき",
+  "items": [
+   {
+    "t": "Q & A",
+    "p": "about/qanda.html"
+   },
+   {
+    "t": "ホストに接続できない",
+    "p": "about/qanda.html#connection"
+   },
+   {
+    "t": "設定が元に戻る",
+    "p": "about/qanda.html#save_ini"
+   },
+   {
+    "t": "ログの内容が画面と違う",
+    "p": "about/qanda.html#logfile_garbled"
+   },
+   {
+    "t": "ヒント一覧",
+    "p": "usage/tips/index.html"
+   },
+   {
+    "t": "ユーザー・ショートカット・キー",
+    "p": "usage/tips/user-shortcutkey.html"
+   },
+   {
+    "t": "テンキー",
+    "p": "usage/tips/about_tenkey.html"
+   },
+   {
+    "t": "キーパッドモード",
+    "p": "usage/tips/appkeypad.html"
+   },
+   {
+    "t": "VT100 の PF1-PF4 キー",
+    "p": "usage/tips/pf1-pf4key_vt100.html"
+   },
+   {
+    "t": "IME のヒント",
+    "p": "usage/tips/ime.html"
+   },
+   {
+    "t": "送受信データの取りこぼし",
+    "p": "usage/tips/data_drop.html"
+   },
+   {
+    "t": "非 ASCII のユーザー名・パスワード",
+    "p": "usage/tips/login_nonascii.html"
+   },
+   {
+    "t": "VT100 の折り返し",
+    "p": "usage/tips/vt100_wrap.html"
+   },
+   {
+    "t": "vim との組み合わせ",
+    "p": "usage/tips/vim.html"
+   },
+   {
+    "t": "XMODEM のヒント",
+    "p": "usage/tips/xmodem.html"
+   },
+   {
+    "t": "ZMODEM のヒント",
+    "p": "usage/tips/zmodem.html"
+   },
+   {
+    "t": "用語集",
+    "p": "about/glossary.html"
+   },
+   {
+    "t": "B-Plus のヒント",
+    "p": "usage/tips/b-plus.html"
+   },
+   {
+    "t": "NIFTY-Serve のヒント",
+    "p": "usage/tips/nifty-serve.html"
+   },
+   {
+    "t": "パソコン通信的接続法",
+    "p": "usage/tips/pc-communication.html"
+   },
+   {
+    "t": "PC-VAN のヒント",
+    "p": "usage/tips/pc_van.html"
+   },
+   {
+    "t": "Quick-VAN のヒント",
+    "p": "usage/tips/quick_van.html"
+   }
+  ]
+ },
+ {
+  "t": "情報",
+  "items": [
+   {
+    "t": "ヘルプメニュー",
+    "p": "menu/help.html"
+   },
+   {
+    "t": "ライセンス・著作権",
+    "p": "about/copyright.html"
+   },
+   {
+    "t": "連絡先",
+    "p": "about/contacts.html"
+   },
+   {
+    "t": "要望集",
+    "p": "about/requests.html"
+   },
+   {
+    "t": "執筆者一覧",
+    "p": "about/writer.html"
+   },
+   {
+    "t": "Primary Device Attribute",
+    "p": "about/ctrlseq_device_attributes.html"
+   },
+   {
+    "t": "DEC 特殊グラフィック",
+    "p": "about/emulations_dec_special.html"
+   }
+  ]
+ },
+ {
+  "t": "開発者向け (Mac 版)",
+  "items": [
+   {
+    "t": "ソースの構成",
+    "p": "reference/mac-develop.html"
+   },
+   {
+    "t": "ビルド・テスト・リリース",
+    "p": "reference/mac-develop-build.html"
+   },
+   {
+    "t": "画面の言語とヘルプ",
+    "p": "reference/mac-develop-i18n.html"
+   }
+  ]
+ }
+]

@@ -1,13 +1,30 @@
 import AppKit
+import TeraCore
 
 /// 配色の候補 (設定画面の「配色かんたん設定」)
 struct ColorScheme {
+    /// 名前 (設定の TeraMacThemeName に保存する。言語で変わらない)
     var name: String
     var fg: NSColor
     var bg: NSColor
     var cursor: NSColor
     /// ANSI 16 色 (0-7 通常, 8-15 明るい)。nil なら標準
     var ansi16: [NSColor]?
+    /// Terminal.app のプロファイルから作ったときのプロファイル名
+    var profile: String? = nil
+
+    /// 画面に出す名前 (選んだ言語で)
+    var title: String {
+        if let p = profile { return Lang.m("SETUP_SCHEME_TERMINAL", "ターミナル: %s", p) }
+        if let k = Self.presetKeys[name] { return Lang.m(k, name) }
+        return name
+    }
+    /// おすすめの候補の名前 → 言語ファイルのキー
+    private static let presetKeys = [
+        "ダーク": "SETUP_SCHEME_DARK", "ホワイト": "SETUP_SCHEME_WHITE", "暖色": "SETUP_SCHEME_WARM",
+        "暖色 (明るい)": "SETUP_SCHEME_WARM_LIGHT", "ピンク": "SETUP_SCHEME_PINK", "ピンク (ダーク)": "SETUP_SCHEME_PINK_DARK",
+        "Tera Term 標準": "SETUP_SCHEME_TERATERM",
+    ]
 
     static func hex(_ v: UInt32) -> NSColor {
         NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
@@ -71,7 +88,7 @@ struct ColorScheme {
                 if let c = color(p, "ANSI\(k)Color") { ansi[i] = c }
                 if let c = color(p, "ANSIBright\(k)Color") { ansi[i + 8] = c }
             }
-            out.append(ColorScheme(name: "ターミナル: \(name)", fg: fg, bg: bg, cursor: cursor, ansi16: ansi))
+            out.append(ColorScheme(name: "ターミナル: \(name)", fg: fg, bg: bg, cursor: cursor, ansi16: ansi, profile: name))
         }
         return out
     }
@@ -132,7 +149,7 @@ final class SchemePreview: NSView {
         }
         line(0, [("user@host", ansi[2]), (":", fg), ("~/work", ansi[4]), ("$ ls -l", fg)])
         line(1, [("drwxr-xr-x  ", fg), ("src", ansi[12]), ("  ", fg), ("build.sh", ansi[10]), ("  README.md", fg)])
-        line(2, [("ERROR", ansi[1]), (" 接続できません  ", fg), ("WARN", ansi[3]), (" 再試行  ", fg), ("OK", ansi[2])])
+        line(2, [("ERROR", ansi[1]), (" " + Lang.m("SETUP_SCHEME_SAMPLE_ERROR", "接続できません") + "  ", fg), ("WARN", ansi[3]), (" " + Lang.m("SETUP_SCHEME_SAMPLE_WARN", "再試行") + "  ", fg), ("OK", ansi[2])])
         let y = 6 + 3 * lh
         let a: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fg]
         ("$ " as NSString).draw(at: NSPoint(x: 8, y: y), withAttributes: a)

@@ -61,8 +61,8 @@ final class MacroRunner: NSObject, TTLHost {
             let line = NSTextField(labelWithString: "")
             line.lineBreakMode = .byTruncatingTail
             line.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            let pause = NSButton(title: "中断", target: self, action: #selector(togglePause(_:)))
-            let end = NSButton(title: "終了", target: self, action: #selector(endMacro(_:)))
+            let pause = NSButton(title: Lang.t("Tera Term", "BTN_PAUSE", "中断"), target: self, action: #selector(togglePause(_:)))
+            let end = NSButton(title: Lang.t("Tera Term", "BTN_END", "終了"), target: self, action: #selector(endMacro(_:)))
             let buttons = NSStackView(views: [pause, end])
             let stack = NSStackView(views: [file, line, buttons])
             stack.orientation = .vertical
@@ -95,7 +95,7 @@ final class MacroRunner: NSObject, TTLHost {
 
     @objc private func togglePause(_ sender: NSButton) {
         interp.paused.toggle()
-        sender.title = interp.paused ? "開始" : "中断"
+        sender.title = interp.paused ? Lang.t("Tera Term", "BTN_START", "開始") : Lang.t("Tera Term", "BTN_PAUSE", "中断")
     }
 
     @objc private func endMacro(_ sender: Any?) {
@@ -124,10 +124,10 @@ final class MacroRunner: NSObject, TTLHost {
         onMain {
             let a = NSAlert()
             a.alertStyle = .warning
-            a.messageText = "マクロのエラー: \(message)"
-            a.informativeText = "\(file) \(line) 行目\n\(lineText)"
-            a.addButton(withTitle: "マクロを止める")
-            a.addButton(withTitle: "続ける")
+            a.messageText = Lang.m("XFER_MACRO_ERROR", "マクロのエラー: %s", message)
+            a.informativeText = Lang.m("XFER_MACRO_ERROR_LINE", "%s %d 行目\n%s", file, line, lineText)
+            a.addButton(withTitle: Lang.t("Tera Term", "BTN_STOP", "マクロを止める"))
+            a.addButton(withTitle: Lang.t("Tera Term", "BTN_CONTINUE", "続ける"))
             return a.runModal() == .alertFirstButtonReturn
         }
     }
@@ -188,6 +188,10 @@ final class MacroRunner: NSObject, TTLHost {
             let cl = TTCommandLine.parse(param)
             if let t = cl.title { s.macroTitle = t }
             if let d = cl.fileDir, FileManager.default.fileExists(atPath: d) { s.transferDir = d }
+            // TTProxy の -proxy= / -noproxy (TTXParseParam が defaultProxy を置き換える)
+            if let p = cl.proxy { s.proxyOverride = p }
+            // /KR= /KT= (ParseParam が ts.KanjiCode / KanjiCodeSend を変える)
+            if cl.kanjiRecv != nil || cl.kanjiSend != nil { s.applySettings(CommandLineSession.apply(cl, kanjiOnly: true, to: s.settings)) }
             if TTCommandLine.tokens(param).contains(where: { $0.lowercased() == "/shell" }) { return s.connect(.shell, quiet: true) }
             guard let spec = ConnectionSpec.from(cl, base: s.spec) else {
                 if s.spec == nil && !s.isConnected {
@@ -220,12 +224,12 @@ final class MacroRunner: NSObject, TTLHost {
 
     private func askPassword(_ host: String) -> String? {
         let a = NSAlert()
-        a.messageText = "SSH 認証"
-        a.informativeText = "\(host) のパスワード"
+        a.messageText = Lang.m("XFER_SSH_AUTH", "SSH 認証")
+        a.informativeText = Lang.m("XFER_PASSWORD_FOR", "%s のパスワード", host)
         let f = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         a.accessoryView = f
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "キャンセル")
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
         a.window.initialFirstResponder = f
         return a.runModal() == .alertFirstButtonReturn ? f.stringValue : nil
     }
@@ -416,12 +420,15 @@ final class MacroRunner: NSObject, TTLHost {
                 // ttdde.c: "ttxssh.dll not support scp" と同じくエラーを出す (マクロの受信には入れない)
                 let a = NSAlert()
                 a.messageText = "Tera Term: scp command error"
-                a.informativeText = "SCP は SSH 接続のときだけ使えます"
+                a.informativeText = Lang.m("XFER_SCP_SSH_ONLY", "SCP は SSH 接続のときだけ使えます")
                 a.runModal()
                 return false
             }
-            return s.runScp(args, label: send ? "SCP 送信" : "SCP 受信", file: from) { [weak s] ok in
-                s?.macroNotice(ok ? "SCP \(send ? "送信" : "受信"): \(from) → \(to.isEmpty ? "(既定)" : to)" : "SCP に失敗しました: \(from)")
+            return s.runScp(args, label: send ? Lang.m("XFER_SCP_SEND", "SCP 送信") : Lang.m("XFER_SCP_RECEIVE", "SCP 受信"), file: from) { [weak s] ok in
+                let dest = to.isEmpty ? Lang.m("XFER_SCP_DEFAULT_DEST", "(既定)") : to
+                s?.macroNotice(ok ? (send ? Lang.m("XFER_SCP_SENT", "SCP 送信: %s → %s", from, dest)
+                                          : Lang.m("XFER_SCP_RECEIVED", "SCP 受信: %s → %s", from, dest))
+                                  : Lang.m("XFER_SCP_FAILED", "SCP に失敗しました: %s", from))
             }
         }
     }
@@ -506,10 +513,10 @@ final class MacroRunner: NSObject, TTLHost {
     private func confirmHalt() -> Bool {
         let a = NSAlert()
         a.alertStyle = .warning
-        a.messageText = "MACRO: confirmation"
-        a.informativeText = "このマクロを止めますか?"
-        a.addButton(withTitle: "はい")
-        a.addButton(withTitle: "いいえ")
+        a.messageText = Lang.t("Tera Term", "MSG_MACRO_CONF", "MACRO: confirmation")
+        a.informativeText = Lang.t("Tera Term", "MSG_MACRO_HALT_SCRIPT", "このマクロを止めますか?")
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_YES", "はい"))
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_NO", "いいえ"))
         a.buttons[1].keyEquivalent = "\r"
         a.buttons[0].keyEquivalent = ""
         return a.runModal() == .alertFirstButtonReturn
@@ -517,7 +524,7 @@ final class MacroRunner: NSObject, TTLHost {
 
     /// 「マクロを止める…」ボタン (Windows 版の閉じるボタン)。Esc でも押せる
     private func addHaltButton(_ a: NSAlert, esc: Bool) {
-        let b = a.addButton(withTitle: "マクロを止める…")
+        let b = a.addButton(withTitle: Lang.m("XFER_MACRO_HALT", "マクロを止める…"))
         b.keyEquivalent = esc ? "\u{1b}" : ""
     }
 
@@ -528,7 +535,7 @@ final class MacroRunner: NSObject, TTLHost {
                 let a = NSAlert()
                 a.messageText = title
                 a.informativeText = text
-                a.addButton(withTitle: "OK")
+                a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
                 addHaltButton(a, esc: true)
                 if runAlert(a) == .alertFirstButtonReturn { return true }
                 if confirmHalt() { return false }
@@ -547,7 +554,7 @@ final class MacroRunner: NSObject, TTLHost {
                                             : NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
                 f.stringValue = value
                 a.accessoryView = f
-                a.addButton(withTitle: "OK")
+                a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
                 addHaltButton(a, esc: true)
                 a.window.initialFirstResponder = f
                 if runAlert(a) == .alertFirstButtonReturn { return f.stringValue }
@@ -564,8 +571,8 @@ final class MacroRunner: NSObject, TTLHost {
                 let a = NSAlert()
                 a.messageText = title
                 a.informativeText = text
-                a.addButton(withTitle: "はい")
-                let no = a.addButton(withTitle: "いいえ")
+                a.addButton(withTitle: Lang.t("Tera Term", "BTN_YES", "はい"))
+                let no = a.addButton(withTitle: Lang.t("Tera Term", "BTN_NO", "いいえ"))
                 no.keyEquivalent = "\u{1b}"
                 addHaltButton(a, esc: false)
                 switch runAlert(a) {
@@ -626,47 +633,101 @@ final class MacroRunner: NSObject, TTLHost {
         }
     }
 
+    /// listbox (ListDlg.cpp CListDlg)。大きさを変えられる (5.2: WM_SIZE で Relocation、最小は最初の大きさ WM_GETMINMAXINFO)。
+    /// 並びは本家と同じく 左にリスト、右に OK / キャンセル、下に本文。閉じるボタンは確認してからマクロを終わらせる (OnClose)
     func ttlListBox(_ text: String, title: String, items: [String], selected: Int, options: TTLListBoxOptions) -> Int {
         onMain {
-            let a = NSAlert()
-            a.messageText = title
-            a.informativeText = text
+            var style: NSWindow.StyleMask = [.titled, .closable, .resizable]
+            if options.minMaxButton || options.minimize { style.insert(.miniaturizable) }   // ExtListBoxMinmaxbutton / ExtListBoxMinimize
+            let panel = ListBoxPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 240), styleMask: style,
+                                     backing: .buffered, defer: false)
+            panel.title = title
             // listboxsize は文字数 (ListDlg.cpp: 幅は文字の高さの半分 × 幅、高さは文字の高さ × 行数)
             let lineH = ceil(NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: NSFont.systemFontSize)))
             let w = options.size.map { CGFloat($0.0) * lineH / 2 } ?? 300
             let h = options.size.map { CGFloat($0.1) * lineH } ?? 160
-            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: max(200, w), height: max(80, h)))
+            let scroll = NSScrollView()
+            scroll.translatesAutoresizingMaskIntoConstraints = false
             let table = NSTableView()
             let col = NSTableColumn(identifier: .init("item"))
-            col.width = scroll.frame.width - 20
+            col.resizingMask = .autoresizingMask
             table.addTableColumn(col)
+            table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
             table.headerView = nil
             let ds = ListSource(items: items)
             table.dataSource = ds
             table.delegate = ds
             scroll.documentView = table
             scroll.hasVerticalScroller = true
+            scroll.hasHorizontalScroller = true   // LB_SETHORIZONTALEXTENT
             scroll.borderType = .bezelBorder
             table.reloadData()
-            table.selectRowIndexes([selected], byExtendingSelection: false)
-            table.scrollRowToVisible(selected)
-            a.accessoryView = scroll
-            a.addButton(withTitle: "OK")
-            a.addButton(withTitle: "キャンセル").keyEquivalent = "\u{1b}"
-            addHaltButton(a, esc: false)
-            if options.doubleClick {
-                ds.onDouble = { NSApp.stopModal(withCode: .alertFirstButtonReturn) }
-                table.target = ds
-                table.doubleAction = #selector(ListSource.double(_:))
+            col.width = max(scroll.contentSize.width, ds.maxWidth(font: table.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)) + 5)
+            let sel = selected < 0 || selected >= items.count ? 0 : selected
+            table.selectRowIndexes([sel], byExtendingSelection: false)
+            table.scrollRowToVisible(sel)
+
+            let ok = NSButton(title: Lang.t("Tera Term", "BTN_OK", "OK"), target: ds, action: #selector(ListSource.ok(_:)))
+            ok.keyEquivalent = "\r"
+            let cancel = NSButton(title: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"), target: ds, action: #selector(ListSource.cancel(_:)))
+            cancel.keyEquivalent = "\u{1b}"
+            let halt = NSButton(title: Lang.m("XFER_MACRO_HALT", "マクロを止める…"), target: ds, action: #selector(ListSource.halt(_:)))
+            let buttons = NSStackView(views: [ok, cancel, NSView(), halt])
+            buttons.orientation = .vertical
+            buttons.alignment = .leading
+            buttons.distribution = .fill
+            buttons.spacing = 8
+            for b in [ok, cancel, halt] { b.widthAnchor.constraint(equalTo: buttons.widthAnchor).isActive = true }
+            let label = NSTextField(labelWithString: text)
+            label.alignment = .center
+            label.translatesAutoresizingMaskIntoConstraints = false
+            let content = NSView()
+            for v in [scroll, buttons, label] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(v) }
+            let gap: CGFloat = 14   // CONTROL_GAP_W
+            let sw = scroll.widthAnchor.constraint(equalToConstant: max(120, w))
+            let sh = scroll.heightAnchor.constraint(equalToConstant: max(60, h))
+            sw.priority = .defaultLow; sh.priority = .defaultLow
+            NSLayoutConstraint.activate([
+                scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: gap),
+                scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: gap),
+                scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+                scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 60),
+                sw, sh,
+                buttons.leadingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: gap),
+                buttons.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -gap),
+                buttons.topAnchor.constraint(equalTo: scroll.topAnchor),
+                buttons.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+                label.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 10),
+                label.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: gap),
+                label.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -gap),
+                label.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -gap),
+            ])
+            buttons.setContentHuggingPriority(.required, for: .horizontal)
+            label.setContentCompressionResistancePriority(.required, for: .horizontal)
+            panel.contentView = content
+            let size = content.fittingSize
+            panel.setContentSize(size)
+            panel.contentMinSize = size   // WM_GETMINMAXINFO: 最初の大きさより小さくしない
+            panel.initialFirstResponder = table
+            panel.defaultButtonCell = ok.cell as? NSButtonCell
+
+            ds.onDouble = options.doubleClick ? { NSApp.stopModal(withCode: .OK) } : nil   // ExtListBoxDoubleclick
+            table.target = ds
+            table.doubleAction = #selector(ListSource.double(_:))
+            panel.onClose = { NSApp.stopModal(withCode: .abort) }
+            place(panel)
+            if options.maximize { panel.zoom(nil) }                  // ExtListBoxMaximize
+            if options.minimize {   // ExtListBoxMinimize: 出してから最小化 (ShowWindow(SW_MINIMIZE))
+                RunLoop.main.perform(inModes: [.modalPanel]) { panel.miniaturize(nil) }
             }
-            a.window.initialFirstResponder = table
             while true {
-                let r = runAlert(a)
-                _ = ds
+                panel.makeKeyAndOrderFront(nil)
+                let r = NSApp.runModal(for: panel)
                 switch r {
-                case .alertFirstButtonReturn: return max(0, table.selectedRow)
-                case .alertSecondButtonReturn: return -1
-                default: if confirmHalt() { return -2 }
+                case .OK: panel.orderOut(nil); return max(0, table.selectedRow)
+                case .cancel: panel.orderOut(nil); return -1
+                default:
+                    if confirmHalt() { panel.orderOut(nil); return -2 }
                 }
             }
         }
@@ -731,11 +792,29 @@ final class MacroRunner: NSObject, TTLHost {
     func ttlAppDirectory() -> String { Bundle.main.bundleURL.deletingLastPathComponent().path }
 }
 
+/// listbox のウインドウ。閉じるボタン (OnClose) は onClose に任せる
+private final class ListBoxPanel: NSPanel, NSWindowDelegate {
+    var onClose: (() -> Void)?
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backing, defer: flag)
+        isReleasedWhenClosed = false
+        delegate = self
+    }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { onClose?(); return false }
+}
+
 /// listbox の中身
 private final class ListSource: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     let items: [String]
     var onDouble: (() -> Void)?
     init(items: [String]) { self.items = items }
+    /// いちばん長い項目の幅 (InitList: GetTextExtentPoint32W)
+    func maxWidth(font: NSFont) -> CGFloat {
+        items.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+    }
+    @objc func ok(_ sender: Any?) { NSApp.stopModal(withCode: .OK) }
+    @objc func cancel(_ sender: Any?) { NSApp.stopModal(withCode: .cancel) }
+    @objc func halt(_ sender: Any?) { NSApp.stopModal(withCode: .abort) }
     func numberOfRows(in tableView: NSTableView) -> Int { items.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let t = NSTextField(labelWithString: items[row])

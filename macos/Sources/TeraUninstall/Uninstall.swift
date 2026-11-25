@@ -1,5 +1,6 @@
 import AppKit
 import Security
+import TeraCore
 
 /// Tera Term Mac のアンインストール (アプリ本体のメニューと、DMG に入れるアンインストーラーの両方で使う)
 public enum TeraUninstall {
@@ -75,7 +76,7 @@ public enum TeraUninstall {
                 }
             }
             if !done { done = deleteKeychain() }
-            report.append(done ? "保存したパスワードを削除しました" : "パスワードの一部を削除できませんでした (キーチェーンアクセスで「Tera Term Mac メニュー」を削除してください)")
+            report.append(done ? Lang.m("UNINST_PW_REMOVED", "保存したパスワードを削除しました") : Lang.m("UNINST_PW_FAILED", "パスワードの一部を削除できませんでした (キーチェーンアクセスで「Tera Term Mac メニュー」を削除してください)"))
         }
 
         if o.settings {
@@ -93,17 +94,17 @@ public enum TeraUninstall {
                 let path = home + "/" + p
                 if fm.fileExists(atPath: path) { try? fm.removeItem(atPath: path) }
             }
-            report.append("設定・接続リスト・ログイン時の起動を削除しました")
+            report.append(Lang.m("UNINST_SETTINGS_REMOVED", "設定・接続リスト・ログイン時の起動を削除しました"))
         }
 
         if o.app {
-            if apps.isEmpty { report.append("アプリ本体は見つかりませんでした (すでに削除済み)") }
+            if apps.isEmpty { report.append(Lang.m("UNINST_APP_NOT_FOUND", "アプリ本体は見つかりませんでした (すでに削除済み)")) }
             for u in apps {
                 do {
                     try fm.trashItem(at: u, resultingItemURL: nil)
-                    report.append("\(u.path) をゴミ箱に入れました")
+                    report.append(Lang.m("UNINST_TRASHED", "%s をゴミ箱に入れました", u.path))
                 } catch {
-                    report.append("\(u.path) を削除できませんでした: \(error.localizedDescription)")
+                    report.append(Lang.m("UNINST_TRASH_FAILED", "%s を削除できませんでした: %s", u.path, error.localizedDescription))
                 }
             }
         }
@@ -114,23 +115,23 @@ public enum TeraUninstall {
     public static func confirmAndRun(inApp: Bool) {
         let apps = appLocations()
         let a = NSAlert()
-        a.messageText = "\(appName) をアンインストールしますか?"
-        var info = "消すものを選んでください。アプリ本体はゴミ箱に入ります。"
-        if !apps.isEmpty { info += "\n\n見つかったアプリ:\n" + apps.map { "・" + $0.path }.joined(separator: "\n") }
-        info += "\n\n接続リストを残したいときは、先にリスト設定の「ttpmenu.ini 書き出し」で保存してください。"
-        if inApp { info += "\n\n接続中のウインドウはすべて閉じます。" }
+        a.messageText = Lang.m("UNINST_CONFIRM", "%s をアンインストールしますか?", appName)
+        var info = Lang.m("UNINST_CHOOSE", "消すものを選んでください。アプリ本体はゴミ箱に入ります。")
+        if !apps.isEmpty { info += "\n\n" + Lang.m("UNINST_FOUND_APPS", "見つかったアプリ:") + "\n" + apps.map { "・" + $0.path }.joined(separator: "\n") }
+        info += "\n\n" + Lang.m("UNINST_KEEP_LIST", "接続リストを残したいときは、先に TeraTerm Menu の「リスト編集」で ttpmenu.ini に書き出してください。")
+        if inApp { info += "\n\n" + Lang.m("UNINST_CLOSE_WINDOWS", "接続中のウインドウはすべて閉じます。") }
         a.informativeText = info
-        let appCheck = NSButton(checkboxWithTitle: "アプリ本体", target: nil, action: nil)
-        let setCheck = NSButton(checkboxWithTitle: "設定と接続リスト (ログイン時の起動も)", target: nil, action: nil)
-        let pwCheck = NSButton(checkboxWithTitle: "保存したパスワード (キーチェーン)", target: nil, action: nil)
+        let appCheck = NSButton(checkboxWithTitle: Lang.m("UNINST_ITEM_APP", "アプリ本体"), target: nil, action: nil)
+        let setCheck = NSButton(checkboxWithTitle: Lang.m("UNINST_ITEM_SETTINGS", "設定と接続リスト (ログイン時の起動も)"), target: nil, action: nil)
+        let pwCheck = NSButton(checkboxWithTitle: Lang.m("UNINST_ITEM_PASSWORDS", "保存したパスワード (キーチェーン)"), target: nil, action: nil)
         [appCheck, setCheck, pwCheck].forEach { $0.state = .on }
         let stack = NSStackView(views: [appCheck, setCheck, pwCheck])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.frame = NSRect(x: 0, y: 0, width: 320, height: 70)
         a.accessoryView = stack
-        a.addButton(withTitle: "アンインストール")
-        a.addButton(withTitle: "やめる")
+        a.addButton(withTitle: Lang.m("UNINST_BUTTON", "アンインストール"))
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
         a.alertStyle = .warning
         NSApp.activate(ignoringOtherApps: true)
         guard a.runModal() == .alertFirstButtonReturn else { return }
@@ -143,14 +144,14 @@ public enum TeraUninstall {
 
         if !inApp && !quitRunningApp() {
             let w = NSAlert()
-            w.messageText = "\(appName) が終了できませんでした"
-            w.informativeText = "接続中の確認が出ているかもしれません。\(appName) を終了してから、もう一度アンインストールしてください。"
+            w.messageText = Lang.m("UNINST_QUIT_FAILED", "%s が終了できませんでした", appName)
+            w.informativeText = Lang.m("UNINST_QUIT_FAILED_INFO", "接続中の確認が出ているかもしれません。%s を終了してから、もう一度アンインストールしてください。", appName)
             w.runModal()
             return
         }
         let report = run(o, apps: apps)
         let done = NSAlert()
-        done.messageText = "アンインストールしました"
+        done.messageText = Lang.m("UNINST_DONE", "アンインストールしました")
         done.informativeText = report.map { "・" + $0 }.joined(separator: "\n")
         done.runModal()
     }

@@ -21,14 +21,15 @@ public func termCharWidth(_ s: Unicode.Scalar, ambiguousWide: Bool = false, emoj
     default: break
     }
     if v == 0xFEFF { return 0 }
-    // Mac の受信漢字コードは UTF-8 以外はすべて DBCS (Shift_JIS / EUC-JP / JIS)
-    let dbcs = kanjiCode != .utf8
+    // buffer.c IsDBCS: SJIS / EUC / JIS / KS5601 / GB2312 / BIG5。
+    // 1 バイトの文字コード (ISO8859-x / CPxxx / KOI8-R, #510) は DBCS でも UTF-8 でもない: 曖昧幅はいつも半角
+    let dbcs = kanjiCode.isDBCS
     if isUnicodeEmoji(v) {
-        if !dbcs {
+        if kanjiCode == .utf8 {
             if let ew = emojiWidth {
                 return v < 0x1F000 ? (ew == 2 ? 2 : 1) : 2
             }
-        } else {
+        } else if dbcs {
             return 2
         }
     }
@@ -37,7 +38,8 @@ public func termCharWidth(_ s: Unicode.Scalar, ambiguousWide: Bool = false, emoj
     case UInt8(ascii: "W"), UInt8(ascii: "F"):
         return 2
     case UInt8(ascii: "A"):
-        return (dbcs || ambiguousWide) ? 2 : 1
+        // BuffIsHalfWidthFromPropery: UTF-8 は UnicodeAmbiguousWidth、DBCS は全角、それ以外は半角
+        return kanjiCode == .utf8 ? (ambiguousWide ? 2 : 1) : (dbcs ? 2 : 1)
     default:
         return 1
     }

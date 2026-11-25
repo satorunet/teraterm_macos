@@ -1,0 +1,55 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+  <title>setdir</title>
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <link rel="stylesheet" href="../../style.css" type="text/css">
+</head>
+
+<body>
+
+
+<h1>setdir</h1>
+
+<p>
+マクロのカレントディレクトリを変更する。
+</p>
+
+<pre class="macro-syntax">
+setdir &lt;dir&gt;
+</pre>
+
+
+<h2>解説</h2>
+
+<p>
+マクロのカレントディレクトリを &lt;dir&gt; に変更する。パスは Mac のパスで書く ('~' はホームフォルダ。'c:' のようなドライブ名は無視し、'\' は '/' として扱う)。
+</p>
+
+<p>
+ファイル操作コマンド(fileopen 等)で指定されるファイル名は "マクロのカレントディレクトリ" を基準にする。
+</p>
+
+<h3>注意</h3>
+
+<p>
+setdir コマンドは "マクロのカレントディレクトリ" を変更する。<br>
+<a href="changedir.html">changedir</a> コマンドは "ファイル転送用ディレクトリ" を変更する。
+</p>
+
+<h2>例</h2>
+
+<pre class="macro-example">
+setdir '~/Documents'
+</pre>
+
+<h2>参照</h2>
+<ul>
+  <li><a href="getdir.html">getdir</a></li>
+  <li><a href="changedir.html">changedir</a></li>
+</ul>
+
+</body>
+</html>

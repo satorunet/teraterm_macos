@@ -88,9 +88,9 @@ extension SessionWindowController {
     static func confirmDisconnect(_ w: NSWindow?) -> Bool {
         let a = NSAlert()
         a.alertStyle = .warning
-        a.messageText = "切断しますか？"
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "キャンセル")
+        a.messageText = Lang.t("Tera Term", "MSG_DISCONNECT_CONF", "切断しますか？")
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
         // キャンセルが既定のボタン
         a.buttons[0].keyEquivalent = ""
         a.buttons[1].keyEquivalent = "\r"
@@ -118,9 +118,9 @@ extension SessionWindowController {
     @objc func exitAllMenu(_ sender: Any?) {
         let a = NSAlert()
         a.alertStyle = .critical
-        a.messageText = "全Tera Termを強制終了しますか？"
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "キャンセル")
+        a.messageText = Lang.t("Tera Term", "MSG_ALL_TERMINATE_CONF", "全Tera Termを強制終了しますか？")
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_OK", "OK"))
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
         a.buttons[0].keyEquivalent = ""
         a.buttons[1].keyEquivalent = "\r"
         guard a.runModal() == .alertFirstButtonReturn else { return }
@@ -134,11 +134,12 @@ extension SessionWindowController {
     /// ログを再生 (OnReplayLog): 新しいウインドウでファイルを受信したデータとして端末に流す。送信は捨てる
     @objc func replayLog(_ sender: Any?) {
         let p = NSOpenPanel()
-        p.message = "バイナリモードで記録された再生するログファイルを選択してください"
+        p.message = Lang.t("Tera Term", "FILEDLG_OPEN_LOGFILE_TITLE", "バイナリモードで記録された再生するログファイルを選択してください")
         p.canChooseDirectories = false
         guard p.runModal() == .OK, let url = p.url else { return }
         guard let data = FileManager.default.contents(atPath: url.path) else {
-            let a = NSAlert(); a.messageText = "Tera Term: エラー"; a.informativeText = "ファイルが開けません"; a.runModal()
+            let a = NSAlert(); a.messageText = Lang.t("Tera Term", "MSG_TT_ERROR", "Tera Term: エラー")
+            a.informativeText = Lang.t("Tera Term", "MSG_CANTOPEN_FILE_ERROR", "ファイルが開けません"); a.runModal()
             return
         }
         let c = SessionWindowController(settings: settings)
@@ -223,7 +224,7 @@ extension SessionWindowController {
     @objc func sendBreakMenu(_ sender: Any?) {
         guard connected, let c = conn else { return }
         if case .ssh? = spec {
-            notice("SSH 接続ではブレーク信号を送れません (OpenSSH の ssh コマンドに送る方法がないため)")
+            notice(Lang.m("MENU_SSH_NO_BREAK", "SSH 接続ではブレーク信号を送れません (OpenSSH の ssh コマンドに送る方法がないため)"))
             return
         }
         if let sc = c as? SerialConnection { sc.breakMs = sendBreakTimeSetting }
@@ -243,7 +244,7 @@ extension SessionWindowController {
     @objc func macroMenu(_ sender: Any?) {
         if let m = macro { m.showWindow(); return }
         let panel = NSOpenPanel()
-        panel.title = "MACRO: マクロを開く"
+        panel.title = Lang.t("Tera Term", "FILEDLG_OPEN_MACRO_TITLE", "MACRO: マクロを開く")
         panel.allowedFileTypes = ["ttl"]
         panel.allowsOtherFileTypes = true
         panel.beginSheetModal(for: window!) { [weak self] r in

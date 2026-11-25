@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         AppUpdater.shared.start()
         buildMenu()
+        // 言語を変えたら メニューを作り直し、ウインドウの題 ([未接続] など) も付け直す
+        NotificationCenter.default.addObserver(self, selector: #selector(languageDidChange(_:)), name: Lang.didChange, object: nil)
         // TERAMAC_INI_DRYRUN=<ini>: 読み込み結果を書き出して終わる (設定は変えない。確認用)
         if TeraTermIniImport.dryRunIfRequested() { exit(0) }
         // TERAMAC_TTMENU_TEST=<ttpmenu.ini>: 読んで書き出し、もう一度読んだ結果を <ini>.out.txt に (確認用・保存はしない)
@@ -139,10 +141,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               !path.hasPrefix("/Applications/"), !path.hasPrefix(NSHomeDirectory() + "/Applications/"),
               path.hasPrefix("/Volumes/") || path.contains("/Downloads/") || path.contains("/AppTranslocation/") else { return }
         let a = NSAlert()
-        a.messageText = "アプリケーションフォルダに移動しますか?"
-        a.informativeText = "いまは \(path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/") ? "ディスクイメージ" : "ダウンロードフォルダ") から動いています。アプリケーションフォルダに入れると、次からは Launchpad などから起動できます。"
-        a.addButton(withTitle: "移動する")
-        a.addButton(withTitle: "このまま使う")
+        a.messageText = Lang.m("MENU_MOVE_TO_APPS", "アプリケーションフォルダに移動しますか?")
+        let from = path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/")
+            ? Lang.m("MENU_MOVE_FROM_DMG", "ディスクイメージ") : Lang.m("MENU_MOVE_FROM_DOWNLOADS", "ダウンロードフォルダ")
+        a.informativeText = Lang.m("MENU_MOVE_TO_APPS_INFO", "いまは %s から動いています。アプリケーションフォルダに入れると、次からは Launchpad などから起動できます。", from)
+        a.addButton(withTitle: Lang.m("MENU_MOVE_BUTTON", "移動する"))
+        a.addButton(withTitle: Lang.m("MENU_MOVE_KEEP", "このまま使う"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
         let fm = FileManager.default
         let dest = URL(fileURLWithPath: "/Applications/" + (path as NSString).lastPathComponent)
@@ -151,8 +155,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
         } catch {
             let e = NSAlert()
-            e.messageText = "移動できませんでした"
-            e.informativeText = "\(error.localizedDescription)\n\nFinder で「アプリケーション」フォルダへドラッグしてください。"
+            e.messageText = Lang.m("MENU_MOVE_FAILED", "移動できませんでした")
+            e.informativeText = Lang.m("MENU_MOVE_FAILED_INFO", "%s\n\nFinder で「アプリケーション」フォルダへドラッグしてください。", error.localizedDescription)
             e.runModal()
             return
         }
@@ -171,9 +175,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let live = SessionWindowController.all.filter { $0.isConnected }
         guard !live.isEmpty else { return .terminateNow }
         let a = NSAlert()
-        a.messageText = "\(live.count) 個の接続を切断して終了しますか?"
-        a.addButton(withTitle: "終了")
-        a.addButton(withTitle: "やめる")
+        a.messageText = Lang.m("MENU_QUIT_CONFIRM", "%d 個の接続を切断して終了しますか?", live.count)
+        a.addButton(withTitle: Lang.m("MENU_QUIT_BUTTON", "終了"))
+        a.addButton(withTitle: Lang.m("MENU_QUIT_CANCEL", "やめる"))
         return a.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
@@ -201,8 +205,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MenuBar.build(app: self)
     }
 
+    /// 言語の切り替え (Lang.didChange): メニューを作り直す。ウインドウ内のメニューバーは自分で描き直す
+    @objc private func languageDidChange(_ n: Notification) {
+        buildMenu()
+        SessionWindowController.all.forEach { $0.updateTitle() }
+    }
+
     func uninstallMenuItem() -> NSMenuItem {
-        uninstallItem(NSMenuItem(title: "Tera Term Mac をアンインストール…", action: #selector(uninstall(_:)), keyEquivalent: ""))
+        uninstallItem(NSMenuItem(title: Lang.m("MENU_APP_UNINSTALL", "Tera Term Mac をアンインストール…"), action: #selector(uninstall(_:)), keyEquivalent: ""))
     }
 
     /// ヘルプの目次 (Tera Term のヘルプ: マクロのコマンドなどの説明)
@@ -238,6 +248,8 @@ enum SelfTest {
 
     static func run(dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        // TERAMAC_GUIDESNAP: かんたんマニュアルの画面写真 (SelfTestGuide.swift)
+        if ProcessInfo.processInfo.environment["TERAMAC_GUIDESNAP"] != nil { guide(dir: dir); return }
         let c = SessionWindowController()
         c.showWindow(nil)
         if ProcessInfo.processInfo.environment["TERAMAC_TABSNAP"] != nil {

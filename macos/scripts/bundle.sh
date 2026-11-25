@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.4.4}"
+VERSION="${VERSION:-0.5.0}"
 BUILD_NUMBER="1"
 BUNDLE_ID="${BUNDLE_ID:-net.satoru.teramac}"
 NAME="Tera Term Mac"
@@ -47,6 +47,7 @@ plist() {
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleDevelopmentRegion</key><string>ja</string>
+    <key>CFBundleAllowMixedLocalizations</key><true/>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key><true/>
@@ -62,22 +63,47 @@ APP="build/${NAME}.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINDIR/TeraMac" "$APP/Contents/MacOS/TeraMac"
+# 動かすのに要らない記号 (デバッグ用の名前) を外して小さくする (各アーキテクチャで約 4 割減る。署名はこのあと)
+strip -x "$APP/Contents/MacOS/TeraMac"
 # 自動アップデート (Sparkle) の部品を同梱する
 mkdir -p "$APP/Contents/Frameworks"
 ditto "$BINDIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+# 動かすのに要らないものを外す: ヘッダー (開発用) と XPC サービス (サンドボックスのアプリだけが使う。
+# このアプリはサンドボックスではなく、Info.plist の SUEnableInstallerLauncherService / SUEnableDownloaderService も使っていない)
+SPB="$APP/Contents/Frameworks/Sparkle.framework"
+rm -rf "$SPB/Versions/B/Headers" "$SPB/Versions/B/PrivateHeaders" "$SPB/Versions/B/Modules" "$SPB/Versions/B/XPCServices" \
+       "$SPB/Headers" "$SPB/PrivateHeaders" "$SPB/Modules" "$SPB/XPCServices"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # ライセンス (アイコンの元の Tera Term の BSD ライセンス表示も含む)
 cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 # 設定の初期値 (TermSettings.initial) に使う本家同梱の TERATERM.INI
 cp "../installer/release/TERATERM.INI" "$APP/Contents/Resources/TERATERM.INI"
+# 画面の言語 (TeraCore/Lang.swift): 本家の言語ファイル (lang_utf8/*.lng) と Mac 版だけの文言 (Resources/lang/mac_*.lng)
+mkdir -p "$APP/Contents/Resources/lang"
+cp ../installer/release/lang_utf8/*.lng "$APP/Contents/Resources/lang/"
+cp Resources/lang/mac_*.lng "$APP/Contents/Resources/lang/"
 # Tera Term のテーマの見本 (installer/release/theme) とヘルプ (doc/ja/html。Tera Term と同じ BSD ライセンス: html/about/copyright.html)
 UP=".."
 ditto "$UP/installer/release/theme" "$APP/Contents/Resources/theme"
-mkdir -p "$APP/Contents/Resources/help"
-rsync -a --exclude '*.ppt' --exclude '*.drawio' --exclude '*.md' --exclude '.gitignore' \
-    "$UP/doc/ja/html/" "$APP/Contents/Resources/help/html/"
-# ヘルプ ID → ファイルの対応 (HelpViewer が読む): hhp の [ALIAS] と helpid.h
-cp "$UP/doc/ja/teraterm.hhp" "$APP/Contents/Resources/help/teraterm.hhp"
+# ヘルプは Mac 版のヘルプ (Resources/help-mac: 本家の doc/<言語> を元に Mac 向けに書き直したもの) の日本語と英語。
+# 日本語以外の画面の言語では英語を見る (HelpViewer)
+for HL in ja en; do
+    mkdir -p "$APP/Contents/Resources/help/$HL"
+    # 画像 (*.png 約 3MB) は入れない。ヘルプを開いたとき本家の Web 版マニュアルの同じ画像を読む (HelpWindowController)
+    rsync -a --exclude '*.ppt' --exclude '*.drawio' --exclude '*.md' --exclude '.gitignore' --exclude '*.png' \
+        "Resources/help-mac/$HL/html/" "$APP/Contents/Resources/help/$HL/html/"
+    # ヘルプ ID → ファイルの対応 (HelpViewer が読む): hhp の [ALIAS] と helpid.h
+    cp "Resources/help-mac/$HL/teraterm.hhp" "$APP/Contents/Resources/help/$HL/teraterm.hhp"
+    # モダン表示のやりたいこと別の目次 (HelpModernStyle)
+    [ -f "Resources/help-mac/$HL/modern-toc.json" ] && cp "Resources/help-mac/$HL/modern-toc.json" "$APP/Contents/Resources/help/$HL/"
+done
+# 従来のマニュアル (本家 Tera Term のヘルプそのまま。Windows 版の説明。ヘルプのウインドウで切り替えて見る)
+for HL in ja en; do
+    mkdir -p "$APP/Contents/Resources/help/upstream/$HL"
+    rsync -a --exclude '*.ppt' --exclude '*.drawio' --exclude '*.md' --exclude '.gitignore' --exclude '*.png' \
+        "$UP/doc/$HL/html/" "$APP/Contents/Resources/help/upstream/$HL/html/"
+    cp "$UP/doc/$HL/teraterm.hhp" "$APP/Contents/Resources/help/upstream/$HL/teraterm.hhp"
+done
 cp "$UP/teraterm/common/helpid.h" "$APP/Contents/Resources/help/helpid.h"
 plist "$APP/Contents/Info.plist" TeraMac "$BUNDLE_ID" "$NAME" AppIcon '    <key>CFBundleDocumentTypes</key>
     <array>
@@ -99,8 +125,6 @@ SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null | gre
 # Sparkle の中身は内側から順に署名する (Sparkle の説明どおり)
 SP="$APP/Contents/Frameworks/Sparkle.framework"
 if [ -n "$SIGN_ID" ]; then
-    codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP/Versions/B/XPCServices/Installer.xpc"
-    codesign --force --options runtime --timestamp -s "$SIGN_ID" --preserve-metadata=entitlements "$SP/Versions/B/XPCServices/Downloader.xpc"
     codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP/Versions/B/Autoupdate"
     codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP/Versions/B/Updater.app"
     codesign --force --options runtime --timestamp -s "$SIGN_ID" "$SP"

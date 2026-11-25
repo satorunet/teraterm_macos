@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tera Term Mac ヘルプ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Tera Term Mac ヘルプ</h1>
+
+<p>
+Tera Term Mac は、Tera Term を macOS 用に移植したターミナルエミュレーターです。SSH、telnet、シリアルポート、ローカルシェルに接続でき、TTL マクロも使えます。TeraTerm Project とは関係のない非公式の移植です。このヘルプは、本家 Tera Term のヘルプを元に Mac 版に合わせて書き直したものです。
+</p>
+
+<div class="topic" id="easy">はじめての方へ: かんたんマニュアル</div>
+<ul>
+ <li><a href="easy/index.html"><b>かんたんマニュアル</b> (画面の写真つきで、はじめから順に)</a></li>
+ <li><a href="easy/connect-ssh.html">SSH でサーバーにつなぐ</a></li>
+ <li><a href="easy/connect-serial.html">シリアル機器につなぐ</a></li>
+ <li><a href="easy/trouble.html">困ったとき</a></li>
+</ul>
+
+<div class="topic">はじめに</div>
+<ul>
+ <li><a href="about/foreword.html">Tera Term Mac とは</a></li>
+ <li><a href="about/requirements.html">動作環境</a></li>
+ <li><a href="about/requirements.html#install">インストール</a></li>
+ <li><a href="about/requirements.html#update">アップデート</a></li>
+ <li><a href="about/module.html">Windows 版との違い</a></li>
+</ul>
+
+<div class="topic">接続する</div>
+<ul>
+ <li><a href="menu/file-new.html">新しい接続</a></li>
+ <li><a href="usage/ssh.html">SSH で接続する</a></li>
+ <li><a href="menu/file-new.html#SerialPort">シリアルポートで接続する</a></li>
+ <li><a href="usage/cygwin.html">ローカルシェル</a></li>
+ <li><a href="usage/proxy.html">プロキシ経由で接続する</a></li>
+ <li><a href="usage/TTMenu/TTMenu.html">TeraTerm Menu</a></li>
+</ul>
+
+<div class="topic">端末を使う</div>
+<ul>
+ <li><a href="menu/edit.html">コピーと貼り付け</a></li>
+ <li><a href="usage/keyboard.html">キーボードとショートカット</a></li>
+ <li><a href="usage/mouse.html">マウス</a></li>
+ <li><a href="menu/window.html">ウィンドウとタブ</a></li>
+ <li><a href="usage/character_encoding.html">文字コード</a></li>
+ <li><a href="usage/transparent.html">テーマと半透明</a></li>
+</ul>
+
+<div class="topic">ファイルとログ</div>
+<ul>
+ <li><a href="menu/file-log.html">ログを取る</a></li>
+ <li><a href="usage/tips/loging_howto.html">ログの取り方と再生</a></li>
+ <li><a href="menu/file-transfer.html">ファイル転送プロトコル</a></li>
+ <li><a href="menu/file-ssh-scp.html">SCP でファイルを送る</a></li>
+ <li><a href="usage/mouse.html#dragdropwindow">ドラッグ&amp;ドロップで送る</a></li>
+</ul>
+
+<div class="topic">マクロ</div>
+<ul>
+ <li><a href="macro/index.html">マクロとは</a></li>
+ <li><a href="macro/howtorun.html">マクロの実行方法</a></li>
+ <li><a href="macro/syntax/index.html">TTL の文法</a></li>
+ <li><a href="macro/command/index.html">コマンド一覧 (分類別)</a></li>
+ <li><a href="macro/commandline.html">マクロのコマンドライン</a></li>
+</ul>
+
+<div class="topic">設定</div>
+<ul>
+ <li><a href="menu/setup-save.html">設定の保存</a></li>
+ <li><a href="menu/setup-restore.html">設定の読み込み</a></li>
+ <li><a href="menu/setup-additional.html">その他の設定</a></li>
+ <li><a href="menu/setup-additional-ui.html">表示言語</a></li>
+ <li><a href="setup/teraterm.html">設定ファイル (TERATERM.INI)</a></li>
+ <li><a href="setup/keyboard.html">キーボード設定ファイル (KEYBOARD.CNF)</a></li>
+</ul>
+
+<div class="topic">困ったとき</div>
+<ul>
+ <li><a href="about/qanda.html">Q &amp; A</a></li>
+ <li><a href="about/qanda.html#connection">ホストに接続できない</a></li>
+ <li><a href="about/qanda.html#save_ini">設定が元に戻る</a></li>
+ <li><a href="usage/tips/index.html">ヒント一覧</a></li>
+</ul>
+
+<div class="topic">情報</div>
+<ul>
+ <li><a href="about/copyright.html">ライセンス・著作権</a></li>
+ <li><a href="about/contacts.html">連絡先</a></li>
+ <li>変更履歴 (本家 Tera Term)</li>
+</ul>
+
+<div class="topic">開発者向け (Mac 版)</div>
+<ul>
+ <li><a href="reference/mac-develop.html">ソースの構成</a></li>
+ <li><a href="reference/mac-develop-build.html">ビルド・テスト・リリース</a></li>
+ <li><a href="reference/mac-develop-i18n.html">画面の言語とヘルプ</a></li>
+</ul>
+
+<h2>よく使う操作</h2>
+<ul>
+ <li>新しい接続: &#8984;N ([ファイル] &gt; [新しい接続...])</li>
+ <li>ローカルシェルを開く: &#8984;G</li>
+ <li>コピー / 貼り付け: &#8984;C / &#8984;V</li>
+ <li>端末の設定: &#8984;, ([設定] &gt; [端末...])</li>
+ <li>前のタブ / 次のタブ: &#8984;{ / &#8984;}</li>
+ <li>マクロを実行: [コントロール] &gt; [マクロ]</li>
+ <li>設定を保存: [設定] &gt; [設定の保存...]</li>
+ <li>ヘルプを開く: [ヘルプ] &gt; [目次]</li>
+</ul>
+
+<p><a href="index.html">すべての項目 (従来の目次)</a></p>
+
+</body>
+</html>

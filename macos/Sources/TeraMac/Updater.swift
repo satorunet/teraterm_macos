@@ -1,5 +1,6 @@
 import AppKit
 import Sparkle
+import TeraCore
 
 /// 自動アップデート (Sparkle)。新しい版は GitHub の appcast.xml で知らせる。
 /// 「アップデートを自動で確認」は初期設定 ON (Info.plist の SUEnableAutomaticChecks)。メニューで OFF にできる
@@ -30,8 +31,8 @@ final class AppUpdater: NSObject, NSMenuItemValidation, SPUUpdaterDelegate {
     @objc func checkForUpdates(_ sender: Any?) {
         guard let c = controller else {
             let a = NSAlert()
-            a.messageText = "この版ではアップデートを確認できません"
-            a.informativeText = "配布用のアプリ (Releases の DMG から入れたもの) で使えます。"
+            a.messageText = Lang.m("MENU_UPDATE_UNAVAILABLE", "この版ではアップデートを確認できません")
+            a.informativeText = Lang.m("MENU_UPDATE_UNAVAILABLE_INFO", "配布用のアプリ (Releases の DMG から入れたもの) で使えます。")
             a.runModal()
             return
         }
@@ -57,9 +58,10 @@ final class AppUpdater: NSObject, NSMenuItemValidation, SPUUpdaterDelegate {
 
     /// アプリのメニューに入れる項目
     func menuItems() -> [NSMenuItem] {
-        let check = NSMenuItem(title: "アップデートを確認…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        // 本家の TTXCheckUpdate と同じ項目
+        let check = NSMenuItem(title: Lang.t("TTXCheckUpdate", "MENU_CHECKUPDATE", "アップデートを確認…"), action: #selector(checkForUpdates(_:)), keyEquivalent: "")
         check.target = self
-        let auto = NSMenuItem(title: "アップデートを自動で確認", action: #selector(toggleAutomaticChecks(_:)), keyEquivalent: "")
+        let auto = NSMenuItem(title: Lang.m("MENU_UPDATE_AUTO", "アップデートを自動で確認"), action: #selector(toggleAutomaticChecks(_:)), keyEquivalent: "")
         auto.target = self
         return [check, auto]
     }

@@ -169,7 +169,7 @@ final class TTLTerminalTests: XCTestCase {
         XCTAssertFalse(l.options.plainText); XCTAssertFalse(l.options.timestamp)
         XCTAssertEqual(l.infoFlags, 1 + 2 + 16)
         var t = TTLLogOptions(); t.plainText = true; t.timestamp = true
-        XCTAssertEqual(TeraLog(path: tmpPath("b.log"), options: t)!.infoFlags, 4 + 8)
+        XCTAssertEqual(TeraLog(path: tmpPath("b.log"), options: t)!.infoFlags, 4 + 8 + 32)   // 32: 最小化 (既定, 23aa80682)
     }
 
     func testLogTextTimestampsAndWrite() {
@@ -271,6 +271,23 @@ final class TTLTerminalTests: XCTestCase {
         let (_, i2) = try runTerm("loginfo s", h2)
         XCTAssertEqual(intVar(i2, "result"), 12)
         XCTAssertEqual(strVar(i2, "s"), "/tmp/x.log")
+    }
+
+    /// logopen の 8 番目 <logging dialog show state> (23aa80682 #1576)
+    func testLogOpenDialogShowState() throws {
+        let host = TermHost()
+        let (h, _) = try runTerm("""
+        logopen 'a.log' 0 0
+        logclose
+        logopen 'b.log' 0 0 0 0 0 0 0 'normal'
+        logopen 'c.log' 0 0 0 0 1 0 0 'normal'
+        logopen 'd.log' 0 0 0 0 0 0 0 'NORMAL'
+        logopen 'e.log' 0 0 0 0 0 0 0 'minimized'
+        logopen 'f.log' 0 0 0 0 1
+        """, host)
+        XCTAssertTrue(h.errors.isEmpty, "\(h.errors)")
+        XCTAssertEqual(h.logOpened.map { $0.1.dialogShowState }, [1, 2, 0, 2, 1, 0])
+        XCTAssertEqual(h.logOpened.map { $0.1.hideDialog }, [false, false, true, false, false, true])
     }
 
     func testLinkFirstAfterUnlink() throws {

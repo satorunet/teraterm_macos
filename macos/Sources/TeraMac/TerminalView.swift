@@ -6,6 +6,7 @@ final class TerminalView: NSView, NSTextInputClient {
     let term: Terminal
     var settings: TermSettings {
         didSet {
+            term.eightColorMode = !(settings.pcBoldColor || settings.aixterm16Color || settings.xterm256Color)
             applyFont()
             delimChars = TTKeyMap.hex2Str(settings.delimList)
             window?.invalidateCursorRects(for: self)
@@ -68,6 +69,10 @@ final class TerminalView: NSView, NSTextInputClient {
         self.settings = settings
         super.init(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         delimChars = TTKeyMap.hex2Str(settings.delimList)
+        term.eightColorMode = !(settings.pcBoldColor || settings.aixterm16Color || settings.xterm256Color)
+        // OSC 4 / 10 / 11 などの問い合わせに答える色 (DispGetColor) と、色が変わったときの描き直し
+        term.configuredColor = { [weak self] slot in self?.configuredRGB(slot) ?? RGB(0, 0, 0) }
+        term.onColorsChanged = { [weak self] in self?.needsDisplay = true }
         applyFont()
         startBlink()
         registerForDraggedTypes([.fileURL])
@@ -225,8 +230,8 @@ final class TerminalView: NSView, NSTextInputClient {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let c = max(10, Int((newSize.width - pad * 2) / cellW))
-        let r = max(2, Int((newSize.height - pad * 2) / cellH))
+        let c = min(TermLimits.widthMax, max(10, Int((newSize.width - pad * 2) / cellW)))
+        let r = min(TermLimits.heightMax, max(2, Int((newSize.height - pad * 2) / cellH)))
         if c != term.cols || r != term.rows {
             // 幅が変わると行を折り返し直すので、選んでいた位置は合わなくなる
             if c != term.cols { selAnchor = nil; selHead = nil }
@@ -267,9 +272,58 @@ final class TerminalView: NSView, NSTextInputClient {
 
     // MARK: - 色 (vtdisp.c GetDrawAttr / Get16ColorIndex)
 
+    /// ビジュアルベル (vtterm.c VisualBell の CSQExchangeColor): 一瞬だけ画面の文字色と背景色を入れ替える
+    var bellInverted = false { didSet { needsDisplay = true } }
+    /// 描くときの設定 (OSC 10 / 11 / 17 / 19 などで変えた色を入れたもの。draw の始めに作る)
+    private var drawSettings: TermSettings?
+
+    /// 設定の色 (DispGetColor が返す ts.VTColor など。.ansi は 256 色表の初期値)
+    private func configuredRGB(_ slot: ColorSlot) -> RGB {
+        let s = settings
+        let c: NSColor
+        switch slot {
+        case .ansi(let n): c = n < 16 ? (s.ansi16?[n] ?? Palette.colors[n]) : Palette.colors[max(0, min(255, n))]
+        case .normalFG: c = s.fg
+        case .normalBG: c = s.bg
+        case .boldFG: c = s.boldColor.fg
+        case .boldBG: c = s.boldColor.bg
+        case .blinkFG: c = s.blinkColor.fg
+        case .underFG: c = s.underlineColor.fg
+        case .reverseBG: c = s.reverseColor.bg
+        case .tekFG: c = .white
+        case .tekBG: c = .black
+        }
+        let d = c.usingColorSpace(.sRGB) ?? c
+        func v(_ x: CGFloat) -> UInt8 { UInt8(max(0, min(255, (x * 255).rounded()))) }
+        return RGB(v(d.redComponent), v(d.greenComponent), v(d.blueComponent))
+    }
+
+    private static func nsColor(_ c: RGB) -> NSColor {
+        NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
+    }
+
+    /// settings に OSC で変えた色 (vt->BGVTColor など) を入れたもの
+    private func settingsWithColorOverrides() -> TermSettings {
+        var s = settings
+        for (slot, c) in term.colorOverrides {
+            let n = TerminalView.nsColor(c)
+            switch slot {
+            case .normalFG: s.fg = n
+            case .normalBG: s.bg = n
+            case .boldFG: s.boldColor.fg = n
+            case .boldBG: s.boldColor.bg = n
+            case .blinkFG: s.blinkColor.fg = n
+            case .underFG: s.underlineColor.fg = n
+            case .reverseBG: s.reverseColor.bg = n
+            case .ansi, .tekFG, .tekBG: break
+            }
+        }
+        return s
+    }
+
     /// ANSI の色 (シーケンスの色番号)。nil は「ANSI の色ではない」(Attr2Fore / Attr2Back がない)
     private func ansiColor(_ c: TColor, bright: Bool) -> NSColor? {
-        let s = settings
+        let s = drawSettings ?? settings
         let fullColor = s.pcBoldColor || s.aixterm16Color || s.xterm256Color
         switch c {
         case .def:
@@ -290,6 +344,8 @@ final class TerminalView: NSView, NSTextInputClient {
                 // 16 色モード (PC 形式): 太字 (背景は点滅) の 0〜7 は明るい色
                 if n < 8 && bright { n += 8 }
             }
+            // OSC 4 で変えた色 (vt->ANSIColor)
+            if !term.colorOverrides.isEmpty, let o = term.colorOverrides[.ansi(n)] { return TerminalView.nsColor(o) }
             if n < 16, let a = s.ansi16 { return a[n] }
             return Palette.colors[n]
         }
@@ -297,14 +353,14 @@ final class TerminalView: NSView, NSTextInputClient {
 
     /// 文字と背景の色。selected: マウスで選んだところ (反転する)
     private func drawColors(_ a: CellAttr, selected: Bool, url: Bool) -> (NSColor, NSColor, Bool) {
-        let s = settings
+        let s = drawSettings ?? settings
         let isURL = s.enableURLColor && url
         let isUnder = s.underlineAttrColor && a.underline
         let isBold = s.enableBoldAttrColor && a.bold
         let isBlink = s.enableBlinkAttrColor && a.blink
         var reverse = selected
         if a.reverse { reverse.toggle() }
-        if term.reverseScreen { reverse.toggle() }
+        if term.reverseScreen != bellInverted { reverse.toggle() }
         var text = s.fg, back = s.bg
         func pair(_ p: ColorPair) {
             if !reverse {
@@ -407,7 +463,10 @@ final class TerminalView: NSView, NSTextInputClient {
     override func draw(_ dirtyRect: NSRect) {
         // macOS の「フォントスムージング」は暗い背景の明るい文字を太く見せるので切る (Terminal.app の見た目に合わせる)
         NSGraphicsContext.current?.cgContext.setShouldSmoothFonts(false)
-        let screenRev = term.reverseScreen
+        drawSettings = term.colorOverrides.isEmpty ? nil : settingsWithColorOverrides()
+        defer { drawSettings = nil }
+        let settings = drawSettings ?? self.settings
+        let screenRev = term.reverseScreen != bellInverted
         let defaultBG = screenRev ? settings.fg : settings.bg
         let bgDrawn = drawBackgroundImage(dirtyRect)
         let spec = bgDrawn ? bgSpec : nil
@@ -575,6 +634,7 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     private func drawCursor() {
+        let settings = drawSettings ?? self.settings
         let cy = term.cy + scrollOffset
         guard cy < term.rows else { return }
         let x = pad + CGFloat(term.cx) * cellW
@@ -952,10 +1012,48 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     func unmarkText() { marked = nil; needsDisplay = true }
-    func selectedRange() -> NSRange { NSRange(location: NSNotFound, length: 0) }
-    func markedRange() -> NSRange { marked.map { NSRange(location: 0, length: $0.length) } ?? NSRange(location: NSNotFound, length: 0) }
+
+    /// 日本語入力に渡す前後の文字 (vtwin.cpp ReplyIMERequestDocumentfeed の IMR_DOCUMENTFEED。4.106):
+    /// カーソルのある行の、行頭からカーソルまでと、カーソルから後ろの空白の手前まで (後ろに空白がなければカーソルまで)。
+    /// 変換中の文字はカーソルの位置に入れる。before はカーソルまでの文字 (UTF-16 の長さが選択の位置)
+    private func imeDocument() -> (before: String, after: String) {
+        guard term.cy >= 0 && term.cy < term.rows else { return ("", "") }
+        let cells = term.lines[term.cy].cells
+        let cx = min(term.cx, cells.count)
+        var before = "", after = ""
+        for c in cells[..<cx] where c.width != 0 { before.append(c.ch) }
+        var tail = ""
+        var found = false
+        for c in cells[cx...] where c.width != 0 {
+            if c.ch == " " || c.ch == "\0" { found = true; break }
+            tail.append(c.ch)
+        }
+        if found { after = tail }
+        return (before, after)
+    }
+
+    /// 文書 (imeDocument) の中の位置。再変換で前の文字を置き換えることはできない (送ってしまっている) ので、範囲を返すだけ
+    func selectedRange() -> NSRange {
+        let base = imeDocument().before.utf16.count
+        if let m = marked, m.length > 0 {
+            let loc = min(max(0, markedSel.location), m.length)
+            return NSRange(location: base + loc, length: min(markedSel.length, m.length - loc))
+        }
+        return NSRange(location: base, length: 0)
+    }
+    func markedRange() -> NSRange {
+        guard let m = marked, m.length > 0 else { return NSRange(location: NSNotFound, length: 0) }
+        return NSRange(location: imeDocument().before.utf16.count, length: m.length)
+    }
     func hasMarkedText() -> Bool { (marked?.length ?? 0) > 0 }
-    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        let d = imeDocument()
+        let doc = (d.before + (marked?.string ?? "") + d.after) as NSString
+        guard range.location != NSNotFound, range.location <= doc.length else { return nil }
+        let r = NSRange(location: range.location, length: min(range.length, doc.length - range.location))
+        actualRange?.pointee = r
+        return NSAttributedString(string: doc.substring(with: r))
+    }
     func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
     func characterIndex(for point: NSPoint) -> Int { NSNotFound }
 
@@ -1071,7 +1169,12 @@ final class TerminalView: NSView, NSTextInputClient {
             if m.contains(.option) { b |= 8 }
             if m.contains(.control) { b |= 16 }
         }
-        if term.mouseSGR {
+        if term.mouseSGRPixels, let e = event {
+            // SGR-Pixels (MouseReport の IdMouseTrackExtSGRP): 文字の位置ではなくウインドウの中の点の座標 (1 未満は 1)
+            let p = convert(e.locationInWindow, from: nil)
+            let px = max(1, Int(p.x.rounded(.down))), py = max(1, Int(p.y.rounded(.down)))
+            onSendBytes?(Array("\u{1B}[<\(b);\(px);\(py)\(press ? "M" : "m")".utf8))
+        } else if term.mouseSGR {
             onSendBytes?(Array("\u{1B}[<\(b);\(x + 1);\(y + 1)\(press ? "M" : "m")".utf8))
         } else {
             let v = press ? b : (3 | (b & 0x1C))
@@ -1116,7 +1219,7 @@ final class TerminalView: NSView, NSTextInputClient {
         selMode = min(3, event.clickCount)
         if selMode == 1 {
             if event.modifierFlags.contains(.shift), selAnchor != nil {
-                selHead = p
+                shiftClickSelect(p)
             } else {
                 selAnchor = p; selHead = p
             }
@@ -1128,6 +1231,25 @@ final class TerminalView: NSView, NSTextInputClient {
             selAnchor = Pos(line: p.line, col: 0); selHead = Pos(line: p.line, col: term.cols)
         }
         needsDisplay = true
+    }
+
+    /// Shift+左クリック (buffer.c BuffSeveralPagesSelect。4c86d4c32 / 6904b8aca #903):
+    /// 選んでいなければ前にクリックした所からクリックした所まで。選んでいれば、選択より前なら始まりを、
+    /// 後ろなら終わりを、中ならクリックした所に近い端を動かす。動かした端がこのあとのドラッグで動く側 (SelectEnd)
+    private func shiftClickSelect(_ p: Pos) {
+        guard let a = selAnchor else { selAnchor = p; selHead = p; return }
+        guard let h = selHead, a != h else { selHead = p; return }   // 選んでいない: ClickCell から
+        let s = min(a, h), e = max(a, h)
+        // ComparePoint: 2 点のあいだの文字数 (行は桁数ぶん)
+        func dist(_ p1: Pos, _ p2: Pos) -> Int { (p1.line - p2.line) * term.cols + (p1.col - p2.col) }
+        if p < s {
+            selAnchor = e                    // 開始位置より前方: 開始位置を動かす
+        } else if e < p {
+            selAnchor = s                    // 終了位置より後方: 終了位置を動かす
+        } else {
+            selAnchor = dist(p, s) < dist(e, p) ? e : s   // 選択の中: 近いほう
+        }
+        selHead = p
     }
 
     private func extendSelection(_ event: NSEvent) {
@@ -1173,8 +1295,8 @@ final class TerminalView: NSView, NSTextInputClient {
                 if (canPaste?() ?? true) && NSPasteboard.general.string(forType: .string) != nil {
                     let m = NSMenu()
                     m.autoenablesItems = false
-                    m.addItem(withTitle: "貼り付け", action: #selector(paste(_:)), keyEquivalent: "").target = self
-                    m.addItem(withTitle: "貼り付け<CR>", action: #selector(pasteCR(_:)), keyEquivalent: "").target = self
+                    m.addItem(withTitle: Lang.t("Tera Term", "MENU_EDIT_PASTE", "貼り付け"), action: #selector(paste(_:)), keyEquivalent: "").target = self
+                    m.addItem(withTitle: Lang.t("Tera Term", "MENU_EDIT_PASTECR", "貼り付け<CR>"), action: #selector(pasteCR(_:)), keyEquivalent: "").target = self
                     NSMenu.popUpContextMenu(m, with: event, for: self)
                 }
                 return
@@ -1240,9 +1362,9 @@ final class TerminalView: NSView, NSTextInputClient {
     override func menu(for event: NSEvent) -> NSMenu? {
         if settings.rightClickPaste || !settings.selectOnlyByLButton { return nil }
         let m = NSMenu()
-        m.addItem(withTitle: "コピー", action: #selector(copy(_:)), keyEquivalent: "")
-        m.addItem(withTitle: "貼り付け", action: #selector(paste(_:)), keyEquivalent: "")
-        m.addItem(withTitle: "貼り付け<CR>", action: #selector(pasteCR(_:)), keyEquivalent: "")
+        m.addItem(withTitle: Lang.t("Tera Term", "MENU_EDIT_COPY", "コピー"), action: #selector(copy(_:)), keyEquivalent: "")
+        m.addItem(withTitle: Lang.t("Tera Term", "MENU_EDIT_PASTE", "貼り付け"), action: #selector(paste(_:)), keyEquivalent: "")
+        m.addItem(withTitle: Lang.t("Tera Term", "MENU_EDIT_PASTECR", "貼り付け<CR>"), action: #selector(pasteCR(_:)), keyEquivalent: "")
         return m
     }
 
@@ -1436,6 +1558,11 @@ final class TerminalView: NSView, NSTextInputClient {
     @objc func paste(_ sender: Any?) { startPaste(addCR: false) }
     @objc func pasteCR(_ sender: Any?) { startPaste(addCR: true) }
 
+    /// iswcntrl (Windows の _CONTROL): U+0000〜001F・U+007F〜009F
+    static func isWControl(_ u: Unicode.Scalar) -> Bool {
+        u.value < 0x20 || (0x7F...0x9F).contains(u.value)
+    }
+
     /// clipboar.c CBPreparePaste
     func startPaste(addCR: Bool) {
         guard var s = NSPasteboard.general.string(forType: .string) else { return }
@@ -1454,7 +1581,10 @@ final class TerminalView: NSView, NSTextInputClient {
             }
         }
         if s.isEmpty && !addCR { return }
-        let addBracket = !settings.bracketedControlOnly || s.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        // ブラケットするかどうか (BracketedSupport / BracketedControlOnly)。制御文字は iswcntrl と同じ C0・DEL・C1
+        // (CharacterSet.controlCharacters は書式文字 Cf も含むので使わない)。複数行なら改行が制御文字
+        let addBracket = settings.bracketedSupport
+            && (!settings.bracketedControlOnly || s.unicodeScalars.contains { TerminalView.isWControl($0) })
         if addCR { s += "\r" }
         s = s.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r")
         if term.bracketedPaste && addBracket { s = "\u{1B}[200~" + s + "\u{1B}[201~" }

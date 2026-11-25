@@ -3,6 +3,13 @@ import XCTest
 
 /// 「その他の設定」の 端末 / 制御シーケンス / エンコーディング タブの動き (vtterm.c / ttwinman.c / charset.cpp / makeoutputstring.cpp)
 final class TerminalSettingsTests: XCTestCase {
+    // 日本語の文言で比べるテストがあるので、画面の言語を日本語に固定する (テストの実行環境の言語によらない)
+    override class func setUp() {
+        super.setUp()
+        UserDefaults.standard.set("ja_JP.lng", forKey: Lang.defaultsKey)
+        Lang.reload()
+    }
+
     private func make(cols: Int = 20, rows: Int = 4) -> (Terminal, () -> String) {
         let t = Terminal(cols: cols, rows: rows)
         var out = ""

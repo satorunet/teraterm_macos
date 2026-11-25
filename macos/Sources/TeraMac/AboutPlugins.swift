@@ -1,4 +1,5 @@
 import AppKit
+import TeraCore
 
 /// ヘルプの「TTProxyについて...」「TTSSHについて...」(TTProxy / TTSSH が Tera Termについて の前に入れる項目)。
 /// Mac 版はどちらも同じ働きをアプリに組み込んでいる (SSH は macOS の OpenSSH を使う) ので、その旨と元の著作権を出す
@@ -7,7 +8,7 @@ enum AboutPlugins {
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         p.title = title
         p.isReleasedWhenClosed = false
-        let ok = NSButton(title: "OK", target: nil, action: nil)
+        let ok = NSButton(title: Lang.t("Tera Term", "BTN_OK", "OK"), target: nil, action: nil)
         ok.keyEquivalent = "\r"
         let closer = Closer(panel: p)
         ok.target = closer
@@ -52,10 +53,10 @@ enum AboutPlugins {
     }
 
     static func showTTProxy() {
-        panel(title: "TTProxyについて", icon: NSApp.applicationIconImage, body: [
+        panel(title: Lang.t("TTProxy", "DLG_ABOUT_TITLE", "TTProxyについて"), icon: NSApp.applicationIconImage, body: [
             label("TTProxy", bold: true),
             label("Copyright (C) 2003-2006 蛭子屋本舗\n蛭子屋本舗: http://yebisuya.dip.jp/Software/TTProxy/\n(C) 2006-2026 TeraTerm Project\nTeraTerm Project: https://teratermproject.github.io/"),
-            label("Mac 版では、TTProxy と同じプロキシ接続 (HTTP / SOCKS4 / SOCKS4a / SOCKS5 / TELNET) をアプリに組み込んで使っています。", small: true),
+            label(Lang.m("MENU_ABOUT_TTPROXY_MAC", "Mac 版では、TTProxy と同じプロキシ接続 (HTTP / SOCKS4 / SOCKS4a / SOCKS5 / TELNET) をアプリに組み込んで使っています。"), small: true),
         ])
     }
 
@@ -84,13 +85,13 @@ enum AboutPlugins {
         let toggler = Toggle(fill)
         for r in [md5, sha] { r.target = toggler; r.action = #selector(Toggle.fire) }
         fill()
-        let hashRow = NSStackView(views: [NSTextField(labelWithString: "指紋のハッシュ:"), md5, sha])
+        let hashRow = NSStackView(views: [NSTextField(labelWithString: Lang.t("TTSSH", "DLG_ABOUT_FP_HASH_ALGORITHM", "指紋のハッシュ:")), md5, sha])
         objc_setAssociatedObject(md5, &closerKey, toggler, .OBJC_ASSOCIATION_RETAIN)
-        panel(title: "TTSSHについて", icon: NSApp.applicationIconImage, body: [
+        panel(title: Lang.t("TTSSH", "DLG_ABOUT_TITLE", "TTSSHについて"), icon: NSApp.applicationIconImage, body: [
             label("TTSSH\nTera Term Secure Shell extension", bold: true),
             label("(C) 2004-2026 TeraTerm Project"),
             label("Includes:\nTTSSH 1.5.4, (C) 1998-2001 Robert O'Callahan\nIPv6 extention version 0.81, (C) 2000-2003 Jun-ya KATO", small: true),
-            label("Mac 版では、SSH の接続に macOS の OpenSSH (ssh コマンド) を使っています。\nOpenSSH: \(ssh)", small: true),
+            label(Lang.m("MENU_ABOUT_TTSSH_MAC", "Mac 版では、SSH の接続に macOS の OpenSSH (ssh コマンド) を使っています。\nOpenSSH: %s", ssh), small: true),
             label("TeraTerm Project: https://teratermproject.github.io/", small: true),
             hashRow,
             scroll,
@@ -105,17 +106,17 @@ enum AboutPlugins {
 
     private static func connectionText(_ s: SessionWindowController?, hash: String) -> String {
         guard let s = s, s.isConnected, case .ssh(let host, let port, let user, _)? = s.spec else {
-            return "SSH で接続していません。"
+            return Lang.m("MENU_ABOUT_SSH_NOT_CONNECTED", "SSH で接続していません。")
         }
-        var out = "サーバー: \(host)\nポート: \(port)\n"
-        if !user.isEmpty { out += "ユーザー: \(user)\n" }
+        var out = Lang.m("MENU_ABOUT_SSH_SERVER", "サーバー: %s\nポート: %d\n", host, port)
+        if !user.isEmpty { out += Lang.m("MENU_ABOUT_SSH_USER", "ユーザー: %s\n", user) }
         let name = port == 22 ? host : "[\(host)]:\(port)"
         let known = run("/usr/bin/ssh-keygen", ["-F", name, "-l", "-E", hash])
         let lines = known.split(separator: "\n").filter { !$0.hasPrefix("#") }
         if lines.isEmpty {
-            out += "\nホスト鍵の指紋: (known_hosts にありません)"
+            out += "\n" + Lang.t("TTSSH", "DLG_ABOUT_FINGERPRINT", "ホスト鍵の指紋:") + " " + Lang.m("MENU_ABOUT_SSH_NOT_IN_KNOWN_HOSTS", "(known_hosts にありません)")
         } else {
-            out += "\nホスト鍵の指紋:\n" + lines.joined(separator: "\n")
+            out += "\n" + Lang.t("TTSSH", "DLG_ABOUT_FINGERPRINT", "ホスト鍵の指紋:") + "\n" + lines.joined(separator: "\n")
         }
         return out
     }

@@ -1006,6 +1006,9 @@ extension TTLInterpreter {
         var o = TTLLogOptions()
         o.binary = getIntVal(&err) != 0
         o.append = getIntVal(&err) != 0
+        // <hide dialog flag> と <logging dialog show state> (8 番目、"normal" のとき通常サイズ。23aa80682 #1576)
+        var hideDialogFlag = false
+        var showStateStr = ""
         parse: do {
             if !checkParameterGiven() { break parse }
             o.plainText = getIntVal(&err) != 0
@@ -1014,7 +1017,7 @@ extension TTLInterpreter {
             o.timestamp = getIntVal(&err) != 0
             if err != 0 { return err }
             if !checkParameterGiven() { break parse }
-            o.hideDialog = getIntVal(&err) != 0
+            hideDialogFlag = getIntVal(&err) != 0
             if err != 0 { return err }
             if !checkParameterGiven() { break parse }
             o.includeScreenBuffer = getIntVal(&err) != 0
@@ -1024,8 +1027,18 @@ extension TTLInterpreter {
             if err != 0 { return err }
             if t < 0 || t > 3 { return E.syntax }
             o.timestampType = t
+            if !checkParameterGiven() { break parse }
+            showStateStr = String(decoding: getStrVal(&err), as: UTF8.self)
+            if err != 0 { return err }
         }
         if s.isEmpty || getFirstChar() != 0 { return E.syntax }
+        if hideDialogFlag {
+            o.dialogShowState = 0                       // SHOWSTATE_HIDDEN
+        } else if showStateStr.caseInsensitiveCompare("normal") == .orderedSame {
+            o.dialogShowState = 2                       // SHOWSTATE_NORMAL
+        } else {
+            o.dialogShowState = 1                       // SHOWSTATE_MINIMIZED
+        }
         if !linked { return E.linkFirst }   // GetTTParam
         let ok = host?.ttlLogOpen(s.u8, options: o) ?? false
         setResult(ok ? 0 : 1)

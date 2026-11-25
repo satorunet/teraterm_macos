@@ -103,8 +103,8 @@ public final class ProxyHandshake {
     }
 
     /// ja_JP.lng [TTProxy] MSG_PROXY_UNAUTHORIZED / MSG_PROXY_BAD_REQUEST
-    public static let msgUnauthorized = "プロキシの認証に失敗しました。"
-    public static let msgBadRequest = "プロキシの設定により接続できません。"
+    public static var msgUnauthorized: String { Lang.t("TTProxy", "MSG_PROXY_UNAUTHORIZED", "プロキシの認証に失敗しました。") }
+    public static var msgBadRequest: String { Lang.t("TTProxy", "MSG_PROXY_BAD_REQUEST", "プロキシの設定により接続できません。") }
 
     /// ホスト名をローカルで引く: IPv4 なら 4 バイト、IPv6 なら 16 バイト。ipv4Only は gethostbyname (SOCKS4)
     public typealias Resolver = (_ host: String, _ ipv4Only: Bool) -> [UInt8]?
@@ -187,7 +187,7 @@ public final class ProxyHandshake {
         if case .telnet = state {
             o.result = .failed(ProxyHandshake.msgBadRequest)
         } else {
-            o.result = .failed("プロキシとの接続が切れました")
+            o.result = .failed(Lang.m("XFER_PROXY_CLOSED", "プロキシとの接続が切れました"))
         }
         return o
     }
@@ -316,7 +316,7 @@ public final class ProxyHandshake {
             r.append(a.count == 4 ? 1 : 4)
             r += a
         } else if config.resolve == .local {
-            o.result = .failed("ホスト \(realHost) が見つかりません")
+            o.result = .failed(Lang.m("XFER_HOST_NOT_FOUND", "ホスト %s が見つかりません", realHost))
             return
         } else {
             let name = Array(realHost.utf8.prefix(255))
@@ -336,7 +336,8 @@ public final class ProxyHandshake {
         } else if config.resolve != .remote, let a = resolver(realHost, true), a.count == 4 {
             r += a
         } else if config.resolve == .local {
-            return .failure(Message(text: "ホスト \(realHost) が見つかりません"))
+            return .failure(Message(text: Lang.m("XFER_HOST_NOT_FOUND", "ホスト %s が見つかりません", realHost))
+)
         } else {
             r += [0, 0, 0, 1]   // SOCKS4a
             v4a = true

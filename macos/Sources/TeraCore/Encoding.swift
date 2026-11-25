@@ -1,18 +1,215 @@
 import Foundation
 
 /// 端末の文字コード (Tera Term の「漢字-受信/送信」に相当)
+/// 本家の並び・名前は ttlib_charset.cpp KanjiList。1 バイトの文字コード (ISO8859-x / CPxxx / KOI8-R) は
+/// 本家と同じ対応表 (mapping/*.map → SBCSTables.swift) で変換する (#510 6a854d5ab)。
+/// rawValue は設定 (UserDefaults) に保存する名前。前からある 4 つはそのまま、ほかは INI の名前
 public enum TermEncoding: String, CaseIterable {
     case utf8 = "UTF-8"
     case sjis = "Shift_JIS"
     case eucjp = "EUC-JP"
     /// JIS (ISO-2022-JP, 7 ビット)。ESC $ B で漢字、ESC ( B / ESC ( J で英数、ESC ( I と SO/SI で半角カナ
     case jis = "JIS"
+    case iso8859_1 = "ISO8859-1", iso8859_2 = "ISO8859-2", iso8859_3 = "ISO8859-3", iso8859_4 = "ISO8859-4"
+    case iso8859_5 = "ISO8859-5", iso8859_6 = "ISO8859-6", iso8859_7 = "ISO8859-7", iso8859_8 = "ISO8859-8"
+    case iso8859_9 = "ISO8859-9", iso8859_10 = "ISO8859-10", iso8859_11 = "ISO8859-11", iso8859_13 = "ISO8859-13"
+    case iso8859_14 = "ISO8859-14", iso8859_15 = "ISO8859-15", iso8859_16 = "ISO8859-16"
+    /// KOI8-R (RFC 1489。本家 IdKOI8_NEW)
+    case koi8r = "KOI8-R"
+    /// 韓国語 CP949 / 中国語 CP936 / CP950 (本家 IdKoreanCP949 / IdCnGB2312 / IdCnBig5)
+    case ks5601 = "KS5601", gb2312 = "GB2312", big5 = "BIG5"
+    case cp437 = "CP437", cp737 = "CP737", cp775 = "CP775", cp850 = "CP850", cp852 = "CP852", cp855 = "CP855"
+    case cp857 = "CP857", cp860 = "CP860", cp861 = "CP861", cp862 = "CP862", cp863 = "CP863", cp864 = "CP864"
+    case cp865 = "CP865", cp866 = "CP866", cp869 = "CP869", cp874 = "CP874"
+    case cp1250 = "CP1250", cp1251 = "CP1251", cp1252 = "CP1252", cp1253 = "CP1253", cp1254 = "CP1254"
+    case cp1255 = "CP1255", cp1256 = "CP1256", cp1257 = "CP1257", cp1258 = "CP1258"
+
+    /// ttlib_charset.cpp KanjiList: (文字コード, 設定画面の名前 (nil は出さない), INI の名前)。この順に並べる
+    public static let kanjiList: [(code: TermEncoding, gui: String?, ini: String)] = [
+        (.utf8, "UTF-8", "UTF-8"),
+        (.iso8859_1, "ISO8859-1 Latin-1 Western European", "ISO8859-1"),
+        (.iso8859_2, "ISO8859-2 Latin-2 Central European", "ISO8859-2"),
+        (.iso8859_3, "ISO8859-3 Latin-3 South European", "ISO8859-3"),
+        (.iso8859_4, "ISO8859-4 Latin-4 North European", "ISO8859-4"),
+        (.iso8859_5, "ISO8859-5 Latin/Cyrillic", "ISO8859-5"),
+        (.iso8859_6, "ISO8859-6 Latin/Arabic", "ISO8859-6"),
+        (.iso8859_7, "ISO8859-7 Latin/Greek", "ISO8859-7"),
+        (.iso8859_8, "ISO8859-8 Latin/Hebrew", "ISO8859-8"),
+        (.iso8859_9, "ISO8859-9 Latin-5 Turkish", "ISO8859-9"),
+        (.iso8859_10, "ISO8859-10 Latin-6 Nordic", "ISO8859-10"),
+        (.iso8859_11, "ISO8859-11 Latin/Thai", "ISO8859-11"),
+        (.iso8859_13, "ISO8859-13 Latin-7 Baltic Rim", "ISO8859-13"),
+        (.iso8859_14, "ISO8859-14 Latin-8 Celtic", "ISO8859-14"),
+        (.iso8859_15, "ISO8859-15 Latin-9", "ISO8859-15"),
+        (.iso8859_16, "ISO8859-16 Latin-10 South-Eastern European", "ISO8859-16"),
+        // 日本語
+        (.sjis, "SJIS (CP932)", "SJIS"),
+        (.eucjp, nil, "EUC-JP"),
+        (.eucjp, "EUC", "EUC"),
+        (.jis, "JIS", "JIS"),
+        // Russian
+        (.cp1251, "CP1251 Windows-1251", "Windows-1251"),
+        (.koi8r, "KOI8-R (RFC 1489)", "KOI8-R"),
+        (.cp866, "CP866 Cyrillic Russian", "CP866"),
+        // 本家はここに ISO8859-5 をもう一度並べる (同じ名前なので Mac では 1 つだけにする)
+        // Korean
+        (.ks5601, "KS5601 (CP949)", "KS5601"),
+        (.gb2312, "GB2312 (CP936)", "GB2312"),
+        (.big5, "Big5 (CP950)", "BIG5"),
+        // https://www.unicode.org/L2/L1999/99325-E.htm
+        (.cp437, "CP437 Latin (US)", "CP437"),
+        (.cp737, "CP737 Greek (A)", "CP737"),
+        (.cp775, "CP775 BaltRim", "CP775"),
+        (.cp850, "CP850 Latin (A)", "CP850"),
+        (.cp852, "CP852 Latin (B)", "CP852"),
+        (.cp855, "CP855 Cyrillic (A)", "CP855"),
+        (.cp857, "CP857 Turkish", "CP857"),
+        (.cp860, "CP860 Portuguese", "CP860"),
+        (.cp861, "CP861 Icelandic", "CP861"),
+        (.cp862, "CP862 Hebrew", "CP862"),
+        (.cp863, "CP863 Canada F", "CP863"),
+        (.cp864, "CP864 Arabic", "CP864"),
+        (.cp865, "CP865 Nordic", "CP865"),
+        // 本家はここに CP866 をもう一度並べる (同じ名前なので 1 つだけ)
+        (.cp869, "CP869 Greek (B)", "CP869"),
+        (.cp874, "CP874 Thai", "CP874"),
+        // https://learn.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
+        (.cp1250, "CP1250 Central European", "CP1250"),
+        (.cp1251, "CP1251 Cyrillic", "CP1251"),
+        (.cp1252, "CP1252 Latin 1", "CP1252"),
+        (.cp1253, "CP1253 Greek", "CP1253"),
+        (.cp1254, "CP1254 Turkish", "CP1254"),
+        (.cp1255, "CP1255 Hebrew", "CP1255"),
+        (.cp1256, "CP1256 Arabic", "CP1256"),
+        (.cp1257, "CP1257 Baltic", "CP1257"),
+        (.cp1258, "CP1258 Vietnamese", "CP1258"),
+    ]
+
+    /// 設定画面の一覧 (CodeStrGUI のあるもの。coding_pp.cpp)
+    public static var guiList: [(code: TermEncoding, name: String)] {
+        kanjiList.compactMap { e in e.gui.map { (e.code, $0) } }
+    }
+
+    /// GetKanjiCodeStr: INI に書く名前 (最初に見つかったもの)
+    public var iniName: String { TermEncoding.kanjiList.first { $0.code == self }?.ini ?? "UTF-8" }
+
+    /// 設定画面での名前
+    public var displayName: String { TermEncoding.kanjiList.first { $0.code == self && $0.gui != nil }?.gui ?? rawValue }
+
+    /// GetKanjiCodeFromStr: INI の名前 (大文字小文字も区別) から。空・知らない名前は UTF-8。
+    /// /KR= /KT= と KanjiReceive / KanjiSend はこれで読む (5.2 で UTF8m はなくなったので UTF-8 になる)
+    public static func fromKanjiCodeStr(_ s: String) -> TermEncoding {
+        kanjiList.first { $0.ini == s }?.code ?? .utf8
+    }
+
+    /// INI の名前と完全に同じなら (GetKanjiCodeFromStr で UTF-8 に落ちるかどうかを見分ける)
+    public static func exactKanjiCodeStr(_ s: String) -> TermEncoding? {
+        kanjiList.first { $0.ini == s }?.code
+    }
+
+    /// buffer.c IsDBCS: 2 バイト文字コード (曖昧幅は全角、絵文字は全角)
+    public var isDBCS: Bool {
+        switch self {
+        case .sjis, .eucjp, .jis, .ks5601, .gb2312, .big5: return true
+        default: return false
+        }
+    }
+
+    /// 日本語の文字コード (LangIsJapanese)
+    public var isJapanese: Bool { self == .sjis || self == .eucjp || self == .jis }
+
+    /// 1 バイトの文字コード (ISO8859-x / CPxxx / KOI8-R)。対応表
+    var sbcsTable: [UInt16]? {
+        switch self {
+        case .iso8859_1: return nil
+        case .iso8859_2: return SBCSTables.iso8859_2
+        case .iso8859_3: return SBCSTables.iso8859_3
+        case .iso8859_4: return SBCSTables.iso8859_4
+        case .iso8859_5: return SBCSTables.iso8859_5
+        case .iso8859_6: return SBCSTables.iso8859_6
+        case .iso8859_7: return SBCSTables.iso8859_7
+        case .iso8859_8: return SBCSTables.iso8859_8
+        case .iso8859_9: return SBCSTables.iso8859_9
+        case .iso8859_10: return SBCSTables.iso8859_10
+        case .iso8859_11: return SBCSTables.iso8859_11
+        case .iso8859_13: return SBCSTables.iso8859_13
+        case .iso8859_14: return SBCSTables.iso8859_14
+        case .iso8859_15: return SBCSTables.iso8859_15
+        case .iso8859_16: return SBCSTables.iso8859_16
+        case .koi8r: return SBCSTables.koi8_r
+        case .cp437: return SBCSTables.cp437
+        case .cp737: return SBCSTables.cp737
+        case .cp775: return SBCSTables.cp775
+        case .cp850: return SBCSTables.cp850
+        case .cp852: return SBCSTables.cp852
+        case .cp855: return SBCSTables.cp855
+        case .cp857: return SBCSTables.cp857
+        case .cp860: return SBCSTables.cp860
+        case .cp861: return SBCSTables.cp861
+        case .cp862: return SBCSTables.cp862
+        case .cp863: return SBCSTables.cp863
+        case .cp864: return SBCSTables.cp864
+        case .cp865: return SBCSTables.cp865
+        case .cp866: return SBCSTables.cp866
+        case .cp869: return SBCSTables.cp869
+        case .cp874: return SBCSTables.cp874
+        case .cp1250: return SBCSTables.cp1250
+        case .cp1251: return SBCSTables.cp1251
+        case .cp1252: return SBCSTables.cp1252
+        case .cp1253: return SBCSTables.cp1253
+        case .cp1254: return SBCSTables.cp1254
+        case .cp1255: return SBCSTables.cp1255
+        case .cp1256: return SBCSTables.cp1256
+        case .cp1257: return SBCSTables.cp1257
+        case .cp1258: return SBCSTables.cp1258
+        default: return nil
+        }
+    }
+
+    /// 1 バイトの文字コードか (ISO8859-1 も含む)
+    public var isSBCS: Bool { self == .iso8859_1 || sbcsTable != nil }
+
+    /// ISO8859-x (本家 ParseEnglish。対応がないバイトは 0x80 以上もそのまま U+00xx として出す)
+    var isISO8859: Bool { rawValue.hasPrefix("ISO8859-") }
+
+    /// UnicodeFromSBCS: 1 バイト → Unicode。対応がなければ nil
+    func sbcsToUnicode(_ b: UInt8) -> UInt32? {
+        if self == .iso8859_1 { return UInt32(b) }
+        guard let t = sbcsTable else { return nil }
+        let u = t[Int(b)]
+        return u == 0xFFFF ? nil : UInt32(u)
+    }
+
+    private static var reverseCache: [TermEncoding: [UInt16: UInt8]] = [:]
+    private static let reverseLock = NSLock()
+
+    /// UnicodeToSBCS: Unicode → 1 バイト。対応がなければ nil (送るときは ?)。
+    /// 本家の ISO8859-1 は U+0100 以上も下位 8 ビットにしてしまうが、Mac では ? にする
+    func unicodeToSBCS(_ u: UInt32) -> UInt8? {
+        if self == .iso8859_1 { return u < 0x100 ? UInt8(u) : nil }
+        guard u < 0x10000, let t = sbcsTable else { return nil }
+        TermEncoding.reverseLock.lock()
+        defer { TermEncoding.reverseLock.unlock() }
+        if let m = TermEncoding.reverseCache[self] { return m[UInt16(u)] }
+        var m: [UInt16: UInt8] = [:]
+        for (i, v) in t.enumerated() where v != 0xFFFF && m[v] == nil { m[v] = UInt8(i) }   // 本家は前から探して最初のもの
+        TermEncoding.reverseCache[self] = m
+        return m[UInt16(u)]
+    }
 
     var nsEncoding: String.Encoding {
+        func cf(_ e: CFStringEncodings) -> String.Encoding {
+            String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(e.rawValue)))
+        }
         switch self {
         case .utf8: return .utf8
         case .sjis, .jis: return .shiftJIS
         case .eucjp: return .japaneseEUC
+        // makeoutputstring.cpp: code_page 949 / 936 / 950
+        case .ks5601: return cf(.dosKorean)
+        case .gb2312: return cf(.dosChineseSimplif)
+        case .big5: return cf(.dosChineseTrad)
+        default: return .isoLatin1   // 1 バイトの文字コードは対応表を使うので使わない
         }
     }
 
@@ -28,6 +225,10 @@ public enum TermEncoding: String, CaseIterable {
         if self == .jis {
             var e = JISEncoder(options: jis)
             return e.encode(s) + e.finish()
+        }
+        if isSBCS {
+            // makeoutputstring.cpp: UnicodeToISO8859 / UnicodeToCodePage。変換できない文字は ?
+            return s.unicodeScalars.map { unicodeToSBCS($0.value) ?? 0x3F }
         }
         if let d = s.data(using: nsEncoding, allowLossyConversion: true) { return [UInt8](d) }
         return Array(s.utf8)
@@ -124,8 +325,18 @@ public struct StreamDecoder {
         set { jis.jis7Katakana = newValue }
     }
 
+    /// 文字の途中で残っているバイトと JIS の文字集合 (漢字イン / SO) を捨てる。
+    /// 漢字コードを変えたとき (TTXKanjiMenu 0.1.7 CallResetCharSet → ResetCharSet → CharSetInit)
+    public mutating func reset() {
+        pending = []
+        let k = jis.jis7Katakana
+        jis = JISCodec.Decoder()
+        jis.jis7Katakana = k
+    }
+
     public mutating func decode(_ input: [UInt8]) -> String {
         if encoding == .jis { return jis.decode(input) }
+        if encoding.isSBCS { pending = []; return decodeSBCS(input) }
         let bytes = pending + input
         pending = []
         let cut = completeLength(bytes)
@@ -135,10 +346,26 @@ public struct StreamDecoder {
         switch encoding {
         case .utf8:
             return String(decoding: body, as: UTF8.self)
-        case .sjis, .eucjp, .jis:
+        default:
             if let s = String(bytes: body, encoding: encoding.nsEncoding) { return s }
             return decodeCharByChar(body)
         }
+    }
+
+    /// 1 バイトの文字コード (charset.cpp ParseEnglish / ParseCodePage)。
+    /// 対応表にないバイト: ISO8859-x はそのまま U+00xx (ParseFirst の後半)、CPxxx / KOI8-R は捨てる
+    private func decodeSBCS(_ b: [UInt8]) -> String {
+        var out = String.UnicodeScalarView()
+        let e = encoding
+        for c in b {
+            if c < 0x80 { out.append(Unicode.Scalar(c)); continue }
+            if let u = e.sbcsToUnicode(c), let sc = Unicode.Scalar(u) {
+                out.append(sc)
+            } else if e.isISO8859 {
+                out.append(Unicode.Scalar(c))
+            }
+        }
+        return String(out)
     }
 
     /// 1 文字ずつに分けて変換する (壊れたバイトがあっても残りは読めるように)
@@ -175,6 +402,11 @@ public struct StreamDecoder {
             if c == 0x8E { return 2 }
             if c == 0x8F { return 3 }
             if (0xA1...0xFE).contains(c) { return 2 }
+            return 1
+        case .ks5601, .gb2312, .big5:
+            // charset.cpp ParseFirstKR / ParseFirstCn: 0x81–0xFE は 2 バイト文字の 1 バイト目
+            return (0x81...0xFE).contains(c) ? 2 : 1
+        default:
             return 1
         }
     }

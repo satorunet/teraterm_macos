@@ -661,7 +661,10 @@ public final class FileTransfer {
         case Int(TERAFT_INFO_FILE_NAME):
             progress.filePath = text
         case Int(TERAFT_INFO_MESSAGE):
-            onMessage?(text ?? "")
+            // C 側の TTMessageBoxW は既定の英語しか渡さないので、本家が言語ファイルで引く文言はここで引き直す
+            var m = text ?? ""
+            if m == "Cannot open file" { m = Lang.t("Tera Term", "MSG_CANTOPEN_FILE_ERROR", m) }
+            onMessage?(m)
             return
         default:
             return
