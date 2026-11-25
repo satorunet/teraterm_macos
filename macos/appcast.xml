@@ -5,12 +5,12 @@
     <link>https://github.com/satorunet/teraterm_macos</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.5.0</title>
-      <pubDate>Wed, 25 Nov 2026 05:40:49 +0000</pubDate>
-      <sparkle:version>0.5.0</sparkle:version>
-      <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.5.1</title>
+      <pubDate>Wed, 25 Nov 2026 12:58:45 +0000</pubDate>
+      <sparkle:version>0.5.1</sparkle:version>
+      <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v0.5.0</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/satorunet/teraterm_macos/releases/tag/v0.5.1</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -21,33 +21,30 @@ p { margin: 6px 0; }
 code { font: 12px Menlo, monospace; background: #eee; padding: 0 3px; border-radius: 3px; }
 .foot { color: #888; font-size: 11px; }
 </style>
-<p>多言語対応と、Mac 版のマニュアルを入れた大きな更新です。</p>
-<h3>多言語対応</h3>
+<p>タブと窓割りの新機能「TTMado」を入れた更新です。</p>
+<h3>TTMado (タブ・窓割り)</h3>
 <ul>
-<li>画面の文字を 14 言語で表示できるようにしました。最初は macOS の言語設定に合わせて自動で選びます</li>
-<li>言語は [設定] の「UI」タブで切り替えられます</li>
+<li>タブやウィンドウをドラッグして、1 つのウィンドウの中に左右・上下に並べられるようにしました。入る場所は青い枠で前もって見えます</li>
+<li>入れ子の分割、並べ替え、ウィンドウの端まで伸ばす、ウィンドウどうしの合体ができます</li>
+<li>並べた画面には見出しが付き、ドラッグで移す・× で閉じる・右クリックでメニュー、が使えます。上のタブのバーへドラッグするとタブに戻ります</li>
+<li>窓割り中の [新しい接続] [セッションの複製] [ローカルシェル接続] は、「窓内で開く / タブで開く / 新しいウィンドウで開く」を選べます</li>
+<li>窓割りしているウィンドウには、中の画面の数を丸い数字で出します</li>
+<li>[ウィンドウ] の [上下に並べて表示] [左右に並べて表示] は、タブにまとめたウィンドウを窓割りで並べます</li>
+<li>使わないときは、[設定] &gt; [その他の設定...] の新しい [プラグイン] タブで切れます (すぐに効きます)</li>
 </ul>
-<h3>マニュアル</h3>
+<h3>ヘルプ</h3>
 <ul>
-<li>Tera Term の元のマニュアルをもとに、Mac 版のマニュアルとして整理しました。章立てと「前へ/次へ」で読み進められます</li>
-<li>はじめての方向けに、画面の写真付きの「かんたんマニュアル」を付けました</li>
-<li>元の Tera Term のマニュアル (Windows 版) も、ヘルプの画面で切り替えて見られます</li>
-</ul>
-<h3>本家 Tera Term の機能を取り込みました</h3>
-<ul>
-<li>端末: OSC での色の変更、ピクセル単位のマウス報告、ブラケットペーストの設定、Shift+クリックでの選択の拡張、ビジュアルベルの時間</li>
-<li>接続: ISO8859 や CP437 などの 1 バイト文字コード、シリアルの RTS/DTR の操作と自動再接続、接続ダイアログからの接続先の編集、日本語などのドメイン名、プロキシの起動オプション</li>
-<li>ログとマクロ: ログ記録中ダイアログの表示方法、ファイル送信の設定の保存、TERATERM.INI の自動バックアップ、listbox の大きさ変更</li>
-<li>TeraTerm Menu: 接続先ごとの Challenge / Pageant の指定など</li>
+<li>かんたんマニュアルに「1 つのウィンドウに画面を並べる」を写真付きで足しました</li>
+<li>「Mac 版だけの機能」のページを足しました</li>
+<li>ヘルプに「要望・お知らせを送る」を足しました。気づいたことを匿名で開発者に送れます</li>
+<li>かんたんマニュアルの「インストール」のページを「起動と終了、アップデート」にしました</li>
 </ul>
 <h3>そのほか</h3>
 <ul>
-<li>タブでまとめた窓も、「上下に並べて表示」「左右に並べて表示」で窓割りに並ぶようにしました</li>
-<li>ログのダイアログで、書き込みモードなどの選択肢が見えなかった不具合を直しました</li>
-<li>アプリを小さくしました (DMG 約 11.6MB)</li>
+<li>「Windows 版との違い」に、原作著作者 T. Teranishi (寺西 高) 氏を明記しました</li>
 </ul>
 <p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。TeraTerm Project とは関係のない非公式版です。Tera Term の著作者は T. Teranishi (寺西 高) 氏です。</p>]]></description>
-      <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.5.0/TeraTermMac-0.5.0.dmg" sparkle:edSignature="kNSgwysXL+I3plqis+wDY908M76nxtI5QxCSiLpwX6Sgnso5sti8gigdOnsRHeNM+vPD23ojdbrRLFgJoO1VBg==" length="8099601" type="application/octet-stream"/>
+      <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.5.1/TeraTermMac-0.5.1.dmg" sparkle:edSignature="8vIqaaWPvQ2xq6ZB+DNdUEb8sh9ox6x7ak49BPqpw26JEk7JLdQBOVTeY0zMt2f0sGi/W/PfDAw8vMrNXXnWCg==" length="10423236" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
