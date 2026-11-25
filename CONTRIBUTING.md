@@ -3,7 +3,7 @@
 Tera Term Mac は、Tera Term の macOS 版を作る **個人のプロジェクト** です。
 本家の [TeraTerm Project](https://github.com/TeraTermProject/teraterm) とは **別のプロジェクト** で、本家とは関係なく独立して開発しています。
 
-> **現段階では、非公式の個人のフォークプロジェクトです。** 本家 [TeraTermProject/teraterm](https://github.com/TeraTermProject/teraterm) を個人で fork したもので、TeraTerm Project の公認・支援を受けたものではありません。
+> **Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受けた Mac 版のプロジェクトで、Windows 版を開発している TeraTerm Project とは別のチームで開発しています。** ソースは [TeraTermProject/teraterm](https://github.com/TeraTermProject/teraterm) を fork したものです。
 
 **一緒に開発してくれる人を募集しています。** 小さなことでも助かります。
 

@@ -59,7 +59,7 @@ final class CreditsWindowController: NSWindowController {
             s.append(NSAttributedString(string: t + "\n", attributes: [.font: font, .foregroundColor: color, .paragraphStyle: p]))
         }
         add("Tera Term Mac", NSFont.boldSystemFont(ofSize: 17), space: 2)
-        add(Lang.m("MENU_CREDITS_DESCRIPTION", "Tera Term の macOS 版 (非公式)。TeraTerm Project とは関係のない個人の移植です。"), body, secondary)
+        add(Lang.m("MENU_CREDITS_DESCRIPTION", "Tera Term の macOS 版。原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。"), body, secondary)
         // 著作者は Tera Term の作者 (寺西 高 氏)。satorunet は Mac 版の開発者
         add(Lang.m("MENU_CREDITS_AUTHOR", "Tera Term の著作者: T. Teranishi (寺西 高)"), body, secondary, space: 2)
         add(Lang.m("MENU_CREDITS_DEVELOPER", "Tera Term Mac の開発: satorunet (Mac 版で追加したコードは MIT License)"), body, secondary, space: 18)
@@ -133,7 +133,7 @@ final class AboutWindowController: NSWindowController {
             icon,
             label("Tera Term Mac", NSFont.boldSystemFont(ofSize: 16)),
             label(Lang.m("MENU_ABOUT_VERSION", "バージョン %s", version) + (build.isEmpty || build == version ? "" : " (\(build))"), small),
-            label(Lang.m("MENU_ABOUT_SUBTITLE", "Tera Term の macOS 版 (非公式)"), small),
+            label(Lang.m("MENU_ABOUT_SUBTITLE", "Tera Term の macOS 版 (原作者公認)"), small),
             label(Lang.m("MENU_ABOUT_FEATURES", "シリアル・SSH・Telnet・マクロ"), small, .secondaryLabelColor),
             links,
             label(Lang.m("MENU_ABOUT_AUTHOR", "Tera Term の著作者: T. Teranishi (寺西 高)"), small, .secondaryLabelColor),

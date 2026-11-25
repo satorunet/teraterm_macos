@@ -17,10 +17,12 @@ UPSTREAM = 'https://teratermproject.github.io/manual/5/{lang}/'
 
 L = {
     'ja': dict(site='Tera Term Mac', docs='ドキュメント', toc='目次', prev='前へ', next='次へ', other='English',
-               title='Tera Term Mac ドキュメント', search='目次を絞り込む',
+               title='Tera Term Mac ドキュメント', search='目次を絞り込む', ref='マクロコマンド リファレンス', refsearch='コマンドを絞り込む',
+               reflead='TTL マクロで使えるコマンドの一覧です (ABC 順)。マクロの書き方は、目次の「マクロ」の章を見てください。', refcount='{n} 個のコマンド',
                lead='Tera Term Mac の使い方です。はじめての方は「かんたんマニュアル」から読んでください。アプリの [ヘルプ] メニューからも同じものが読めます。'),
     'en': dict(site='Tera Term Mac', docs='Documentation', toc='Contents', prev='Previous', next='Next', other='日本語',
-               title='Tera Term Mac documentation', search='Filter the contents',
+               title='Tera Term Mac documentation', search='Filter the contents', ref='Macro command reference', refsearch='Filter commands',
+               reflead='All commands available in TTL macros, in alphabetical order. For how to write macros, see the "Macros" chapter of the contents.', refcount='{n} commands',
                lead='How to use Tera Term Mac. If you are new, start with the quick guide. The same pages are in the app\'s [Help] menu.'),
 }
 
@@ -59,11 +61,44 @@ def build(site):
                     seen.add(p)
                     order.append(p)
 
-        # 目次
-        groups = []
+        # 目次。マクロのコマンド (数百項目) は別のリファレンスのページにまとめ、目次には 1 行だけ出す
+        REF_GROUPS = ('マクロのコマンド', 'Macro commands')
+        groups, ref_items = [], []
         for i, g in enumerate(toc, 1):
-            lis = ''.join(f'<li><a href="{html.escape(it["p"])}">{html.escape(it["t"])}</a></li>' for it in g['items'])
+            if g['t'] in REF_GROUPS:
+                ref_items = g['items']
+                lis = f'<li><a href="macro-reference.html"><b>{t["ref"]}</b></a> <small>({t["refcount"].format(n=len(ref_items))})</small></li>'
+            else:
+                lis = ''.join(f'<li><a href="{html.escape(it["p"])}">{html.escape(it["t"])}</a></li>' for it in g['items'])
             groups.append(f'<section class="tg"><h2><span>{i}.</span> {html.escape(g["t"])}</h2><ul>{lis}</ul></section>')
+        if ref_items:
+            by = {}
+            for it in sorted(ref_items, key=lambda it: it['t'].lower()):
+                by.setdefault(it['t'][:1].upper(), []).append(it)
+            letters = ''.join(f'<a href="#k-{k}">{k}</a>' for k in by)
+            blocks = ''.join(f'<section class="rk" id="k-{k}"><h2>{k}</h2><ul>' + ''.join(f'<li><a href="{html.escape(it["p"])}"><code>{html.escape(it["t"])}</code></a></li>' for it in v) + '</ul></section>' for k, v in by.items())
+            ref = f'''<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{t['ref']} - Tera Term Mac</title>
+<link rel="icon" href="../../favicon.png">
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body class="ttw-index">
+<nav class="ttw-bar"><a href="../../{'' if lang == 'ja' else 'en/'}">{t['site']}</a> › <a href="index.html">{t['docs']}</a> › <b>{t['ref']}</b><a class="ttw-lang" href="../{'en' if lang == 'ja' else 'ja'}/macro-reference.html">{t['other']}</a></nav>
+<main class="ttw-main">
+<h1>{t['ref']}</h1>
+<p class="ttw-lead">{t['reflead']}</p>
+<input class="ttw-filter" type="search" placeholder="{t['refsearch']}" oninput="var q=this.value.toLowerCase();document.querySelectorAll('.rk li').forEach(function(li){{li.style.display=li.textContent.toLowerCase().indexOf(q)<0?'none':''}});document.querySelectorAll('.rk').forEach(function(s){{s.style.display=[].some.call(s.querySelectorAll('li'),function(li){{return li.style.display!=='none'}})?'':'none'}})">
+<nav class="rk-letters">{letters}</nav>
+<div class="rk-all">{blocks}</div>
+</main>
+</body>
+</html>
+'''
+            open(os.path.join(dst, 'macro-reference.html'), 'w', encoding='utf-8').write(ref)
         index = f'''<!DOCTYPE html>
 <html lang="{lang}">
 <head>
@@ -94,7 +129,7 @@ def build(site):
                     continue
                 p = os.path.join(root, f)
                 rel = os.path.relpath(p, dst).replace(os.sep, '/')
-                if rel in ('index.html', 'modern.html'):
+                if rel in ('index.html', 'modern.html', 'macro-reference.html'):
                     continue
                 s = read_text(p)
                 s = CHARSET.sub(lambda m: m.group(1) + 'utf-8', s)
@@ -116,6 +151,8 @@ def build(site):
                 other = 'en' if lang == 'ja' else 'ja'
                 other_href = f'{up}../{other}/{rel}' if os.path.exists(os.path.join(HELP, other, 'html', rel)) else f'{up}../{other}/'
                 crumb = f'<a href="{up}../../{"" if lang == "ja" else "en/"}">{t["site"]}</a> › <a href="{up}index.html">{t["docs"]}</a>'
+                if ref_items and any(it['p'].split('#')[0] == rel for it in ref_items):
+                    crumb += f' › <a href="{up}macro-reference.html">{t["ref"]}</a>'
                 if rel in title_of:
                     crumb += f' › <span>{html.escape(title_of[rel])}</span>'
                 bar = f'<nav class="ttw-bar">{crumb}<a class="ttw-lang" href="{other_href}">{t["other"]}</a></nav>\n<main class="ttw-main">\n'

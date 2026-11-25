@@ -43,7 +43,7 @@ code { font: 12px Menlo, monospace; background: #eee; padding: 0 3px; border-rad
 <ul>
 <li>「Windows 版との違い」に、原作著作者 T. Teranishi (寺西 高) 氏を明記しました</li>
 </ul>
-<p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。TeraTerm Project とは関係のない非公式版です。Tera Term の著作者は T. Teranishi (寺西 高) 氏です。</p>]]></description>
+<p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。</p>]]></description>
       <enclosure url="https://github.com/satorunet/teraterm_macos/releases/download/v0.5.1/TeraTermMac-0.5.1.dmg" sparkle:edSignature="8vIqaaWPvQ2xq6ZB+DNdUEb8sh9ox6x7ak49BPqpw26JEk7JLdQBOVTeY0zMt2f0sGi/W/PfDAw8vMrNXXnWCg==" length="10423236" type="application/octet-stream"/>
     </item>
   </channel>

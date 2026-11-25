@@ -4,7 +4,7 @@
 
 **Tera Term の macOS 版です。** シリアル通信・SSH・Telnet・TTL マクロ・TeraTerm Menu (接続先ランチャー) が Mac で使えます。
 
-> **非公式版です。** TeraTerm Project とは関係のない個人の移植で、TeraTerm Project の公認・支援を受けたものではありません。不具合や要望は本家ではなく、このリポジトリの Issues へお願いします。
+> **Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受けた Mac 版のプロジェクトで、Windows 版を開発している TeraTerm Project とは別のチームで開発しています。** 不具合や要望は TeraTerm Project ではなく、このリポジトリの Issues へお願いします。
 
 - 公式サイト: **https://teraterm-mac.github.io/**
 - ダウンロード: **[最新版 (クリックでダウンロード)](https://github.com/satorunet/teraterm_macos/releases/latest/download/TeraTermMac.dmg)** — `TeraTermMac.dmg` (過去の版は [Releases](https://github.com/satorunet/teraterm_macos/releases) から)
