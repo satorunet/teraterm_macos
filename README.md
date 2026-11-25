@@ -6,7 +6,7 @@
 
 > **非公式版です。** TeraTerm Project とは関係のない個人の移植で、TeraTerm Project の公認・支援を受けたものではありません。不具合や要望は本家ではなく、このリポジトリの Issues へお願いします。
 
-- ダウンロード: **[最新版 (Releases)](https://github.com/satorunet/teraterm_macos/releases/latest)** — `TeraTermMac-<版>.dmg`
+- ダウンロード: **[最新版 (クリックでダウンロード)](https://github.com/satorunet/teraterm_macos/releases/latest/download/TeraTermMac.dmg)** — `TeraTermMac.dmg` (過去の版は [Releases](https://github.com/satorunet/teraterm_macos/releases) から)
 - 更新情報: 各版で変わったことや更新状況は **[Releases の一覧](https://github.com/satorunet/teraterm_macos/releases)** にまとめています (アプリの「Tera Term Mac について」→「更新情報」からも開けます)
 - ソース: [`macos/`](macos/) (Swift / AppKit)
 - ライセンス: **MIT** ([macos/LICENSE](macos/LICENSE))
@@ -14,7 +14,7 @@
 
 ## インストール
 
-1. Releases から `TeraTermMac-<版>.dmg` をダウンロードして開く
+1. 上の「最新版」から `TeraTermMac.dmg` をダウンロードして開く
 2. 「Tera Term Mac」のアイコンを「アプリケーション」へドラッグ
 
 Apple の公証済みなので、そのまま起動できます。
