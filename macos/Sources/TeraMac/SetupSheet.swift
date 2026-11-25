@@ -412,6 +412,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         updateColorControls()
         updateAnsiControls()
         updateFontLabel()
+        updateSpaceControls()
     }
 
     // MARK: 各タブ
@@ -772,25 +773,66 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             self.spaceTop.stringValue = String(self.s.fontDY)
             self.spaceBottom.stringValue = String(self.s.fontDH - self.s.fontDY)
         }, store: { [unowned self] in
-            let l = Int(self.spaceLeft.stringValue) ?? 0, r = Int(self.spaceRight.stringValue) ?? 0
-            let t = Int(self.spaceTop.stringValue) ?? 0, b = Int(self.spaceBottom.stringValue) ?? 0
+            let v = { (f: NSTextField) in Int(f.stringValue.trimmingCharacters(in: .whitespaces)) ?? 0 }
+            let l = v(self.spaceLeft), r = v(self.spaceRight), t = v(self.spaceTop), b = v(self.spaceBottom)
             (self.s.fontDX, self.s.fontDW, self.s.fontDY, self.s.fontDH) = (l, l + r, t, t + b)
         })
         let fontsDir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Fonts")
         let cross = SetupUI.grid([
-            [NSGridCell.emptyContentView, spaceTop, NSGridCell.emptyContentView],
-            [spaceLeft, SetupUI.label("Aa"), spaceRight],
-            [NSGridCell.emptyContentView, spaceBottom, NSGridCell.emptyContentView],
+            [NSGridCell.emptyContentView, spaceCell(spaceTop), NSGridCell.emptyContentView],
+            [spaceCell(spaceLeft), SetupUI.label("Aa"), spaceCell(spaceRight)],
+            [NSGridCell.emptyContentView, spaceCell(spaceBottom), NSGridCell.emptyContentView],
         ])
         cross.column(at: 1).xPlacement = .center
+        // 「戻す」ボタンは同じ行の右に置き、隠しても場所を空けたままにする (押したときに画面がずれないように)
+        let spaceBox = SetupUI.row([cross, resetSpaceButton], spacing: 16)
+        spaceBox.detachesHiddenViews = false
+        let fontRow = SetupUI.row([fontField, SetupUI.button("選択(&S)...", target: self, action: #selector(chooseFont)), resetFontButton])
+        fontRow.detachesHiddenViews = false
         return SetupUI.column([
             SetupUI.label("VTウィンドウフォント(&V)"),
-            SetupUI.indent(SetupUI.row([fontField, SetupUI.button("選択(&S)...", target: self, action: #selector(chooseFont))])),
-            SetupUI.indent(resetFontButton),
+            SetupUI.indent(fontRow),
             SetupUI.button("フォント設定/フォントフォルダ(\(fontsDir))を開く", target: self, action: #selector(openFontFolder)),
             cb("描画幅に合わせてリサイズしたフォントを描画(&W)", \.drawingResizedFont),
-            SetupUI.box("文字間スペース", cross),
+            SetupUI.box("文字間スペース", spaceBox),
         ], spacing: 10)
+    }
+    // 文字間スペース: 各欄の横の上下ボタンで 1 ずつ変えられる。変えるとその場で端末に映る
+    private var spaceSteppers: [ObjectIdentifier: NSStepper] = [:]
+    private func spaceCell(_ f: NSTextField) -> NSView {
+        f.delegate = self
+        f.alignment = .right
+        let st = NSStepper()
+        st.minValue = -99; st.maxValue = 99; st.increment = 1
+        st.valueWraps = false; st.autorepeat = true
+        st.target = self; st.action = #selector(spaceStepped(_:))
+        spaceSteppers[ObjectIdentifier(f)] = st
+        let row = SetupUI.row([f, st], spacing: 2)
+        return row
+    }
+    private var spaceFields: [NSTextField] { [spaceLeft, spaceRight, spaceTop, spaceBottom] }
+    @objc private func spaceStepped(_ sender: NSStepper) {
+        guard let f = spaceFields.first(where: { spaceSteppers[ObjectIdentifier($0)] === sender }) else { return }
+        f.stringValue = String(sender.integerValue)
+        refresh()
+    }
+    /// 既定の文字間スペース (左, 右, 上, 下)。同梱の TERATERM.INI を重ねた初期値
+    private static let defaultSpace: [Int] = {
+        let t = TermSettings.initial()
+        return [t.fontDX, t.fontDW - t.fontDX, t.fontDY, t.fontDH - t.fontDY]
+    }()
+    private lazy var resetSpaceButton = SetupUI.button(
+        "デフォルト (\(Self.defaultSpace.map(String.init).joined(separator: ", "))) に戻す",
+        target: self, action: #selector(resetSpace))
+    @objc private func resetSpace() {
+        for (f, v) in zip(spaceFields, Self.defaultSpace) { f.stringValue = String(v) }
+        refresh()
+    }
+    private func updateSpaceControls() {
+        let vals = spaceFields.map { Int($0.stringValue.trimmingCharacters(in: .whitespaces)) ?? 0 }
+        for (f, v) in zip(spaceFields, vals) { spaceSteppers[ObjectIdentifier(f)]?.integerValue = v }
+        // 既定と違うときだけ「戻す」ボタンを出す
+        resetSpaceButton.isHidden = vals == Self.defaultSpace
     }
     private func updateFontLabel() {
         fontField.stringValue = "\(s.font.displayName ?? s.fontName), \(Int(s.fontSize))pt"

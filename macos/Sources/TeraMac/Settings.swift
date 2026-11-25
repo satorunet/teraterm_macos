@@ -188,6 +188,9 @@ struct TermSettings {
     private mutating func macOverrides() {
         termType = "xterm-256color"   // TermType=xterm。Mac のターミナルと同じく 256 色を使えるように
         bsSendsDel = true             // BSKey=BS。Mac の delete キーはターミナル.app と同じく DEL を送る
+        title = "Tera Term Mac"       // Title=Tera Term。名称「Tera Term Mac」は許可済み
+        // VTFontSpace=0,0,0,0。Mac では行が詰まって見えるので、行の上に 1 だけ隙間を足す (左,右,上,下 = 0,0,1,0)
+        (fontDX, fontDW, fontDY, fontDH) = (0, 0, 1, 1)
     }
 
     static func load() -> TermSettings {
