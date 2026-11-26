@@ -6,7 +6,7 @@
     <language>ja</language>
     <item>
       <title>Tera Term Mac 0.6.1</title>
-      <pubDate>Thu, 26 Nov 2026 17:21:24 +0000</pubDate>
+      <pubDate>Thu, 26 Nov 2026 17:24:27 +0000</pubDate>
       <sparkle:version>0.6.1</sparkle:version>
       <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
@@ -27,8 +27,8 @@ td.r, th.r { text-align: right; }
 td.c, th.c { text-align: center; }
 .note { color: #888; font-size: 11px; }
 </style>
-<p>0.6.0 の「もっさり感の解消」に続いて、メモリと電池の使い方を見直した更新です。</p>
-<h3>メモリと電池</h3>
+<p>0.6.0 の「もっさり感の解消」に続いて、メモリの使い方を最適化した更新です。何もしていないときの CPU も減らしました。</p>
+<h3>メモリ最適化</h3>
 <table><tr><th>測ったもの</th><th class="r">0.6.0</th><th class="r">0.6.1</th><th class="c"></th></tr><tr><td>履歴 1 万行で増えるメモリ</td><td class="r">約 57MB</td><td class="r"><b>約 17MB</b></td><td class="c">約 1/3</td></tr><tr><td>何もしていないときの CPU (6 ウインドウ)</td><td class="r">2.44%</td><td class="r"><b>0.24%</b></td><td class="c">約 1/10</td></tr><tr><td>23.6 万行 (単語の一覧) を出し終わるまで</td><td class="r">0.47 秒</td><td class="r"><b>約 0.3 秒</b></td><td class="c">約 1.5 倍</td></tr></table>
 <p class="note">測り方: Intel Mac (macOS 12)、ローカルシェル。メモリは大量の出力を 40 回くり返して、増え続けないことも確かめました</p>
 <ul>
