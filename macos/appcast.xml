@@ -5,12 +5,12 @@
     <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.5.1</title>
-      <pubDate>Wed, 25 Nov 2026 12:58:45 +0000</pubDate>
-      <sparkle:version>0.5.1</sparkle:version>
-      <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.6.0</title>
+      <pubDate>Thu, 26 Nov 2026 14:00:59 +0000</pubDate>
+      <sparkle:version>0.6.0</sparkle:version>
+      <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.5.1</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.6.0</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -21,30 +21,36 @@ p { margin: 6px 0; }
 code { font: 12px Menlo, monospace; background: #eee; padding: 0 3px; border-radius: 3px; }
 .foot { color: #888; font-size: 11px; }
 </style>
-<p>タブと窓割りの新機能「TTMado」を入れた更新です。</p>
-<h3>TTMado (タブ・窓割り)</h3>
+<p>「もっさり感」をなくした更新です。キーを打ってから文字が出るまでが約 15 分の 1 に、大量の出力は約 4〜5 倍速くなりました。</p>
+<h3>もっさり感の解消 (高速化)</h3>
 <ul>
-<li>タブやウィンドウをドラッグして、1 つのウィンドウの中に左右・上下に並べられるようにしました。入る場所は青い枠で前もって見えます</li>
-<li>入れ子の分割、並べ替え、ウィンドウの端まで伸ばす、ウィンドウどうしの合体ができます</li>
-<li>並べた画面には見出しが付き、ドラッグで移す・× で閉じる・右クリックでメニュー、が使えます。上のタブのバーへドラッグするとタブに戻ります</li>
-<li>窓割り中の [新しい接続] [セッションの複製] [ローカルシェル接続] は、「窓内で開く / タブで開く / 新しいウィンドウで開く」を選べます</li>
-<li>窓割りしているウィンドウには、中の画面の数を丸い数字で出します</li>
-<li>[ウィンドウ] の [上下に並べて表示] [左右に並べて表示] は、タブにまとめたウィンドウを窓割りで並べます</li>
-<li>使わないときは、[設定] &gt; [その他の設定...] の新しい [プラグイン] タブで切れます (すぐに効きます)</li>
+<li>キーを押してから文字が出るまで: 36ms → 2.3ms (中央値。最大 45ms → 9.6ms)</li>
+<li>Enter で 1 行スクロールして出るまで: 4.8ms (中央値)</li>
+<li>20 万行 (seq 1 200000) を出し終わるまで: 2.1 秒 → 0.5 秒</li>
+<li>23.6 万行 (単語の一覧) を出し終わるまで: 2.4 秒 → 0.47 秒</li>
+<li>測り方: Intel Mac (macOS 12)、ローカルシェル、アプリの中でキー入力を 20 回送って計測</li>
+<li>中身: 文字を打つたびの全体の描き直しをやめた / 変わった行だけ描く / スクロールで流れた行の入れ物を使い回す / 届いた文字をまとめて処理する / 同じ書式の文字はまとめて描く</li>
 </ul>
-<h3>ヘルプ</h3>
+<h3>要望・お知らせを送る</h3>
 <ul>
-<li>かんたんマニュアルに「1 つのウィンドウに画面を並べる」を写真付きで足しました</li>
-<li>「Mac 版だけの機能」のページを足しました</li>
-<li>ヘルプに「要望・お知らせを送る」を足しました。気づいたことを匿名で開発者に送れます</li>
-<li>かんたんマニュアルの「インストール」のページを「起動と終了、アップデート」にしました</li>
+<li>LINE 風のトーク画面にしました。送るとロボットの「てらたーむくん」がすぐお返事します。何度でも続けて送れます</li>
+<li>選んだ種類 (要望・不具合・その他) がメッセージに付きます</li>
+<li>[ヘルプ] に「GitHub の Issues で報告する…」を足しました (返事がほしいとき用)</li>
+</ul>
+<h3>接続</h3>
+<ul>
+<li>SSH でつながらなかったとき、理由 (認証の失敗・接続の拒否・時間切れなど) をダイアログに出すようにしました</li>
+<li>[新しい接続] のホストの候補に、TeraTerm Menu に登録した接続先 (★) も出るようにしました。選ぶとユーザー名や鍵も入ります</li>
+<li>ユーザー名・パスワード・ホスト・ポートなどの欄に入ると、入力が自動で英数字になります</li>
+<li>端末に入ったとき、「かな」入力になっていても英数字に切り替えます</li>
+<li>TeraTerm Menu で新しい接続先を作るとき、ユーザー名に Mac のユーザー名を勝手に入れないようにしました</li>
 </ul>
 <h3>そのほか</h3>
 <ul>
-<li>「Windows 版との違い」に、原作著作者 T. Teranishi (寺西 高) 氏を明記しました</li>
+<li>[設定] の表示タブの色見本が、ダークモードだと見にくかった不具合を直しました</li>
 </ul>
 <p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。</p>]]></description>
-      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.5.1/TeraTermMac-0.5.1.dmg" sparkle:edSignature="8vIqaaWPvQ2xq6ZB+DNdUEb8sh9ox6x7ak49BPqpw26JEk7JLdQBOVTeY0zMt2f0sGi/W/PfDAw8vMrNXXnWCg==" length="10423236" type="application/octet-stream"/>
+      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.6.0/TeraTermMac-0.6.0.dmg" sparkle:edSignature="4I2mDUh25O1KjPiZAvIzCSwZA0RyOS6h8aeaRKPCvIALnlxS34KARtIbkX6ZCY0n/Xp3VOGHnQfT7IbexDpcBw==" length="10543602" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
