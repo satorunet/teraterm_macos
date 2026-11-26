@@ -6,7 +6,7 @@
     <language>ja</language>
     <item>
       <title>Tera Term Mac 0.6.0</title>
-      <pubDate>Thu, 26 Nov 2026 14:00:59 +0000</pubDate>
+      <pubDate>Thu, 26 Nov 2026 14:09:03 +0000</pubDate>
       <sparkle:version>0.6.0</sparkle:version>
       <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
@@ -20,16 +20,21 @@ li { margin: 2px 0; }
 p { margin: 6px 0; }
 code { font: 12px Menlo, monospace; background: #eee; padding: 0 3px; border-radius: 3px; }
 .foot { color: #888; font-size: 11px; }
+table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+th, td { border: 1px solid rgba(128,128,128,.35); padding: 3px 8px; }
+th { background: rgba(128,128,128,.12); }
+td.r, th.r { text-align: right; }
+td.c, th.c { text-align: center; }
+.note { color: #888; font-size: 11px; }
 </style>
 <p>「もっさり感」をなくした更新です。キーを打ってから文字が出るまでが約 15 分の 1 に、大量の出力は約 4〜5 倍速くなりました。</p>
 <h3>もっさり感の解消 (高速化)</h3>
+<table><tr><th>測ったもの</th><th class="r">0.5.1</th><th class="r">0.6.0</th><th class="c"></th></tr><tr><td>キーを押してから文字が出るまで (中央値)</td><td class="r">36ms</td><td class="r"><b>2.3ms</b></td><td class="c">約 15 倍</td></tr><tr><td>同・最大</td><td class="r">45ms</td><td class="r"><b>9.6ms</b></td><td class="c">約 4.7 倍</td></tr><tr><td>Enter で 1 行スクロールして出るまで (中央値)</td><td class="r">—</td><td class="r"><b>4.8ms</b></td><td class="c"></td></tr><tr><td>20 万行 (seq 1 200000) を出し終わるまで</td><td class="r">2.1 秒</td><td class="r"><b>0.5 秒</b></td><td class="c">約 4 倍</td></tr><tr><td>23.6 万行 (単語の一覧) を出し終わるまで</td><td class="r">2.4 秒</td><td class="r"><b>0.47 秒</b></td><td class="c">約 5 倍</td></tr></table>
+<p class="note">測り方: Intel Mac (macOS 12)、ローカルシェル。アプリの中でキー入力を 20 回送って計測</p>
 <ul>
-<li>キーを押してから文字が出るまで: 36ms → 2.3ms (中央値。最大 45ms → 9.6ms)</li>
-<li>Enter で 1 行スクロールして出るまで: 4.8ms (中央値)</li>
-<li>20 万行 (seq 1 200000) を出し終わるまで: 2.1 秒 → 0.5 秒</li>
-<li>23.6 万行 (単語の一覧) を出し終わるまで: 2.4 秒 → 0.47 秒</li>
-<li>測り方: Intel Mac (macOS 12)、ローカルシェル、アプリの中でキー入力を 20 回送って計測</li>
-<li>中身: 文字を打つたびの全体の描き直しをやめた / 変わった行だけ描く / スクロールで流れた行の入れ物を使い回す / 届いた文字をまとめて処理する / 同じ書式の文字はまとめて描く</li>
+<li>キーを打つたびに画面全体を描き直していたのをやめ、変わった行だけ描くようにしました</li>
+<li>スクロールで流れた行の入れ物を使い回し、届いた文字はまとめて処理するようにしました</li>
+<li>同じ色・書式の文字は 1 回でまとめて描くようにしました</li>
 </ul>
 <h3>要望・お知らせを送る</h3>
 <ul>

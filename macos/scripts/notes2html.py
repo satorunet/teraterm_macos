@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # リリースノート (GitHub Releases と同じ Markdown) を、更新の画面 (Sparkle) に出す HTML にする
 #   python3 scripts/notes2html.py notes.md > notes.html
-# 使えるのは、段落・**見出し**・「- 」の箇条書き・`コード`・**太字** だけ (リリースノートで使うもの)
+# 使えるのは、段落・**見出し**・「- 」の箇条書き・| 表 |・`コード`・**太字** だけ (リリースノートで使うもの)
 import html
 import re
 import sys
@@ -15,6 +15,12 @@ li { margin: 2px 0; }
 p { margin: 6px 0; }
 code { font: 12px Menlo, monospace; background: #eee; padding: 0 3px; border-radius: 3px; }
 .foot { color: #888; font-size: 11px; }
+table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+th, td { border: 1px solid rgba(128,128,128,.35); padding: 3px 8px; }
+th { background: rgba(128,128,128,.12); }
+td.r, th.r { text-align: right; }
+td.c, th.c { text-align: center; }
+.note { color: #888; font-size: 11px; }
 </style>"""
 
 
@@ -26,10 +32,36 @@ def inline(s: str) -> str:
     return s
 
 
+def cells(line: str) -> list:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
 def convert(md: str) -> str:
     out, in_list = [STYLE], False
-    for line in md.splitlines():
+    table, aligns = None, []
+    for line in md.splitlines() + [""]:
         line = line.rstrip()
+        # 表: | 見出し | ... | の次に |---|--:| の行
+        if line.startswith("|"):
+            if in_list:
+                out.append("</ul>"); in_list = False
+            cs = cells(line)
+            if table is None:
+                table = [cs]
+            elif len(table) == 1 and all(re.fullmatch(r":?-+:?", c) for c in cs if c):
+                aligns = ["c" if c.startswith(":") and c.endswith(":") else "r" if c.endswith(":") else "" for c in cs]
+            else:
+                table.append(cs)
+            continue
+        if table is not None:
+            def row(cs, tag):
+                return "<tr>" + "".join(f'<{tag}{" class=" + chr(34) + (aligns[i] if i < len(aligns) else "") + chr(34) if i < len(aligns) and aligns[i] else ""}>{inline(c)}</{tag}>' for i, c in enumerate(cs)) + "</tr>"
+            out.append("<table>" + row(table[0], "th") + "".join(row(r, "td") for r in table[1:]) + "</table>")
+            table, aligns = None, []
+        m = re.fullmatch(r"\*([^*].*[^*])\*", line)
+        if m:
+            out.append(f'<p class="note">{inline(m.group(1))}</p>')
+            continue
         if line.startswith("🤖"):          # Claude Code の行は更新の画面には出さない
             continue
         if line.startswith("- "):
