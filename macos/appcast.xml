@@ -5,12 +5,12 @@
     <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.6.0</title>
-      <pubDate>Thu, 26 Nov 2026 14:09:03 +0000</pubDate>
-      <sparkle:version>0.6.0</sparkle:version>
-      <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.6.1</title>
+      <pubDate>Thu, 26 Nov 2026 17:21:24 +0000</pubDate>
+      <sparkle:version>0.6.1</sparkle:version>
+      <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.6.0</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.6.1</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -27,35 +27,26 @@ td.r, th.r { text-align: right; }
 td.c, th.c { text-align: center; }
 .note { color: #888; font-size: 11px; }
 </style>
-<p>「もっさり感」をなくした更新です。キーを打ってから文字が出るまでが約 15 分の 1 に、大量の出力は約 4〜5 倍速くなりました。</p>
-<h3>もっさり感の解消 (高速化)</h3>
-<table><tr><th>測ったもの</th><th class="r">0.5.1</th><th class="r">0.6.0</th><th class="c"></th></tr><tr><td>キーを押してから文字が出るまで (中央値)</td><td class="r">36ms</td><td class="r"><b>2.3ms</b></td><td class="c">約 15 倍</td></tr><tr><td>同・最大</td><td class="r">45ms</td><td class="r"><b>9.6ms</b></td><td class="c">約 4.7 倍</td></tr><tr><td>Enter で 1 行スクロールして出るまで (中央値)</td><td class="r">—</td><td class="r"><b>4.8ms</b></td><td class="c"></td></tr><tr><td>20 万行 (seq 1 200000) を出し終わるまで</td><td class="r">2.1 秒</td><td class="r"><b>0.5 秒</b></td><td class="c">約 4 倍</td></tr><tr><td>23.6 万行 (単語の一覧) を出し終わるまで</td><td class="r">2.4 秒</td><td class="r"><b>0.47 秒</b></td><td class="c">約 5 倍</td></tr></table>
-<p class="note">測り方: Intel Mac (macOS 12)、ローカルシェル。アプリの中でキー入力を 20 回送って計測</p>
+<p>0.6.0 の「もっさり感の解消」に続いて、メモリと電池の使い方を見直した更新です。</p>
+<h3>メモリと電池</h3>
+<table><tr><th>測ったもの</th><th class="r">0.6.0</th><th class="r">0.6.1</th><th class="c"></th></tr><tr><td>履歴 1 万行で増えるメモリ</td><td class="r">約 57MB</td><td class="r"><b>約 17MB</b></td><td class="c">約 1/3</td></tr><tr><td>何もしていないときの CPU (6 ウインドウ)</td><td class="r">2.44%</td><td class="r"><b>0.24%</b></td><td class="c">約 1/10</td></tr><tr><td>23.6 万行 (単語の一覧) を出し終わるまで</td><td class="r">0.47 秒</td><td class="r"><b>約 0.3 秒</b></td><td class="c">約 1.5 倍</td></tr></table>
+<p class="note">測り方: Intel Mac (macOS 12)、ローカルシェル。メモリは大量の出力を 40 回くり返して、増え続けないことも確かめました</p>
 <ul>
-<li>キーを打つたびに画面全体を描き直していたのをやめ、変わった行だけ描くようにしました</li>
-<li>スクロールで流れた行の入れ物を使い回し、届いた文字はまとめて処理するようにしました</li>
-<li>同じ色・書式の文字は 1 回でまとめて描くようにしました</li>
+<li>画面の 1 文字分の持ち方を詰めました (40 バイト → 16 バイト)</li>
+<li>さかのぼって見る履歴は、行末の空白を持たないようにしました</li>
+<li>カーソルの点滅は、いま操作しているウインドウだけにしました。後ろのウインドウはカーソルを点けたままにします</li>
 </ul>
 <h3>要望・お知らせを送る</h3>
 <ul>
-<li>LINE 風のトーク画面にしました。送るとロボットの「てらたーむくん」がすぐお返事します。何度でも続けて送れます</li>
-<li>選んだ種類 (要望・不具合・その他) がメッセージに付きます</li>
-<li>[ヘルプ] に「GitHub の Issues で報告する…」を足しました (返事がほしいとき用)</li>
+<li>ターミナル風の画面にしました。送ると「てらたーむくん」がすぐお返事します</li>
 </ul>
-<h3>接続</h3>
+<h3>TTMado (タブ・窓割り)</h3>
 <ul>
-<li>SSH でつながらなかったとき、理由 (認証の失敗・接続の拒否・時間切れなど) をダイアログに出すようにしました</li>
-<li>[新しい接続] のホストの候補に、TeraTerm Menu に登録した接続先 (★) も出るようにしました。選ぶとユーザー名や鍵も入ります</li>
-<li>ユーザー名・パスワード・ホスト・ポートなどの欄に入ると、入力が自動で英数字になります</li>
-<li>端末に入ったとき、「かな」入力になっていても英数字に切り替えます</li>
-<li>TeraTerm Menu で新しい接続先を作るとき、ユーザー名に Mac のユーザー名を勝手に入れないようにしました</li>
-</ul>
-<h3>そのほか</h3>
-<ul>
-<li>[設定] の表示タブの色見本が、ダークモードだと見にくかった不具合を直しました</li>
+<li>窓割りの画面をウインドウの外へドラッグすると、タブを引き出したときと同じように半透明の写しが付いてくるようにしました</li>
+<li>タブを窓割りに入れるとき、画面が一瞬消えることがあったのを直しました</li>
 </ul>
 <p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。</p>]]></description>
-      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.6.0/TeraTermMac-0.6.0.dmg" sparkle:edSignature="4I2mDUh25O1KjPiZAvIzCSwZA0RyOS6h8aeaRKPCvIALnlxS34KARtIbkX6ZCY0n/Xp3VOGHnQfT7IbexDpcBw==" length="10543602" type="application/octet-stream"/>
+      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.6.1/TeraTermMac-0.6.1.dmg" sparkle:edSignature="3q8jSa5RVHW3+k83/VeKrxxEroJSJ4bSf3l4d3ye69gFPWXf/ZnVTRT+1pd9wzM/wnp48UzgpmxP5oE1fbu5DQ==" length="10576760" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
