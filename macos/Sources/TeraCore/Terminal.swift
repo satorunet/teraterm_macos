@@ -286,7 +286,7 @@ public final class Terminal {
     public private(set) var rows: Int
     public private(set) var lines: [Line]
     private var savedMainLines: [Line]?
-    public private(set) var scrollback: [Line] = []
+    public private(set) var scrollback = LineBuffer()
     public var scrollbackLimit = 10000
     /// 画面から押し出された行の通算数 (選択範囲の位置合わせに使う)
     public private(set) var scrolledOutTotal = 0
@@ -614,17 +614,17 @@ public final class Terminal {
             // (狭めても右側が消えず、広げ直すと元に戻る)。代替画面はアプリが描き直すので切り詰めるだけ
             let before = scrollback.count
             if usingAlt, let m = savedMainLines {
-                var all = scrollback; scrollback = []; savedMainLines = nil
+                var all = scrollback.array; scrollback = []; savedMainLines = nil
                 all.append(contentsOf: m)
                 let r = reflow(&all, screenStart: before, cursorX: saved.cx, cursorY: saved.cy, pending: saved.wrapPending, newCols: nc)
-                scrollback = r.scrollback; savedMainLines = r.screen
+                scrollback = LineBuffer(r.scrollback); savedMainLines = r.screen
                 saved.cx = r.cx; saved.cy = r.cy; saved.wrapPending = r.pending
                 for i in lines.indices { fit(&lines[i]) }
             } else {
-                var all = scrollback; scrollback = []
+                var all = scrollback.array; scrollback = []
                 all.append(contentsOf: lines); lines = []
                 let r = reflow(&all, screenStart: before, cursorX: cx, cursorY: cy, pending: wrapPending, newCols: nc)
-                scrollback = r.scrollback; lines = r.screen
+                scrollback = LineBuffer(r.scrollback); lines = r.screen
                 cx = r.cx; cy = r.cy; keepPending = r.pending
             }
             scrolledOutTotal += scrollback.count - before
@@ -820,6 +820,8 @@ public final class Terminal {
 
     private func macroOut(_ v: UInt32) {
         guard onMacroText != nil else { return }
+        // 速くするため: ふつうの ASCII はそのまま
+        if v < 0x80 && v != 0x0D && v != 0x0A { macroCRHold = false; macroBuf.append(UInt8(v)); return }
         switch v {
         case 0x0D:
             macroCRHold = true
@@ -1056,7 +1058,7 @@ public final class Terminal {
         var special = cs == .dec && (0x5F...0x7E).contains(sc.value)
         switch decSpecialMapping {
         case .unicodeToDec:
-            if !special, unicodeToDecSpMask != 0, let cset = Terminal.unicodeToDecSp[sc.value],
+            if !special, sc.value >= 0x80, unicodeToDecSpMask != 0, let cset = Terminal.unicodeToDecSp[sc.value],
                Int(cset >> 8) & unicodeToDecSpMask != 0 {
                 special = true
                 sc = Unicode.Scalar(UInt8(cset & 0xFF))
@@ -1074,7 +1076,7 @@ public final class Terminal {
 
         // 特殊フォントの文字はいつも半角
         // UnicodeAmbiguousWidth / 絵文字幅の設定は受信が UTF-8 のときだけ使う (#1127, termCharWidth 内で判断)
-        let w = special ? 1 : termCharWidth(sc, ambiguousWide: ambiguousWide,
+        let w = special ? 1 : sc.value < 0x7F ? 1 : termCharWidth(sc, ambiguousWide: ambiguousWide,
                                             emojiWidth: emojiWidthOverride, kanjiCode: receiveEncoding)
         if w == 0 {
             // 直前の文字にくっつける
@@ -1128,12 +1130,28 @@ public final class Terminal {
         if c.width == 2 && x + 1 < cols { lines[y].cells[x + 1] = blankCell() }
     }
 
-    private func pushScrollback(_ l: Line) {
-        scrollback.append(l)
+    /// 画面の上から流れた行をスクロールバックへ。追い出された (または残さない) 行を返す: 空行の入れ物に使い回す
+    @discardableResult private func pushScrollback(_ l: Line) -> Line? {
         scrolledOutTotal += 1
-        if scrollback.count > scrollbackLimit {
-            scrollback.removeFirst(scrollback.count - scrollbackLimit)
+        if scrollbackLimit <= 0 {
+            if !scrollback.isEmpty { scrollback.removeAll() }
+            return l
         }
+        if scrollback.count > scrollbackLimit { scrollback.removeFirst(scrollback.count - scrollbackLimit) }
+        if scrollback.count == scrollbackLimit { return scrollback.appendEvicting(l) }
+        scrollback.append(l)
+        return nil
+    }
+
+    /// 使い終わった行を空行にして返す (幅が違えば新しく作る)
+    private func blankLine(reusing old: inout Line?) -> Line {
+        // old を空にしてから書き換える (参照が 1 つだけになり、複製せずにその場で書ける)
+        guard var l = old, l.cells.count == cols else { old = nil; return Line(cols: cols, attr: attr) }
+        old = nil
+        var c = Cell(); c.attr.bg = attr.bg
+        l.cells.withUnsafeMutableBufferPointer { b in for i in b.indices { b[i] = c } }
+        l.wrapped = false
+        return l
     }
 
     private func lineFeed() {
@@ -1158,8 +1176,8 @@ public final class Terminal {
         let n = min(n, scrollBottom - scrollTop + 1)
         for _ in 0..<n {
             let l = lines.remove(at: scrollTop)
-            if scrollTop == 0 && !usingAlt { pushScrollback(l) }
-            lines.insert(Line(cols: cols, attr: attr), at: scrollBottom)
+            var spare = scrollTop == 0 && !usingAlt ? pushScrollback(l) : l
+            lines.insert(blankLine(reusing: &spare), at: scrollBottom)
         }
     }
 

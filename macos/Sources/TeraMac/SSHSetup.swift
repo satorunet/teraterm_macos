@@ -529,7 +529,7 @@ final class SSHAuthSetupDialog: SheetDialog {
     private let noUser = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_NO_USERNAME", "入力しない(&D)"))
     private let defUser = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_DEFAULT_USERNAME", "デフォルトユーザ名を使用(&S):"))
     private let logonUser = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_LOGON_USERNAME", "ログオンユーザ名を使用(&E):"))
-    private let userField = SetupUI.field(width: 180)
+    private let userField = SetupUI.field(width: 180).ascii()
     private let mPassword = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD_PASSWORD", "プレインパスワードを使う(&L)"))
     private let mKey = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD_RSA", "&RSA/DSA/ECDSA/ED25519鍵を使う"))
     private let mChallenge = SetupUI.radio("SSH2:" + Lang.t("TTSSH", "DLG_AUTH_METHOD_CHALLENGE2", "キーボードインタラクティブ認証を使う"))
@@ -677,9 +677,9 @@ final class ForwardEditDialog: SheetDialog {
     private let rLocal = SetupUI.radio(Lang.t("TTSSH", "DLG_FWD_LOCAL_PORT", "ローカルのポート(&L)"))
     private let rRemote = SetupUI.radio(Lang.t("TTSSH", "DLG_FWD_REMOTE_PORT", "リモートサーバのポート(&R)"))
     private let rDynamic = SetupUI.radio(Lang.t("TTSSH", "DLG_FWD_DYNAMIC_PORT", "ダイナミックポート(&D)"))
-    private let lPort = SetupUI.field(width: 70), lListen = SetupUI.field(width: 110), lHost = SetupUI.field(width: 150), lHostPort = SetupUI.field(width: 70)
-    private let rPort = SetupUI.field(width: 70), rListen = SetupUI.field(width: 110), rHost = SetupUI.field(width: 150), rHostPort = SetupUI.field(width: 70)
-    private let dPort = SetupUI.field(width: 70), dListen = SetupUI.field(width: 110)
+    private let lPort = SetupUI.field(width: 70).ascii(), lListen = SetupUI.field(width: 110).ascii(), lHost = SetupUI.field(width: 150).ascii(), lHostPort = SetupUI.field(width: 70).ascii()
+    private let rPort = SetupUI.field(width: 70).ascii(), rListen = SetupUI.field(width: 110).ascii(), rHost = SetupUI.field(width: 150).ascii(), rHostPort = SetupUI.field(width: 70).ascii()
+    private let dPort = SetupUI.field(width: 70).ascii(), dListen = SetupUI.field(width: 110).ascii()
 
     init(spec: ForwardSpec) { self.spec = spec; super.init() }
 
@@ -871,9 +871,9 @@ final class ProxySetupDialog: SheetDialog, NSTextFieldDelegate {
     private var s = ProxySettings.load()
     private let urlField = SetupUI.field(width: 300)
     private let typePopup = SetupUI.popup([Lang.t("TTProxy", "MSG_TYPE_NONE", "プロキシを使用しない"), "HTTP", "TELNET", "SOCKS4", "SOCKS5"])
-    private let hostField = SetupUI.field(width: 220)
-    private let portField = SetupUI.field(width: 70)
-    private let userField = SetupUI.field(width: 160)
+    private let hostField = SetupUI.field(width: 220).ascii()
+    private let portField = SetupUI.field(width: 70).ascii()
+    private let userField = SetupUI.field(width: 160).ascii()
     private let passField = SetupUI.secure(width: 160)
 
     func begin(on w: NSWindow) {

@@ -13,6 +13,8 @@
 public func termCharWidth(_ s: Unicode.Scalar, ambiguousWide: Bool = false, emojiWidth: Int? = nil,
                           kanjiCode: TermEncoding = .utf8) -> Int {
     let v = s.value
+    // 速くするため: 表示できる ASCII はいつも半角
+    if v >= 0x20 && v < 0x7F { return 1 }
     // 結合文字
     if v == 0x200D { return 0 }   // ゼロ幅接合子 (ZWJ)
     switch unicodeCombiningType(v) {

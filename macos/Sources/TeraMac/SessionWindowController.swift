@@ -493,12 +493,15 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         c.onClose = { [weak self, weak c] msg in
             guard let self = self, c === self.conn else { return }
             let wasConnecting = self.connecting
+            // ssh 自身が失敗して終わった (認証失敗など): 何か出力があって「接続中」でなくなっていても、接続できなかった扱いで理由を出す
+            let sshFailed = (c as? PTYConnection)?.sshFailed == true
             self.connected = false
             self.connecting = false
             self.conn = nil
             self.transferConnectionLost()
-            self.notice(msg.map { wasConnecting ? $0 : Lang.m("MENU_DISCONNECTED_REASON", "切断されました: %s", $0) } ?? Lang.m("MENU_DISCONNECTED", "切断されました"))
-            if wasConnecting && !quiet, let m = msg, let w = self.presentingWindow {
+            if sshFailed, let pc = c as? PTYConnection { self.notice(pc.sshFailSummary) } else
+            { self.notice(msg.map { wasConnecting ? $0 : Lang.m("MENU_DISCONNECTED_REASON", "切断されました: %s", $0) } ?? Lang.m("MENU_DISCONNECTED", "切断されました")) }
+            if (wasConnecting || sshFailed) && !quiet, let m = msg, let w = self.presentingWindow {
                 // cv.NoMsg (マクロの connect) のときは出さない
                 let a = NSAlert()
                 a.messageText = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした")
@@ -510,7 +513,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             // AutoComPortReconnect: USB シリアルを抜いた → 戻ったら開き直す (vtwin.cpp SerialReconnect)
             if case .serial(let p) = spec, msg != nil, !wasConnecting, !self.closedByMenu { self.serialReconnect.portClosed(p) }
             // 相手から切られた: TCP/IP で AutoWinClose ならウインドウを閉じる (接続できなかったときは閉じない)
-            if !wasConnecting && !self.closedByMenu { self.afterConnectionClosed() }
+            if !wasConnecting && !sshFailed && !self.closedByMenu { self.afterConnectionClosed() }
             self.closedByMenu = false
         }
         c.onConnected = { [weak self, weak c] in
@@ -596,7 +599,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         term.onMacroText = nil
         defer { term.onMacroText = saved }
         let prefix = term.cx == 0 ? "" : "\r\n"
-        term.feed(prefix + "\u{1B}[0;36m[\(s)]\u{1B}[0m\r\n")
+        let one = s.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+        term.feed(prefix + "\u{1B}[0;36m[\(one)]\u{1B}[0m\r\n")
         termView.dataArrived()
     }
 

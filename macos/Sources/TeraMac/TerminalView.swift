@@ -118,7 +118,12 @@ final class TerminalView: NSView, NSTextInputClient {
     /// SelectOnActivate: ウインドウを選んだクリックで文字の選択を始めるか (vtwin.cpp OnMouseActivate)
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { settings.selectOnActivate }
 
-    override func becomeFirstResponder() -> Bool { focused = true; blinkOn = true; needsDisplay = true; onFocus?(); return true }
+    override func becomeFirstResponder() -> Bool {
+        focused = true; blinkOn = true; needsDisplay = true; onFocus?()
+        // 端末に入ったら「かな」でも英数字モードにする (変換中でなければ)
+        if marked == nil { AsciiInput.switchToAlphanumeric() }
+        return true
+    }
     override func resignFirstResponder() -> Bool { focused = false; needsDisplay = true; return true }
 
     private func startBlink() {
@@ -251,9 +256,16 @@ final class TerminalView: NSView, NSTextInputClient {
 
     // MARK: - 表示更新
 
+    /// 前に描くよう頼んだときの画面 (変わった行だけ描き直すための比較用)
+    private var shownRows: [[Cell]] = []
+    private var shownCursor = (x: -1, y: -1)
+    private var shownReverse = false
+
     func dataArrived() {
+        if TerminalView.latencyLog && latencyT0 > 0 && latencyData == 0 { latencyData = CFAbsoluteTimeGetCurrent() }
         let delta = max(0, term.scrolledOutTotal - lastScrolledOut)
         lastScrolledOut = term.scrolledOutTotal
+        let oldOffset = scrollOffset
         if scrollOffset != 0 {
             if settings.autoScrollOnlyInBottomLine {
                 // 一番下を見ているときだけ自動でスクロールする: さかのぼって見ている行をそのまま見せる
@@ -264,7 +276,36 @@ final class TerminalView: NSView, NSTextInputClient {
             }
         }
         blinkOn = true
-        needsDisplay = true
+        invalidateChangedRows(fullIf: delta > 0 || oldOffset != scrollOffset)
+    }
+
+    /// 変わった行 (とカーソルの行) だけ描き直しを頼む。スクロールしたときや色の切り替えなどは全体
+    private func invalidateChangedRows(fullIf full: Bool) {
+        let first = firstLineIndex
+        var rows: [[Cell]] = []
+        rows.reserveCapacity(term.rows)
+        for r in 0..<term.rows {
+            let li = first + r
+            rows.append(li >= 0 && li < term.totalLines ? term.line(at: li).cells : [])
+        }
+        let reverse = term.reverseScreen
+        let cursor = (x: term.cx, y: term.cy + scrollOffset)
+        defer { shownRows = rows; shownCursor = cursor; shownReverse = reverse }
+        if full || shownRows.count != rows.count || reverse != shownReverse || !term.colorOverrides.isEmpty || marked != nil || bgSpec != nil {
+            needsDisplay = true
+            return
+        }
+        var dirty = Set<Int>()
+        for r in 0..<rows.count where rows[r] != shownRows[r] {
+            // URL の色付けは前後の行 (折り返し) にまたがるので、となりも描く
+            dirty.insert(r); if r > 0 { dirty.insert(r - 1) }; if r + 1 < rows.count { dirty.insert(r + 1) }
+        }
+        if cursor.y >= 0 && cursor.y < rows.count { dirty.insert(cursor.y) }
+        if shownCursor.y >= 0 && shownCursor.y < rows.count { dirty.insert(shownCursor.y) }
+        for r in dirty {
+            // 上下の余白・はみ出し (太字・斜体) のぶん少し広めに
+            setNeedsDisplay(NSRect(x: 0, y: pad + CGFloat(r) * cellH - 1, width: bounds.width, height: cellH + 2))
+        }
     }
 
     private var firstLineIndex: Int { term.totalLines - term.rows - scrollOffset }
@@ -473,6 +514,13 @@ final class TerminalView: NSView, NSTextInputClient {
         let screenRev = term.reverseScreen != bellInverted
         let defaultBG = screenRev ? settings.fg : settings.bg
         let bgDrawn = drawBackgroundImage(dirtyRect)
+        defer {
+            if TerminalView.latencyLog && latencyT0 > 0 && latencyData > 0 {
+                let n = CFAbsoluteTimeGetCurrent()
+                latencyResults.append((data: (latencyData - latencyT0) * 1000, drawn: (n - latencyT0) * 1000))
+                latencyT0 = 0; latencyData = 0
+            }
+        }
         let spec = bgDrawn ? bgSpec : nil
         if !bgDrawn {
             defaultBG.setFill()
@@ -498,12 +546,20 @@ final class TerminalView: NSView, NSTextInputClient {
             // 同じ見た目の半角 ASCII はまとめて描く
             var run = ""
             var runX = 0
+            var runLen = 0
             var runAttrs: [NSAttributedString.Key: Any] = [:]
+            // 速くするため: 書式の辞書を毎回作って比べず、見た目の鍵 (フォント・色・下線・取り消し線) で比べる
+            var runKey: (font: Int, fg: NSColor, underline: Bool, strike: Bool)? = nil
+            // 同じ属性が続くあいだは色を計算し直さない
+            var memoAttr: CellAttr? = nil, memoSel = false, memoURL = false
+            var memoColors: (NSColor, NSColor, Bool) = (.black, .black, false)
             func flush() {
                 if !run.isEmpty {
                     (run as NSString).draw(at: NSPoint(x: pad + CGFloat(runX) * cellW + textDX, y: y + textDY), withAttributes: runAttrs)
                     run = ""
                 }
+                runLen = 0
+                runKey = nil
             }
             while x < line.cells.count {
                 let cell = line.cells[x]
@@ -511,7 +567,12 @@ final class TerminalView: NSView, NSTextInputClient {
                 let w = Int(cell.width)
                 let a = cell.attr
                 let isURL = urls.contains(x)
-                var (fg, bg, rev) = drawColors(a, selected: isSelected(global, x, sel), url: isURL)
+                let selNow = isSelected(global, x, sel)
+                if memoAttr != a || memoSel != selNow || memoURL != isURL {
+                    memoColors = drawColors(a, selected: selNow, url: isURL)
+                    memoAttr = a; memoSel = selNow; memoURL = isURL
+                }
+                var (fg, bg, rev) = memoColors
                 if a.dim { fg = fg.withAlphaComponent(0.6) }
                 if a.invisible { fg = bg }
                 if let spec = spec {
@@ -527,22 +588,34 @@ final class TerminalView: NSView, NSTextInputClient {
                 }
                 // 下線: UnderlineAttrFont (下線属性) / URLUnderline (URL)
                 let underline = (settings.underlineAttrFont && a.underline) || (settings.urlUnderline && isURL)
-                if cell.ch != " " {
-                    var attrs: [NSAttributedString.Key: Any] = [
-                        .font: a.bold && settings.enableBold ? (a.italic ? boldItalicFont : boldFont) : (a.italic ? italicFont : font),
-                        .foregroundColor: fg,
-                    ]
-                    if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-                    if a.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                if cell.ch == " " && w == 1 && !underline && !a.strike && runKey != nil && runX + runLen == x {
+                    // 下線などのない空白は、続いている文字の並びに入れて 1 回で描く (空白は何も描かない)
+                    run.append(" "); runLen += 1
+                } else if cell.ch != " " {
+                    let fontIndex = a.bold && settings.enableBold ? (a.italic ? 3 : 1) : (a.italic ? 2 : 0)
+                    func makeAttrs() -> [NSAttributedString.Key: Any] {
+                        var attrs: [NSAttributedString.Key: Any] = [
+                            .font: [font, boldFont, italicFont, boldItalicFont][fontIndex],
+                            .foregroundColor: fg,
+                        ]
+                        if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                        if a.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                        return attrs
+                    }
                     let isAscii = cell.ch.unicodeScalars.count == 1 && cell.ch.unicodeScalars.first!.value < 0x7F
                     if isAscii && w == 1 && !a.decSpecial {
-                        if abs(kern) > 0.01 { attrs[.kern] = kern }
-                        if run.isEmpty || !NSDictionary(dictionary: runAttrs).isEqual(to: attrs) || runX + run.count != x {
+                        if let k = runKey, k.font == fontIndex, k.fg == fg, k.underline == underline, k.strike == a.strike, runX + runLen == x {
+                            // 同じ見た目が続いている
+                        } else {
                             flush()
+                            var attrs = makeAttrs()
+                            if abs(kern) > 0.01 { attrs[.kern] = kern }
                             runX = x; runAttrs = attrs
+                            runKey = (fontIndex, fg, underline, a.strike)
                         }
-                        run.append(cell.ch)
+                        run.append(cell.ch); runLen += 1
                     } else {
+                        let attrs = makeAttrs()
                         flush()
                         drawSingle(cell.ch, x: x, y: y, width: w, attrs: attrs)
                     }
@@ -691,7 +764,14 @@ final class TerminalView: NSView, NSTextInputClient {
 
     // MARK: - キー入力 (keyboard.c KeyDown)
 
+    static let latencyLog = ProcessInfo.processInfo.environment["TERAMAC_LATENCY"] != nil || ProcessInfo.processInfo.environment["TERAMAC_LATENCY_TEST"] != nil
+    var latencyT0: CFAbsoluteTime = 0
+    var latencyData: CFAbsoluteTime = 0
+    var latencyResults: [(data: Double, drawn: Double)] = []
+    var latencySent: [Double] = []
+    func latencyMarkSent() { if TerminalView.latencyLog && latencyT0 > 0 && latencySent.count <= latencyResults.count { latencySent.append((CFAbsoluteTimeGetCurrent() - latencyT0) * 1000) } }
     override func keyDown(with event: NSEvent) {
+        if TerminalView.latencyLog { latencyT0 = CFAbsoluteTimeGetCurrent(); latencyData = 0 }
         if !keyboardEnabled { NSSound.beep(); return }
         NSCursor.setHiddenUntilMouseMoves(true)
         if hasMarkedText() {
@@ -989,9 +1069,10 @@ final class TerminalView: NSView, NSTextInputClient {
 
     func insertText(_ string: Any, replacementRange: NSRange) {
         let s = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
-        marked = nil
-        needsDisplay = true
+        // 変換中の文字があったときだけ描き直す (ふつうのキーで毎回全体を描くと、返ってきた文字を描くのが 1 回遅れる)
+        if marked != nil { marked = nil; needsDisplay = true }
         guard !s.isEmpty, !TerminalView.isFunctionKeyText(s) else { return }
+        latencyMarkSent()
         clearSelection()
         scrollToBottom()
         onSendText?(s)

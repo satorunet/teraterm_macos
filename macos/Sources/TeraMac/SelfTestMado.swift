@@ -266,4 +266,54 @@ extension SelfTest {
         let rep = NSBitmapImageRep(cgImage: cut)
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
+
+    /// TERAMAC_MADOSNAP=hero: ウェブサイトの最初の写真 (hero.png)。ふつうの 1 つのウインドウ (ウィンドウ内のメニューバー付き) に
+    /// 例の SSH の画面を出し、その上に「新しい接続」のダイアログを重ねて 1 枚に写す
+    static func heroShot(dir: String) {
+        guideDefaults()
+        let d = UserDefaults.standard
+        var a = d.volatileDomain(forName: UserDefaults.argumentDomain)
+        a["PopupMenu"] = false   // ウィンドウ内のメニューバーを出す (引数のドメインだけ。保存しない)
+        d.setVolatileDomain(a, forName: UserDefaults.argumentDomain)
+        NSApp.activate(ignoringOtherApps: true)
+        let c = SessionWindowController()
+        showAlone(c)
+        guard let w = c.window else { exit(1) }
+        w.setFrame(NSRect(x: 120, y: 120, width: 1000, height: 620), display: true)
+        let esc = "\u{1B}"
+        let p = "\(esc)[1;32muser@server1\(esc)[0m:\(esc)[1;34m~\(esc)[0m$ "
+        let text = "Welcome to Ubuntu 24.04 LTS (GNU/Linux 6.8.0 x86_64)\r\n\r\n"
+            + "Last login: Tue Nov 25 09:58:41 2026 from 192.0.2.10\r\n"
+            + p + "ls -l\r\n"
+            + "total 24\r\n"
+            + "drwxr-xr-x 2 user user 4096 Nov 25 09:12 \(esc)[1;34mbackup\(esc)[0m\r\n"
+            + "-rw-r--r-- 1 user user  812 Nov 25 09:30 config.yml\r\n"
+            + "drwxr-xr-x 5 user user 4096 Nov 24 18:02 \(esc)[1;34mlogs\(esc)[0m\r\n"
+            + "-rwxr-xr-x 1 user user 2310 Nov 20 11:45 \(esc)[1;32mdeploy.sh\(esc)[0m\r\n"
+            + "-rw-r--r-- 1 user user  157 Nov 18 08:00 README.md\r\n"
+            + p + "uptime\r\n"
+            + " 10:42:07 up 12 days,  3:14,  1 user,  load average: 0.08, 0.12, 0.10\r\n"
+            + p
+        soon(0.6) {
+            feed(c, text)
+            let title = "server1 - Tera Term Mac VT"
+            w.title = title
+            w.tab.title = title
+            let dlg = ConnectDialog()
+            // シートだと端末が暗くなるので、端末の上に重ねた別のウインドウで出す (端末がよく見えるように)
+            dlg.presentsAsWindow = true
+            dlg.begin(on: w) { _, _ in }
+            dlg.debugGuideFill(serial: false, host: "server1.example.com")
+            // 端末の文字が見えるように、右下に寄せる
+            let f = dlg.panel.frame
+            dlg.panel.setFrameOrigin(NSPoint(x: w.frame.maxX - f.width - 28, y: w.frame.minY + 24))
+            if dlg.panel.title.isEmpty { dlg.panel.title = Lang.t("Tera Term", "DLG_HOST_TITLE", "Tera Term: 新しい接続") }
+            soon(1.0) {
+                w.title = title
+                snapWindows([CGWindowID(dlg.panel.windowNumber), CGWindowID(w.windowNumber)], dir + "/hero.png")
+                dlg.cancel()
+                soon(0.3) { exit(0) }
+            }
+        }
+    }
 }

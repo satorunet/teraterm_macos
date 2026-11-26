@@ -165,9 +165,15 @@ final class PTYConnection: Connection {
     private var master: Int32 = -1
     private var pid: pid_t = 0
     private var source: DispatchSourceRead?
-    private let queue = DispatchQueue(label: "pty.read")
+    private let queue = DispatchQueue(label: "pty.read", qos: .userInteractive)
     private var initialSize: winsize
     private var closed = false
+    /// 最後に出た文字 (ssh が失敗して終わったとき、理由の行を拾う)
+    private var tail: [UInt8] = []
+    /// ssh 自身が失敗して終わった (終了コード 255)。認証失敗なども含む
+    private(set) var sshFailed = false
+    /// 端末に出す 1 行の理由 (ssh のエラー行は ssh 自身がもう端末に出している)
+    private(set) var sshFailSummary = ""
     /// HOME_CHDIR: ホームディレクトリで始める (false ならアプリのいまのフォルダのまま)
     var chdirHome = true
 
@@ -217,24 +223,54 @@ final class PTYConnection: Connection {
         src.resume()
     }
 
+    /// 読む側のバッファ (毎回 64KB を確保して 0 で埋めない)
+    private var readBuf = [UInt8](repeating: 0, count: 65536)
+    /// メインスレッドに渡す前にためておく分。渡す処理がまだ走っていなければ 1 回だけ頼む
+    private var pending: [UInt8] = []
+    private var deliverScheduled = false
+    private let pendingLock = NSLock()
+
     private func readAvailable() {
-        var buf = [UInt8](repeating: 0, count: 65536)
-        let n = read(master, &buf, buf.count)
-        if n > 0 {
-            let chunk = Array(buf[0..<n])
-            DispatchQueue.main.async {
-                if self.waitsForConnection && !self.reportedReady {
-                    let head = String(decoding: chunk.prefix(5), as: UTF8.self)
-                    if head != "ssh: " {
-                        self.reportedReady = true
-                        self.onConnected?()
-                    }
-                }
-                self.onData?(chunk)
-            }
-        } else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
-            finish()
+        // 出せるだけまとめて読む (pty は 1 回に 1KB 程度しか返さないので、そのつどメインへ渡すと遅い)
+        var got: [UInt8] = []
+        var eof = false
+        while true {
+            let n = readBuf.withUnsafeMutableBytes { read(master, $0.baseAddress, $0.count) }
+            if n > 0 { got.append(contentsOf: readBuf[0..<n]); if got.count >= 1 << 20 { break } }
+            else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) { eof = true; break }
+            else if errno == EINTR { continue }
+            else { break }
         }
+        if !got.isEmpty {
+            pendingLock.lock()
+            pending.append(contentsOf: got)
+            let schedule = !deliverScheduled
+            deliverScheduled = true
+            pendingLock.unlock()
+            if schedule { DispatchQueue.main.async { self.deliver() } }
+        }
+        if eof { finish() }
+    }
+
+    private func deliver() {
+        pendingLock.lock()
+        let chunk = pending
+        pending = []
+        deliverScheduled = false
+        pendingLock.unlock()
+        guard !chunk.isEmpty else { return }
+        if waitsForConnection && !reportedReady {
+            let head = String(decoding: chunk.prefix(5), as: UTF8.self)
+            if head != "ssh: " {
+                reportedReady = true
+                onConnected?()
+            }
+        }
+        if waitsForConnection {
+            tail.append(contentsOf: chunk.suffix(4096))
+            if tail.count > 4096 { tail.removeFirst(tail.count - 4096) }
+        }
+        onData?(chunk)
     }
 
     private func finish() {
@@ -245,10 +281,59 @@ final class PTYConnection: Connection {
         let code = (status >> 8) & 0xFF
         DispatchQueue.main.async {
             guard !self.closed else { return }
+            self.deliver()
             self.closed = true
             if self.master >= 0 { Darwin.close(self.master); self.master = -1 }
+            if code == 255 && self.waitsForConnection {
+                self.sshFailed = true
+                let hint = PTYConnection.sshHint(self.tail)
+                self.sshFailSummary = Lang.m("MENU_CONNECT_FAILED", "接続できませんでした") + ": "
+                    + (hint.isEmpty ? "ssh " + Lang.m("CONN_EXIT_CODE", "終了コード %d", code) : hint)
+                self.onClose?(PTYConnection.sshReason(self.tail, code: code))
+                return
+            }
             self.onClose?(code == 0 ? nil : Lang.m("CONN_EXIT_CODE", "終了コード %d", code))
         }
+    }
+
+    /// ssh の最後のエラー行 + わかりやすい説明
+    static func sshLastLine(_ out: [UInt8]) -> String {
+        var text = String(decoding: out, as: UTF8.self)
+        if let re = try? NSRegularExpression(pattern: "\u{1B}\\[[0-9;?]*[A-Za-z]") {
+            text = re.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        let lines = text.components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.lowercased().hasSuffix("password:") && !$0.hasPrefix("Warning: Permanently added") }
+        return lines.last ?? ""
+    }
+
+    static func sshHint(_ out: [UInt8]) -> String {
+        let l = sshLastLine(out).lowercased()
+        var hint = ""
+        if l.contains("permission denied") || l.contains("too many authentication failures") {
+            hint = Lang.m("SSH_FAIL_AUTH", "認証に失敗しました。ユーザー名・パスワード・鍵を確かめてください。")
+        } else if l.contains("connection refused") {
+            hint = Lang.m("SSH_FAIL_REFUSED", "相手が接続を拒否しました。ポート番号や、相手で SSH が動いているかを確かめてください。")
+        } else if l.contains("timed out") {
+            hint = Lang.m("SSH_FAIL_TIMEOUT", "時間内に応答がありませんでした。アドレス・ネットワーク・ファイアウォールを確かめてください。")
+        } else if l.contains("could not resolve hostname") {
+            hint = Lang.m("SSH_FAIL_RESOLVE", "ホスト名が見つかりませんでした。")
+        } else if l.contains("host key verification failed") || l.contains("remote host identification has changed") {
+            hint = Lang.m("SSH_FAIL_HOSTKEY", "ホスト鍵の確認に失敗しました (~/.ssh/known_hosts と違います)。")
+        } else if l.contains("no route to host") || l.contains("network is unreachable") {
+            hint = Lang.m("SSH_FAIL_ROUTE", "相手まで届きません。ネットワークを確かめてください。")
+        } else if l.contains("connection closed") || l.contains("connection reset") {
+            hint = Lang.m("SSH_FAIL_CLOSED", "相手に接続を切られました。")
+        }
+        return hint
+    }
+
+    static func sshReason(_ out: [UInt8], code: Int32) -> String {
+        let last = sshLastLine(out), hint = sshHint(out)
+        let codeText = Lang.m("CONN_EXIT_CODE", "終了コード %d", code)
+        if last.isEmpty { return hint.isEmpty ? "ssh: " + codeText : hint + "\n(ssh " + codeText + ")" }
+        return (hint.isEmpty ? "" : hint + "\n\n") + last + "\n(ssh " + codeText + ")"
     }
 
     func write(_ bytes: [UInt8]) {

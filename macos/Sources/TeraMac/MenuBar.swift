@@ -166,6 +166,7 @@ enum MenuBar {
             item(tt("MENU_HELP_INDEX", "目次"), #selector(AppDelegate.openHelpIndex(_:))),
             // Mac 版だけ: 匿名の要望・お知らせボックス (FeedbackPanel)
             item(Lang.m("FEEDBACK_MENU", "要望・お知らせを送る…"), #selector(AppDelegate.openFeedback(_:))),
+            item(Lang.m("FEEDBACK_ISSUES_MENU", "GitHub の Issues で報告する…"), #selector(AppDelegate.openIssues(_:))),
             .separator(),
             // TTProxy・TTSSH が「Tera Termについて」の前に入れる項目
             item(proxy("MENU_ABOUT", "TTProxyについて..."), #selector(AppDelegate.showAboutTTProxy(_:))),

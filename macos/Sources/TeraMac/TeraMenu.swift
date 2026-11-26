@@ -568,12 +568,12 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
     private let outline = NSOutlineView()
     private let folderLabel = NSTextField(labelWithString: "")
     private let nameField = NSTextField()
-    private let hostField = NSTextField()
+    private let hostField = NSTextField().ascii()
     private let loginRadio = NSButton(radioButtonWithTitle: Lang.t("TTMenu", "DLG_CONFIG_AUTO", "自動ログイン"), target: nil, action: nil)
     private let macroRadio = NSButton(radioButtonWithTitle: Lang.t("TTMenu", "DLG_CONFIG_MACRO", "マクロファイル指定"), target: nil, action: nil)
     private let directRadio = NSButton(radioButtonWithTitle: Lang.t("TTMenu", "DLG_CONFIG_LAUNCH", "起動のみ"), target: nil, action: nil)
     private let userCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_USER", "ユーザー名"), target: nil, action: nil)
-    private let userField = NSTextField()
+    private let userField = NSTextField().ascii()
     private let passCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_PASS", "パスワード"), target: nil, action: nil)
     private let passField = NSSecureTextField()
     private let sshCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_SSH", "SSH を使う"), target: nil, action: nil)
@@ -918,7 +918,6 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
     private func clearForm(in folder: MenuNode? = nil) {
         targetFolder = folder
         var e = MenuEntry()
-        e.user = NSUserName()
         fillForm(e)
         outline.deselectAll(nil)
         targetFolder = folder
@@ -951,7 +950,6 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             // フォルダを選んだら、そのフォルダに新しい接続先を作る入力にする
             targetFolder = n
             var e = MenuEntry()
-            e.user = NSUserName()
             fillForm(e)
             return
         }

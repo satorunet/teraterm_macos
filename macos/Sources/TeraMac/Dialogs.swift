@@ -118,12 +118,12 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     private let serialRadio = NSButton(radioButtonWithTitle: Lang.t("TTSSH", "DLG_HOST_SERIAL", "シリアル"), target: nil, action: nil)
     private let shellRadio = NSButton(radioButtonWithTitle: Lang.m("CONN_LOCAL_SHELL_RADIO", "ローカルシェル (このMacのターミナル)"), target: nil, action: nil)
 
-    private let hostBox = NSComboBox()
+    private let hostBox = NSComboBox().ascii()
     private let sshRadio = NSButton(radioButtonWithTitle: "SSH", target: nil, action: nil)
     private let telnetRadio = NSButton(radioButtonWithTitle: "Telnet", target: nil, action: nil)
     private let otherRadio = NSButton(radioButtonWithTitle: Lang.m("CONN_OTHER_RAW_TCP", "その他 (生TCP)"), target: nil, action: nil)
-    private let portField = field("22", width: 70)
-    private let userField = field(ConnHistory.lastUser, width: 160)
+    private let portField = field("22", width: 70).ascii()
+    private let userField = field(ConnHistory.lastUser, width: 160).ascii()
     private let passField: NSSecureTextField = {
         let f = NSSecureTextField(string: "")
         f.translatesAutoresizingMaskIntoConstraints = false
@@ -241,14 +241,29 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     }
 
     /// ttxssh.c SetHostDropdown: ホストリストの最後に "<Edit host list...>" (選ぶとホストリストの編集。5.3)
+    /// Mac 版で足したもの (本家の動きはそのまま): ドロップダウンの先頭に TeraTerm Menu (TTMenu) に登録した接続先 (★) を出し、
+    /// 最後に "<Edit host list...>" と並べて TTMenu の接続先の編集を開く項目を置く
     private static let editHostListItem = "<Edit host list...>"
+    private static var editMenuItem: String { "<" + Lang.m("CONN_EDIT_TTMENU", "TTMenu の接続先を編集...") + ">" }
+    /// ドロップダウンに出している TTMenu の接続先 (先頭から順に)
+    private var menuEntries: [MenuEntry] = []
+    private static func menuTitle(_ e: MenuEntry) -> String {
+        let h = e.host.trimmingCharacters(in: .whitespaces)
+        let n = e.name.trimmingCharacters(in: .whitespaces)
+        let target = (e.useSSH && e.useUser && !e.user.isEmpty ? e.user + "@" : "") + h
+        return "★ " + (n.isEmpty || n == h ? target : "\(n)  (\(target))")
+    }
     private func setHostDropdown() {
         hostBox.removeAllItems()
+        menuEntries = MenuStore.shared.entries.filter { !$0.host.trimmingCharacters(in: .whitespaces).isEmpty }
+        hostBox.addItems(withObjectValues: menuEntries.map(Self.menuTitle))
         hostBox.addItems(withObjectValues: ConnHistory.hosts)
         hostBox.addItem(withObjectValue: Self.editHostListItem)
+        hostBox.addItem(withObjectValue: Self.editMenuItem)
     }
     /// "<Edit host list...>" を選ぶ前の入力 (編集から戻ったら元に戻す)
     private var hostBeforeEdit = ""
+    private var menuObserver: NSObjectProtocol?
 
     /// ttxssh.c OpenEditHistory: 編集したらドロップダウンを作り直し、一番最初を選ぶ
     private func openEditHistory() {
@@ -263,6 +278,46 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         d.begin(on: panel)
     }
 
+    /// Mac 版: TTMenu の接続先の編集 (別のウィンドウ) を開く。保存したらドロップダウンを作り直す (入力はそのまま)
+    private func openMenuEditor() {
+        hostBox.stringValue = hostBeforeEdit
+        if menuObserver == nil {
+            menuObserver = NotificationCenter.default.addObserver(forName: MenuStore.changed, object: nil, queue: .main) { [weak self] _ in
+                guard let self = self else { return }
+                let v = self.hostBox.stringValue
+                self.setHostDropdown()
+                self.hostBox.stringValue = v
+            }
+        }
+        TeraMenuController.shared.showEditor(nil)
+    }
+
+    /// TTMenu の接続先を選んだ: ホスト・ポート・ユーザー・鍵・パスワード (キーチェーン) を欄に入れる
+    private func fill(from e: MenuEntry) {
+        guard let s = e.spec(withUser: true) else { hostBox.stringValue = e.host; return }
+        telnetBinary = TTCommandLine.parse(e.commandLine(withUser: true)).telBin == true
+        tcpRadio.state = .on; serialRadio.state = .off; shellRadio.state = .off
+        switch s {
+        case .ssh(let h, let p, let u, let k):
+            hostBox.stringValue = h; portField.stringValue = String(p)
+            userField.stringValue = u.isEmpty ? userField.stringValue : u
+            keyField.stringValue = k
+            let pw = e.usePassword ? (Keychain.get(e.id) ?? e.optionPassword ?? "") : (e.optionPassword ?? "")
+            passField.stringValue = e.sshAuth == "pageant" ? "" : pw
+            sshRadio.state = .on; telnetRadio.state = .off; otherRadio.state = .off
+        case .telnet(let h, let p):
+            hostBox.stringValue = h; portField.stringValue = String(p)
+            telnetRadio.state = .on; sshRadio.state = .off; otherRadio.state = .off
+        case .rawTCP(let h, let p):
+            hostBox.stringValue = h; portField.stringValue = String(p)
+            otherRadio.state = .on; sshRadio.state = .off; telnetRadio.state = .off
+        default:
+            hostBox.stringValue = e.host
+        }
+        modeChanged()
+        serviceChanged()
+    }
+
     func comboBoxWillPopUp(_ notification: Notification) { hostBeforeEdit = hostBox.stringValue }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -272,8 +327,19 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     func comboBoxSelectionDidChange(_ notification: Notification) {
         // 履歴の "user@host:port /telnet" を各欄に戻す
         if hostBox.indexOfSelectedItem == hostBox.numberOfItems - 1,
+           (hostBox.objectValueOfSelectedItem as? String) == Self.editMenuItem {
+            DispatchQueue.main.async { self.openMenuEditor() }
+            return
+        }
+        if hostBox.indexOfSelectedItem == hostBox.numberOfItems - 2,
            (hostBox.objectValueOfSelectedItem as? String) == Self.editHostListItem {
             DispatchQueue.main.async { self.openEditHistory() }
+            return
+        }
+        let i = hostBox.indexOfSelectedItem
+        if i >= 0 && i < menuEntries.count {
+            let e = menuEntries[i]
+            DispatchQueue.main.async { self.fill(from: e) }
             return
         }
         DispatchQueue.main.async {
@@ -404,6 +470,8 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
         close()
         completion?(nil, nil)
     }
+
+    deinit { if let o = menuObserver { NotificationCenter.default.removeObserver(o) } }
 }
 
 // 端末の設定は SetupSheet.swift (Tera Term: その他の設定)
@@ -412,7 +480,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
 
 extension ConnectDialog {
     /// 例の値 (example.com / user、USB シリアルの例) を入れる。保存はしない
-    func debugGuideFill(serial: Bool) {
+    func debugGuideFill(serial: Bool, host: String = "example.com") {
         tcpRadio.state = serial ? .off : .on
         serialRadio.state = serial ? .on : .off
         shellRadio.state = .off
@@ -423,7 +491,7 @@ extension ConnectDialog {
             modeChanged()
             for v in serialViews { (v as? NSControl)?.isEnabled = true }
         } else {
-            hostBox.stringValue = "example.com"
+            hostBox.stringValue = host
             sshRadio.state = .on; telnetRadio.state = .off; otherRadio.state = .off
             portField.stringValue = "22"
             userField.stringValue = "user"

@@ -612,6 +612,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         bind(boldCheckVisual, \.enableBold)
         ansiPopup.target = self; ansiPopup.action = #selector(ansiSelected)
         for f in [ansiR, ansiG, ansiB] { f.delegate = self; f.target = self; f.action = #selector(ansiEdited) }
+        // addsetting.cpp OnCtlColor(IDC_SAMPLE_COLOR): 背景は透明 (ダイアログの地の色) で、選んだ色の文字を描く。
+        // Windows のダイアログの地は明るいので、ダークモードでも明るい地にそろえる
+        ansiSample.appearance = NSAppearance(named: .aqua)
         ansiSample.drawsBackground = true
         ansiSample.isBezeled = true
         custom(load: { [unowned self] in self.ansiWork = self.s.ansi16 ?? Array(Palette.colors.prefix(16)); self.ansiSelected() },
@@ -656,10 +659,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private func updateAnsiControls() {
         let i = max(0, ansiPopup.indexOfSelectedItem)
         guard i < ansiWork.count else { return }
-        ansiSample.backgroundColor = bgColorForSample
+        ansiSample.backgroundColor = .windowBackgroundColor
         ansiSample.textColor = ansiWork[i]
     }
-    private var bgColorForSample: NSColor { workColors.first?.bg ?? s.bg }
 
     // ログ (log_pp.cpp)
     private let logBinaryCheck = SetupUI.check(Lang.t("Tera Term", "DLG_FOPT_BINARY", "バイナリ(&R)"))
@@ -1260,7 +1262,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
     // シリアルポート (serial_pp.cpp)
     private let portPopup = NSPopUpButton()
-    private let baudCombo = NSComboBox()
+    private let baudCombo = NSComboBox().ascii()
     private let dataPopup = SetupUI.popup(["7 bit", "8 bit"])
     private let parityPopup = SetupUI.popup(["none", "odd", "even", "mark", "space"])
     private let stopPopup = SetupUI.popup(["1 bit", "2 bit"])

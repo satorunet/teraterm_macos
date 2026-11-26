@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openedByFile = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        AsciiInput.install()
         AppUpdater.shared.start()
         buildMenu()
         // TTMado (タブ・窓割り): 入のときだけ、タブの Shift+クリック・タブやウインドウのドラッグを見張る (TTMado/)
@@ -32,6 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             try? out.joined(separator: "\n").write(toFile: path + ".out.txt", atomically: true, encoding: .utf8)
             exit(0)
+        }
+        if let png = ProcessInfo.processInfo.environment["TERAMAC_FEEDBACKSNAP"] {
+            FeedbackPanel.debugSnap(png)
+            return
+        }
+        if let out = ProcessInfo.processInfo.environment["TERAMAC_LATENCY_TEST"] {
+            SelfTest.latency(out: out)
+            return
         }
         if let dir = ProcessInfo.processInfo.environment["TERAMAC_SNAPSHOT"] {
             SelfTest.run(dir: dir)
@@ -223,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openFeedback(_ sender: Any?) { FeedbackPanel.show() }
+    @objc func openIssues(_ sender: Any?) { Feedback.openIssue(message: "") }
 
     // 端末のウインドウがないときのメニュー
     @objc func newConnectionMenu(_ sender: Any?) { newWindow(sender) }
@@ -562,6 +572,7 @@ enum SelfTest {
         // TERAMAC_GUIDESNAP: かんたんマニュアルの画面写真 (SelfTestGuide.swift)
         if ProcessInfo.processInfo.environment["TERAMAC_GUIDESNAP"] != nil { guide(dir: dir); return }
         // TERAMAC_MADOSNAP: かんたんマニュアルの窓割り (TTMado) の写真 (SelfTestMado.swift)
+        if ProcessInfo.processInfo.environment["TERAMAC_MADOSNAP"] == "hero" { heroShot(dir: dir); return }
         if ProcessInfo.processInfo.environment["TERAMAC_MADOSNAP"] != nil { madoGuide(dir: dir); return }
         let c = SessionWindowController()
         c.showWindow(nil)
