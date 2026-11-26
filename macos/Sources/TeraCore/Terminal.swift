@@ -9,27 +9,68 @@ public enum TColor: Equatable {
 public struct CellAttr: Equatable {
     public var fg: TColor = .def
     public var bg: TColor = .def
-    public var bold = false
-    public var dim = false
-    public var italic = false
-    public var underline = false
-    public var blink = false
-    public var reverse = false
-    public var invisible = false
-    public var strike = false
+    /// 太字などはビットで持つ (1 文字分を小さくして、メモリと複製の手間を減らす)
+    private var flags: UInt16 = 0
+    @inline(__always) private func bit(_ b: UInt16) -> Bool { flags & b != 0 }
+    @inline(__always) private mutating func set(_ b: UInt16, _ v: Bool) { if v { flags |= b } else { flags &= ~b } }
+    public var bold: Bool { get { bit(1) } set { set(1, newValue) } }
+    public var dim: Bool { get { bit(2) } set { set(2, newValue) } }
+    public var italic: Bool { get { bit(4) } set { set(4, newValue) } }
+    public var underline: Bool { get { bit(8) } set { set(8, newValue) } }
+    public var blink: Bool { get { bit(16) } set { set(16, newValue) } }
+    public var reverse: Bool { get { bit(32) } set { set(32, newValue) } }
+    public var invisible: Bool { get { bit(64) } set { set(64, newValue) } }
+    public var strike: Bool { get { bit(128) } set { set(128, newValue) } }
     /// DEC Special Graphics の文字 (Tera Term の AttrSpecial)。ch には同じ形の Unicode 文字が入り、幅はいつも 1
-    public var decSpecial = false
+    public var decSpecial: Bool { get { bit(256) } set { set(256, newValue) } }
     public init() {}
 }
 
+/// 1 つの Unicode スカラーでない文字 (結合文字つきなど) の置き場。Cell には番号だけ入れる
+enum ClusterTable {
+    private static var list: [Character] = []
+    private static var index: [Character: UInt32] = [:]
+    private static let lock = NSLock()
+    static func id(_ c: Character) -> UInt32 {
+        lock.lock(); defer { lock.unlock() }
+        if let i = index[c] { return i }
+        let i = UInt32(list.count)
+        list.append(c); index[c] = i
+        return i
+    }
+    static func char(_ i: UInt32) -> Character {
+        lock.lock(); defer { lock.unlock() }
+        return Int(i) < list.count ? list[Int(i)] : " "
+    }
+}
+
 public struct Cell: Equatable {
-    public var ch: Character = " "
+    /// 文字: ふつうは Unicode スカラーの値そのもの。最上位ビットが立っていたら ClusterTable の番号
+    private var code: UInt32 = 0x20
     public var attr = CellAttr()
     /// 1 = 半角, 2 = 全角の左半分, 0 = 全角の右半分
     public var width: UInt8 = 1
+    private static let clusterBit: UInt32 = 0x8000_0000
+
+    public var ch: Character {
+        get {
+            if code & Cell.clusterBit != 0 { return ClusterTable.char(code & ~Cell.clusterBit) }
+            return Character(Unicode.Scalar(code) ?? " ")
+        }
+        set {
+            let u = newValue.unicodeScalars
+            if u.count == 1, let f = u.first { code = f.value } else { code = Cell.clusterBit | ClusterTable.id(newValue) }
+        }
+    }
+    /// 1 つのスカラーの文字ならその値 (速い判定用)
+    public var scalarValue: UInt32? { code & Cell.clusterBit == 0 ? code : nil }
+
     public init() {}
     public init(ch: Character, attr: CellAttr, width: UInt8) {
-        self.ch = ch; self.attr = attr; self.width = width
+        self.attr = attr; self.width = width; self.ch = ch
+    }
+    public init(scalar: Unicode.Scalar, attr: CellAttr, width: UInt8) {
+        self.code = scalar.value; self.attr = attr; self.width = width
     }
 }
 
@@ -524,7 +565,12 @@ public final class Terminal {
 
     /// 0 = スクロールバックの一番古い行
     public func line(at index: Int) -> Line {
-        if index < scrollback.count { return scrollback[index] }
+        if index < scrollback.count {
+            // 履歴の行は行末の空白を切り詰めて持っているので、画面の幅まで空白で戻して渡す
+            var l = scrollback[index]
+            if l.cells.count < cols { l.cells.append(contentsOf: repeatElement(Cell(), count: cols - l.cells.count)) }
+            return l
+        }
         return lines[index - scrollback.count]
     }
 
@@ -1112,7 +1158,7 @@ public final class Terminal {
         if w == 2 { clearWide(cy, cx + 1) }
         var a = attr
         a.decSpecial = special
-        lines[cy].cells[cx] = Cell(ch: Character(sc), attr: a, width: UInt8(w))
+        lines[cy].cells[cx] = Cell(scalar: sc, attr: a, width: UInt8(w))
         if w == 2 { lines[cy].cells[cx + 1] = Cell(ch: " ", attr: attr, width: 0) }
         lastChar = sc
         cx += w
@@ -1138,9 +1184,41 @@ public final class Terminal {
             return l
         }
         if scrollback.count > scrollbackLimit { scrollback.removeFirst(scrollback.count - scrollbackLimit) }
-        if scrollback.count == scrollbackLimit { return scrollback.appendEvicting(l) }
-        scrollback.append(l)
-        return nil
+        // 行末の色なしの空白は持たない (メモリを減らす)。折り返して続く行は空白も中身なのでそのまま。
+        // 切り詰めた写しを履歴に入れ、元の行 (画面の幅) は空行の入れ物として使い回す
+        var len = l.cells.count
+        if !l.wrapped {
+            l.cells.withUnsafeBufferPointer { b in
+                let blank = Cell()
+                while len > 0 && b[len - 1] == blank { len -= 1 }
+            }
+        }
+        let trim = l.cells.count - len >= 8
+        if !trim {
+            if scrollback.count == scrollbackLimit { return scrollback.appendEvicting(l) }
+            scrollback.append(l)
+            return nil
+        }
+        if scrollback.count == scrollbackLimit {
+            // 追い出す古い行の入れ物に写す (大きさが合えば確保し直さない)
+            scrollback.reuseOldest { old in
+                let cap = old.cells.capacity
+                if cap >= len && cap <= len * 2 + 16 {
+                    old.cells.removeAll(keepingCapacity: true)
+                } else {
+                    old.cells = []
+                    old.cells.reserveCapacity(len)
+                }
+                old.cells.append(contentsOf: l.cells[0..<len])
+                old.wrapped = false
+            }
+            return l
+        }
+        var t = Line(cols: 0)
+        t.cells.reserveCapacity(len)
+        t.cells.append(contentsOf: l.cells[0..<len])
+        scrollback.append(t)
+        return l
     }
 
     /// 使い終わった行を空行にして返す (幅が違えば新しく作る)

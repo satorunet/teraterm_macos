@@ -130,9 +130,16 @@ final class TerminalView: NSView, NSTextInputClient {
         blinkTimer?.invalidate()
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
             guard let self = self, self.term.cursorBlink, self.focused else { return }
+            // 点滅させるのは、いま操作しているウインドウ (アプリが前面) だけ。
+            // 後ろのウインドウはカーソルを点けたままにして、待機中の描き直しをしない
+            guard NSApp.isActive, self.window?.isKeyWindow == true else {
+                if !self.blinkOn { self.blinkOn = true; self.setNeedsDisplay(self.cursorRect().insetBy(dx: -2, dy: -2)) }
+                return
+            }
             self.blinkOn.toggle()
             self.setNeedsDisplay(self.cursorRect().insetBy(dx: -2, dy: -2))
         }
+        blinkTimer?.tolerance = 0.1   // ほかのタイマーとまとめて起きられるように (省電力)
     }
 
     deinit {
@@ -588,10 +595,12 @@ final class TerminalView: NSView, NSTextInputClient {
                 }
                 // 下線: UnderlineAttrFont (下線属性) / URLUnderline (URL)
                 let underline = (settings.underlineAttrFont && a.underline) || (settings.urlUnderline && isURL)
-                if cell.ch == " " && w == 1 && !underline && !a.strike && runKey != nil && runX + runLen == x {
+                let sv = cell.scalarValue
+                let isSpace = sv == 0x20
+                if isSpace && w == 1 && !underline && !a.strike && runKey != nil && runX + runLen == x {
                     // 下線などのない空白は、続いている文字の並びに入れて 1 回で描く (空白は何も描かない)
                     run.append(" "); runLen += 1
-                } else if cell.ch != " " {
+                } else if !isSpace {
                     let fontIndex = a.bold && settings.enableBold ? (a.italic ? 3 : 1) : (a.italic ? 2 : 0)
                     func makeAttrs() -> [NSAttributedString.Key: Any] {
                         var attrs: [NSAttributedString.Key: Any] = [
@@ -602,7 +611,7 @@ final class TerminalView: NSView, NSTextInputClient {
                         if a.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                         return attrs
                     }
-                    let isAscii = cell.ch.unicodeScalars.count == 1 && cell.ch.unicodeScalars.first!.value < 0x7F
+                    let isAscii = sv != nil && sv! < 0x7F
                     if isAscii && w == 1 && !a.decSpecial {
                         if let k = runKey, k.font == fontIndex, k.fg == fg, k.underline == underline, k.strike == a.strike, runX + runLen == x {
                             // 同じ見た目が続いている
@@ -613,7 +622,7 @@ final class TerminalView: NSView, NSTextInputClient {
                             runX = x; runAttrs = attrs
                             runKey = (fontIndex, fg, underline, a.strike)
                         }
-                        run.append(cell.ch); runLen += 1
+                        run.unicodeScalars.append(Unicode.Scalar(sv!)!); runLen += 1
                     } else {
                         let attrs = makeAttrs()
                         flush()

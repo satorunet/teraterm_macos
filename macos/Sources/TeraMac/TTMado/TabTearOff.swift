@@ -104,8 +104,7 @@ enum TabTearOff {
             let g = w.tabGroup
             let wasShown = g?.selectedWindow === w || w.isKeyWindow || w.isVisible
             let rest = (g?.windows ?? []).filter { $0 !== w }
-            if let g = g, g.windows.count > 1 { g.removeWindow(w) }
-            w.orderOut(nil)
+            TabSplit.hideOutOfTabGroup(w)
             guard wasShown, let o = rest.first(where: { $0 === sp.hostWindow }) ?? rest.first ?? sp.hostWindow else { continue }
             o.tabGroup?.selectedWindow = o
             o.makeKeyAndOrderFront(nil)
@@ -521,7 +520,17 @@ enum TabBarDrag {
         timer = t
     }
 
+    /// ドラッグの前のウインドウの出し入れの動き (戻す用)
+    private static var savedAnimation: (WeakWindow, NSWindow.AnimationBehavior)?
+    private static func restoreAnimation(after delay: TimeInterval) {
+        guard let (ww, b) = savedAnimation else { return }
+        savedAnimation = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { ww.w?.animationBehavior = b }
+    }
+
     private static func stop() {
+        // AppKit のドラッグの後始末 (新しいウインドウを出す) が終わってから戻す
+        restoreAnimation(after: 1.0)
         timer?.invalidate()
         timer = nil
         dragging = false
@@ -548,6 +557,10 @@ enum TabBarDrag {
             dragging = true
             dragged = c
             group = (w.tabGroup?.windows ?? [w]).filter { $0 !== sel }.map { WeakWindow(w: $0) }
+            // タブを引き出したとき、AppKit はそのタブを新しいウインドウとして「開く」動き (いったん大きく出る) で見せる。
+            // 窓割りに入れるときにそれが見えないよう、ドラッグ中はそのウインドウの出し入れの動きを止めておく (終わったら戻す)
+            savedAnimation = (WeakWindow(w: sel), sel.animationBehavior)
+            sel.animationBehavior = .none
         }
         updateZone(mouse)
     }

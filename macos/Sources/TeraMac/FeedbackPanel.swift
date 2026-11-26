@@ -65,7 +65,7 @@ enum Feedback {
     }
 }
 
-/// 送る画面 (ひとつだけ)。LINE のようなトーク画面で、送るとロボットの「てらたーむくん」がすぐ返事をする。
+/// 送る画面 (ひとつだけ)。ターミナル風の画面で、送るとロボットの「てらたーむくん」がすぐ返事をする。
 /// 何度でも続けて送れる
 final class FeedbackPanel: NSObject, NSTextViewDelegate, NSWindowDelegate {
     static let shared = FeedbackPanel()
@@ -73,170 +73,167 @@ final class FeedbackPanel: NSObject, NSTextViewDelegate, NSWindowDelegate {
     private let kindPopup = NSPopUpButton()
     private let textView = FeedbackInputTextView()
     private let envCheck = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private let sendButton = NSButton(title: "", target: nil, action: nil)
-    private let talk = NSStackView()
-    private let talkScroll = NSScrollView()
-    private var typingRow: NSView?
+    private let log = NSTextView()
+    private let logScroll = NSScrollView()
+    /// 送っている間に出すカーソル (log の中の場所)
+    private var waitRange: NSRange?
+    private var waitTimer: Timer?
+    /// タイピング中の行 (続けて足す)
+    private var typingTimer: Timer?
 
-    /// LINE っぽい色
-    static let talkBG = NSColor(srgbRed: 0x8C / 255.0, green: 0xAB / 255.0, blue: 0xD8 / 255.0, alpha: 1)
-    static let mineBG = NSColor(srgbRed: 0x8D / 255.0, green: 0xE0 / 255.0, blue: 0x55 / 255.0, alpha: 1)
+    // 端末の色 (Tera Term Mac の既定の画面に合わせる)
+    static let bg = NSColor(srgbRed: 0x1E / 255.0, green: 0x1F / 255.0, blue: 0x22 / 255.0, alpha: 1)
+    static let barBG = NSColor(srgbRed: 0x2A / 255.0, green: 0x2B / 255.0, blue: 0x2F / 255.0, alpha: 1)
+    static let fg = NSColor(white: 0.86, alpha: 1)
+    static let dim = NSColor(white: 0.5, alpha: 1)
+    static let robot = NSColor(srgbRed: 0.35, green: 0.85, blue: 0.95, alpha: 1)
+    static let me = NSColor(srgbRed: 0.45, green: 0.90, blue: 0.45, alpha: 1)
+    static let tag = NSColor(srgbRed: 0.98, green: 0.85, blue: 0.35, alpha: 1)
+    static let err = NSColor(srgbRed: 1.0, green: 0.45, blue: 0.45, alpha: 1)
+    /// てらたーむくんのセリフの中の「…」(例の言葉) の色
+    static let quote = NSColor(srgbRed: 1.0, green: 0.62, blue: 0.80, alpha: 1)
+    static let mono = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    static let monoBold = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
     static let robotName = Lang.m("FEEDBACK_ROBOT_NAME", "てらたーむくん")
 
     static func show() { shared.open() }
 
     private func open() {
         if let p = panel { p.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); p.makeFirstResponder(textView); return }
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 620), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 520), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         p.title = Lang.m("FEEDBACK_TITLE", "要望・お知らせを送る")
         p.isReleasedWhenClosed = false
-        p.minSize = NSSize(width: 360, height: 420)
+        p.minSize = NSSize(width: 440, height: 360)
         p.delegate = self
-        p.appearance = NSAppearance(named: .aqua)
+        p.appearance = NSAppearance(named: .darkAqua)
+        p.backgroundColor = FeedbackPanel.bg
 
-        // 上: 相手の名前と、送り先の説明 (小さく)
-        let header = NSView()
-        header.wantsLayer = true
-        header.layer?.backgroundColor = NSColor(srgbRed: 0.23, green: 0.27, blue: 0.36, alpha: 1).cgColor
-        let title = NSTextField(labelWithString: "🤖 " + Lang.m("FEEDBACK_HEADER", "Tera Term Macにお気軽メッセージをどうぞ！"))
-        title.font = .boldSystemFont(ofSize: 14)
-        title.textColor = .white
-        let sub = NSTextField(wrappingLabelWithString: Lang.m("FEEDBACK_PRIVACY",
-            "内容は公開されません、開発者だけに届きます。"))
-        sub.font = .systemFont(ofSize: 10)
-        sub.textColor = NSColor.white.withAlphaComponent(0.75)
-        let hs = NSStackView(views: [title, sub])
-        hs.orientation = .vertical
-        hs.alignment = .leading
-        hs.spacing = 3
-        hs.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
-        hs.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(hs)
-        NSLayoutConstraint.activate([hs.topAnchor.constraint(equalTo: header.topAnchor), hs.bottomAnchor.constraint(equalTo: header.bottomAnchor),
-                                     hs.leadingAnchor.constraint(equalTo: header.leadingAnchor), hs.trailingAnchor.constraint(equalTo: header.trailingAnchor),
-                                     sub.widthAnchor.constraint(equalTo: hs.widthAnchor, constant: -24)])
+        // 上: 見出し (端末のタイトル行のように)
+        let title = NSTextField(labelWithString: Lang.m("FEEDBACK_HEADER", "Tera Term Macにお気軽メッセージをどうぞ！"))
+        title.font = FeedbackPanel.monoBold
+        title.textColor = FeedbackPanel.fg
+        let sub = NSTextField(wrappingLabelWithString: Lang.m("FEEDBACK_PRIVACY", "内容は公開されません、開発者だけに届きます。"))
+        sub.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        sub.textColor = FeedbackPanel.dim
+        let header = bar([title, sub], vertical: true)
 
-        // まんなか: トーク
-        talk.orientation = .vertical
-        talk.alignment = .leading
-        talk.spacing = 10
-        talk.edgeInsets = NSEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
-        talk.translatesAutoresizingMaskIntoConstraints = false
-        let doc = FlippedView()
-        doc.translatesAutoresizingMaskIntoConstraints = false
-        doc.addSubview(talk)
-        talkScroll.documentView = doc
-        talkScroll.hasVerticalScroller = true
-        talkScroll.drawsBackground = true
-        talkScroll.backgroundColor = FeedbackPanel.talkBG
-        talkScroll.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            doc.widthAnchor.constraint(equalTo: talkScroll.contentView.widthAnchor),
-            doc.heightAnchor.constraint(greaterThanOrEqualTo: talkScroll.contentView.heightAnchor),
-            talk.topAnchor.constraint(equalTo: doc.topAnchor), talk.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
-            talk.trailingAnchor.constraint(equalTo: doc.trailingAnchor), talk.bottomAnchor.constraint(lessThanOrEqualTo: doc.bottomAnchor),
-        ])
+        // まんなか: やりとりの記録 (端末の画面)
+        log.isEditable = false
+        log.isSelectable = true
+        log.isRichText = true
+        log.drawsBackground = true
+        log.backgroundColor = FeedbackPanel.bg
+        log.textContainerInset = NSSize(width: 10, height: 10)
+        log.autoresizingMask = [.width]
+        log.isVerticallyResizable = true
+        log.textContainer?.widthTracksTextView = true
+        logScroll.documentView = log
+        logScroll.hasVerticalScroller = true
+        logScroll.drawsBackground = true
+        logScroll.backgroundColor = FeedbackPanel.bg
+        logScroll.borderType = .noBorder
+        logScroll.scrollerStyle = .overlay
 
-        // 下: 種類・版を添える・GitHub、入力欄と送るボタン
+        // 下: 種類・版を添える・GitHub と、プロンプト付きの入力欄
         kindPopup.removeAllItems()
         kindPopup.addItems(withTitles: Feedback.kinds.map { Lang.m($0.key, $0.ja) })
         kindPopup.controlSize = .small
-        kindPopup.font = .systemFont(ofSize: 11)
+        kindPopup.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         envCheck.title = Lang.m("FEEDBACK_INCLUDE_ENV", "アプリと macOS の版を添える")
         envCheck.state = .on
         envCheck.controlSize = .small
-        envCheck.font = .systemFont(ofSize: 11)
+        envCheck.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         envCheck.toolTip = Feedback.environment
         let issues = NSButton(title: Lang.m("FEEDBACK_ISSUES_BUTTON", "GitHub の Issues で送る…"), target: self, action: #selector(openIssues))
         issues.isBordered = false
-        issues.font = .systemFont(ofSize: 11)
-        issues.contentTintColor = .linkColor
+        issues.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        issues.contentTintColor = FeedbackPanel.robot
         issues.toolTip = Lang.m("FEEDBACK_ISSUES_NOTE",
             "返事がほしいときや、やりとりしながら直したいときは「GitHub の Issues で送る」を使ってください (GitHub のアカウントが要ります)。書いた内容はブラウザの Issue の画面に入ります。")
         let opts = NSStackView(views: [kindPopup, envCheck, NSView(), issues])
-        opts.spacing = 8
+        opts.spacing = 10
 
+        let prompt = NSTextField(labelWithString: "$")
+        prompt.font = FeedbackPanel.monoBold
+        prompt.textColor = FeedbackPanel.me
+        prompt.setContentHuggingPriority(.required, for: .horizontal)
         textView.isRichText = false
-        textView.font = .systemFont(ofSize: 13)
+        textView.font = FeedbackPanel.mono
+        textView.textColor = FeedbackPanel.fg
+        textView.insertionPointColor = FeedbackPanel.me
+        textView.drawsBackground = true
+        textView.backgroundColor = FeedbackPanel.bg
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.delegate = self
         textView.onSend = { [weak self] in self?.send() }
-        textView.textContainerInset = NSSize(width: 4, height: 6)
-        let inputScroll = NSScrollView()
-        inputScroll.hasVerticalScroller = true
-        inputScroll.documentView = textView
-        inputScroll.borderType = .noBorder
-        inputScroll.drawsBackground = true
-        inputScroll.backgroundColor = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1)
-        textView.backgroundColor = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1)
-        inputScroll.wantsLayer = true
-        inputScroll.layer?.cornerRadius = 14
-        inputScroll.layer?.masksToBounds = true
+        textView.textContainerInset = NSSize(width: 2, height: 4)
+        textView.placeholder = Lang.m("FEEDBACK_PLACEHOLDER", "メッセージを入力 (Enter で送信、Shift+Enter で改行)")
+        textView.placeholderColor = FeedbackPanel.dim
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.textContainer?.widthTracksTextView = true
+        let inputScroll = NSScrollView()
+        inputScroll.documentView = textView
+        inputScroll.hasVerticalScroller = true
+        inputScroll.scrollerStyle = .overlay
+        inputScroll.drawsBackground = true
+        inputScroll.backgroundColor = FeedbackPanel.bg
+        inputScroll.borderType = .noBorder
         inputScroll.translatesAutoresizingMaskIntoConstraints = false
-        inputScroll.heightAnchor.constraint(equalToConstant: 56).isActive = true
-        textView.placeholder = Lang.m("FEEDBACK_PLACEHOLDER", "メッセージを入力 (Enter で送信、Shift+Enter で改行)")
+        inputScroll.heightAnchor.constraint(equalToConstant: 54).isActive = true
+        let inputRow = NSStackView(views: [prompt, inputScroll])
+        inputRow.alignment = .top
+        inputRow.spacing = 6
+        let bottom = bar([opts, inputRow], vertical: true)
+        for v in [opts, inputRow] { v.translatesAutoresizingMaskIntoConstraints = false; v.widthAnchor.constraint(equalTo: bottom.widthAnchor, constant: -24).isActive = true }
 
-        sendButton.title = Lang.m("FEEDBACK_SEND", "送る")
-        sendButton.bezelStyle = .rounded
-        sendButton.target = self
-        sendButton.action = #selector(send)
-        sendButton.isEnabled = false
-        let inputRow = NSStackView(views: [inputScroll, sendButton])
-        inputRow.alignment = .centerY
-        inputRow.spacing = 8
-
-        let bottom = NSStackView(views: [opts, inputRow])
-        bottom.orientation = .vertical
-        bottom.alignment = .leading
-        bottom.spacing = 6
-        bottom.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 10, right: 10)
-        bottom.wantsLayer = true
-        bottom.layer?.backgroundColor = NSColor.white.cgColor
-        for v in [opts, inputRow] { v.translatesAutoresizingMaskIntoConstraints = false }
-
-        let root = NSStackView(views: [header, talkScroll, bottom])
+        let line1 = separator(), line2 = separator()
+        let root = NSStackView(views: [header, line1, logScroll, line2, bottom])
         root.orientation = .vertical
         root.spacing = 0
         root.alignment = .leading
         p.contentView = root
-        for v in [header, talkScroll, bottom] as [NSView] {
+        for v in [header, line1, logScroll, line2, bottom] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             v.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
         }
-        for v in [opts, inputRow] { v.widthAnchor.constraint(equalTo: bottom.widthAnchor, constant: -20).isActive = true }
-        talkScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
-        talkScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        sub.widthAnchor.constraint(equalTo: header.widthAnchor, constant: -24).isActive = true
+        logScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+        logScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        addRobot(typing: true, Lang.m("FEEDBACK_ROBOT_HELLO", "やっほー！Tera Term Mac つかってくれてありがとう🙌\n「ここ使いにくい…」「こんなのほしい！」とか、なんでも気軽に送ってね。読むのは開発者だけだよ。\nお返事はボクの自動返信だけで、ひとりひとりには返せないけど、ちゃんと届いてるから安心してね！"))
         p.center()
         panel = p
         p.makeKeyAndOrderFront(nil)
         p.makeFirstResponder(textView)
         NSApp.activate(ignoringOtherApps: true)
+
+        // 最初のあいさつ: 起動したときのように 1 行出してから、てらたーむくんがタイピングする
+        let ver = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        append([("Tera Term Mac \(ver) feedback\n", FeedbackPanel.dim, FeedbackPanel.mono)])
+        addRobot(typing: true, Lang.m("FEEDBACK_ROBOT_HELLO", "やっほー！Tera Term Mac つかってくれてありがとう🙌\n「ここ使いにくい…」「こんなのほしい！」とか、なんでも気軽に送ってね。"))
     }
 
-
-    /// TERAMAC_FEEDBACKSNAP=<png>: 送らずにトークの見た目だけ作って写す
-    static func debugSnap(_ path: String) {
-        shared.open()
-        let m = shared.addMine("接続先の一覧をフォルダで分けられるとうれしいです！", tag: Lang.m("FEEDBACK_KIND_REQUEST", "要望"))
-        m.markRead()
-        shared.addRobot(Lang.m("FEEDBACK_ROBOT_THANKS", "ご意見アリガトウ！改善ニ役立テマス！"))
-        shared.addMine("あと、もう1つ。", tag: Lang.m("FEEDBACK_KIND_BUG", "不具合"))
-        shared.showTyping()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if let w = shared.panel { SelfTest.snapWindow(w, path) }
-            exit(0)
-        }
+    private func bar(_ views: [NSView], vertical: Bool) -> NSStackView {
+        let s = NSStackView(views: views)
+        s.orientation = vertical ? .vertical : .horizontal
+        s.alignment = .leading
+        s.spacing = 6
+        s.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        s.wantsLayer = true
+        s.layer?.backgroundColor = FeedbackPanel.barBG.cgColor
+        return s
     }
 
-    func textDidChange(_ notification: Notification) {
-        let empty = textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        sendButton.isEnabled = !empty
+    private func separator() -> NSView {
+        let v = NSView()
+        v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor(white: 0.32, alpha: 1).cgColor
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return v
     }
+
+    func textDidChange(_ notification: Notification) {}
 
     @objc private func close() { panel?.orderOut(nil) }
 
@@ -246,98 +243,136 @@ final class FeedbackPanel: NSObject, NSTextViewDelegate, NSWindowDelegate {
 
     @objc private func send() {
         let msg = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !msg.isEmpty else { return }
+        guard !msg.isEmpty, waitRange == nil else { return }
         let k = Feedback.kinds[max(0, kindPopup.indexOfSelectedItem)]
-        let kind = k.ja
-        let mine = addMine(msg, tag: Lang.m(k.key, k.ja))
+        addMine(msg, tag: Lang.m(k.key, k.ja))
         textView.string = ""
-        textDidChange(Notification(name: NSText.didChangeNotification))
-        showTyping()
-        Feedback.send(kind: kind, message: msg, includeEnvironment: envCheck.state == .on) { [weak self] ok in
+        textView.needsDisplay = true
+        showWaiting()
+        Feedback.send(kind: k.ja, message: msg, includeEnvironment: envCheck.state == .on) { [weak self] ok in
             guard let self = self else { return }
-            self.hideTyping()
+            self.hideWaiting()
             if ok {
-                mine.markRead()
+                self.append([(Lang.m("FEEDBACK_SENT_LINE", "送信しました") + "\n", FeedbackPanel.dim, FeedbackPanel.mono)])
                 self.addRobot(Lang.m("FEEDBACK_ROBOT_THANKS", "ご意見アリガトウ！改善ニ役立テマス！"))
             } else {
-                mine.markFailed()
+                self.append([(Lang.m("FEEDBACK_SEND_ERROR_LINE", "送信できませんでした") + "\n", FeedbackPanel.err, FeedbackPanel.mono)])
                 self.textView.string = msg
-                self.textDidChange(Notification(name: NSText.didChangeNotification))
-                self.addRobot(Lang.m("FEEDBACK_ROBOT_FAILED", "アレレ…送レマセンデシタ。\nネットワークヲ 確カメテ、モウ一度 送ッテネ。"), link: (Lang.m("FEEDBACK_OPEN_BROWSER", "ブラウザで開く"), Feedback.viewFormURL))
+                self.textView.needsDisplay = true
+                self.addRobot(Lang.m("FEEDBACK_ROBOT_FAILED", "アレレ…送レマセンデシタ。\nネットワークヲ 確カメテ、モウ一度 送ッテネ。"))
+                self.appendLink(Lang.m("FEEDBACK_OPEN_BROWSER", "ブラウザで開く"), Feedback.viewFormURL)
             }
         }
     }
 
-    // MARK: - トークの行
+    // MARK: - 記録に書く
 
     private static var timeText: String {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "H:mm"; return f.string(from: Date())
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "HH:mm"; return f.string(from: Date())
     }
 
-    @discardableResult private func addMine(_ text: String, tag: String? = nil) -> FeedbackMineRow {
-        let row = FeedbackMineRow(text: text, tag: tag, time: FeedbackPanel.timeText)
-        append(row, trailing: true)
-        return row
+    private func append(_ parts: [(String, NSColor, NSFont)]) {
+        guard let st = log.textStorage else { return }
+        for (t, c, f) in parts { st.append(NSAttributedString(string: t, attributes: [.foregroundColor: c, .font: f])) }
+        log.scrollToEndOfDocument(nil)
     }
 
-    private func addRobot(typing: Bool = false, _ text: String, link: (String, URL)? = nil) {
+    private func appendLink(_ title: String, _ url: URL) {
+        guard let st = log.textStorage else { return }
+        st.append(NSAttributedString(string: "→ ", attributes: [.foregroundColor: FeedbackPanel.dim, .font: FeedbackPanel.mono]))
+        st.append(NSAttributedString(string: title, attributes: [.link: url, .font: FeedbackPanel.mono]))
+        st.append(NSAttributedString(string: "\n", attributes: [.font: FeedbackPanel.mono]))
+        log.scrollToEndOfDocument(nil)
+    }
+
+    /// 自分の行: [時刻] $ [種類] 本文
+    private func addMine(_ text: String, tag: String?) {
+        var parts: [(String, NSColor, NSFont)] = [("$ ", FeedbackPanel.me, FeedbackPanel.monoBold)]
+        if let t = tag { parts.append(("[\(t)] ", FeedbackPanel.tag, FeedbackPanel.monoBold)) }
+        parts.append((text + "\n", FeedbackPanel.fg, FeedbackPanel.mono))
+        append(parts)
+    }
+
+    /// てらたーむくんの行: [時刻] てらたーむくん> 本文 (typing なら 1 文字ずつ)
+    private func addRobot(typing: Bool = false, _ text: String) {
+        append([("\(FeedbackPanel.robotName)> ", FeedbackPanel.robot, FeedbackPanel.monoBold)])
+        let body = text + "\n"
+        // 「」で囲んだところ (かっこも含む) は色を変える
+        var colors: [NSColor] = []
+        var inQuote = false
+        for ch in body {
+            if ch == "「" { inQuote = true }
+            colors.append(inQuote ? FeedbackPanel.quote : FeedbackPanel.fg)
+            if ch == "」" { inQuote = false }
+        }
+        let chars = Array(body)
         guard typing else {
-            append(FeedbackRobotRow(text: text, time: FeedbackPanel.timeText, link: link), trailing: false)
+            append(chars.indices.map { (String(chars[$0]), colors[$0], FeedbackPanel.mono) })
             return
         }
-        // タイピングしているように 1 文字ずつ出す (少し「・・・」を見せてから)
-        let row = FeedbackRobotRow(text: "・・・", time: "", link: nil)
-        append(row, trailing: false)
-        let chars = Array(text)
         var n = 0
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self, weak row] in
-            Timer.scheduledTimer(withTimeInterval: 0.035, repeats: true) { t in
-                guard let self = self, let row = row else { t.invalidate(); return }
-                n = min(chars.count, n + 1)
-                row.setText(String(chars[0..<n]))
-                if n == chars.count { t.invalidate(); row.setTime(FeedbackPanel.timeText) }
-                self.scrollToEnd()
+        typingTimer?.invalidate()
+        showWaiting()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            self?.hideWaiting()
+            self?.typingTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] t in
+                guard let self = self, n < chars.count else { t.invalidate(); return }
+                self.append([(String(chars[n]), colors[n], FeedbackPanel.mono)])
+                n += 1
+                if n == chars.count { t.invalidate() }
             }
         }
     }
 
-    private func showTyping() {
-        let r = FeedbackRobotRow(text: "・・・", time: "", link: nil)
-        typingRow = r
-        append(r, trailing: false)
+    /// 待っている間の点滅するカーソル (▋)
+    private func showWaiting() {
+        guard waitRange == nil, let st = log.textStorage else { return }
+        let r = NSRange(location: st.length, length: 1)
+        st.append(NSAttributedString(string: "▋", attributes: [.foregroundColor: FeedbackPanel.robot, .font: FeedbackPanel.mono]))
+        waitRange = r
+        log.scrollToEndOfDocument(nil)
+        var on = true
+        waitTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self, let r = self.waitRange, let st = self.log.textStorage, NSMaxRange(r) <= st.length else { return }
+            on.toggle()
+            st.addAttribute(.foregroundColor, value: on ? FeedbackPanel.robot : FeedbackPanel.bg, range: r)
+        }
     }
 
-    private func hideTyping() {
-        typingRow?.removeFromSuperview()
-        typingRow = nil
+    private func hideWaiting() {
+        waitTimer?.invalidate(); waitTimer = nil
+        if let r = waitRange, let st = log.textStorage, NSMaxRange(r) <= st.length { st.deleteCharacters(in: r) }
+        waitRange = nil
     }
 
-    private func append(_ row: NSView, trailing: Bool) {
-        row.translatesAutoresizingMaskIntoConstraints = false
-        talk.addArrangedSubview(row)
-        row.widthAnchor.constraint(equalTo: talk.widthAnchor, constant: -20).isActive = true
-        talk.layoutSubtreeIfNeeded()
-        DispatchQueue.main.async { self.scrollToEnd() }
-    }
-
-    private func scrollToEnd() {
-        guard let doc = talkScroll.documentView else { return }
-        doc.layoutSubtreeIfNeeded()
-        doc.scroll(NSPoint(x: 0, y: max(0, doc.bounds.height - talkScroll.contentView.bounds.height)))
+    /// TERAMAC_FEEDBACKSNAP=<png>: 送らずに画面の見た目だけ作って写す
+    static func debugSnap(_ path: String) {
+        shared.open()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) {
+            shared.addMine("接続先の一覧をフォルダで分けられるとうれしいです！", tag: Lang.m("FEEDBACK_KIND_REQUEST", "要望"))
+            shared.append([(Lang.m("FEEDBACK_SENT_LINE", "送信しました") + "\n", FeedbackPanel.dim, FeedbackPanel.mono)])
+            shared.addRobot(Lang.m("FEEDBACK_ROBOT_THANKS", "ご意見アリガトウ！改善ニ役立テマス！"))
+            shared.addMine("あと、もう1つ。", tag: Lang.m("FEEDBACK_KIND_BUG", "不具合"))
+            shared.showWaiting()
+            shared.textView.string = "書きかけのメッセージ"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                if let w = shared.panel { SelfTest.snapWindow(w, path) }
+                exit(0)
+            }
+        }
     }
 }
-
-private final class FlippedView: NSView { override var isFlipped: Bool { true } }
 
 /// 入力欄: Enter で送る、Shift / Option + Enter で改行 (変換中の Enter は変換の確定)
 final class FeedbackInputTextView: NSTextView {
     var onSend: (() -> Void)?
     /// 空のときに薄く出す文字 (文字を打った瞬間に消えるよう、自分で描く。変換中の文字も入っていれば出さない)
     var placeholder = ""
+    var placeholderColor = NSColor.placeholderTextColor
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty, !hasMarkedText(), !placeholder.isEmpty else { return }
-        let attrs: [NSAttributedString.Key: Any] = [.font: font ?? .systemFont(ofSize: 13), .foregroundColor: NSColor.placeholderTextColor]
+        let attrs: [NSAttributedString.Key: Any] = [.font: font ?? .systemFont(ofSize: 13), .foregroundColor: placeholderColor]
         let x = textContainerInset.width + (textContainer?.lineFragmentPadding ?? 5)
         (placeholder as NSString).draw(at: NSPoint(x: x, y: textContainerInset.height), withAttributes: attrs)
     }
@@ -356,126 +391,3 @@ final class FeedbackInputTextView: NSTextView {
     }
 }
 
-/// ふきだし
-private final class Bubble: NSView {
-    private(set) var label = NSTextField(wrappingLabelWithString: "")
-    init(text: String, tag: String? = nil, color: NSColor, textColor: NSColor = .black, maxWidth: CGFloat = 250) {
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = color.cgColor
-        layer?.cornerRadius = 15
-        label.stringValue = text
-        label.font = .systemFont(ofSize: 13)
-        label.textColor = textColor
-        label.isSelectable = true
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.preferredMaxLayoutWidth = maxWidth
-        addSubview(label)
-        // 種類 (要望・不具合・その他) を小さな札にして本文の上に
-        var top = topAnchor, topGap: CGFloat = 8
-        if let t = tag {
-            let chip = NSTextField(labelWithString: " " + t + " ")
-            chip.font = .boldSystemFont(ofSize: 10)
-            chip.textColor = .white
-            chip.wantsLayer = true
-            chip.drawsBackground = true
-            chip.backgroundColor = NSColor(srgbRed: 0.18, green: 0.55, blue: 0.20, alpha: 1)
-            chip.layer?.cornerRadius = 4
-            chip.layer?.masksToBounds = true
-            chip.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(chip)
-            NSLayoutConstraint.activate([chip.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-                                         chip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-                                         chip.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12)])
-            top = chip.bottomAnchor; topGap = 4
-        }
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: top, constant: topGap), label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12), label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
-        ])
-    }
-    required init?(coder: NSCoder) { fatalError() }
-}
-
-private func smallLabel(_ s: String) -> NSTextField {
-    let l = NSTextField(labelWithString: s)
-    l.font = .systemFont(ofSize: 10)
-    l.textColor = NSColor.white.withAlphaComponent(0.9)
-    return l
-}
-
-/// 自分の行 (右・緑)。送れたら「既読」が付く
-final class FeedbackMineRow: NSView {
-    private let status = smallLabel("")
-    init(text: String, tag: String?, time: String) {
-        super.init(frame: .zero)
-        let bubble = Bubble(text: text, tag: tag, color: FeedbackPanel.mineBG)
-        let meta = NSStackView(views: [status, smallLabel(time)])
-        meta.orientation = .vertical
-        meta.alignment = .trailing
-        meta.spacing = 0
-        let row = NSStackView(views: [NSView(), meta, bubble])
-        row.alignment = .bottom
-        row.spacing = 4
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
-                                     row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor)])
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    func markRead() { status.stringValue = Lang.m("FEEDBACK_READ", "既読") }
-    func markFailed() { status.stringValue = Lang.m("FEEDBACK_NOT_SENT", "未送信"); status.textColor = NSColor(srgbRed: 1, green: 0.85, blue: 0.85, alpha: 1) }
-}
-
-/// てらたーむくんの行 (左・白、アイコンと名前つき)
-private final class FeedbackRobotRow: NSView {
-    private var link: URL?
-    private var bubble: Bubble!
-    private var timeLabel: NSTextField!
-    func setText(_ s: String) { bubble.label.stringValue = s }
-    func setTime(_ s: String) { timeLabel.stringValue = s }
-    init(text: String, time: String, link: (String, URL)?) {
-        super.init(frame: .zero)
-        let icon = NSTextField(labelWithString: "🤖")
-        icon.font = .systemFont(ofSize: 22)
-        icon.alignment = .center
-        let iconBox = NSView()
-        iconBox.wantsLayer = true
-        iconBox.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
-        iconBox.layer?.cornerRadius = 18
-        iconBox.translatesAutoresizingMaskIntoConstraints = false
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        iconBox.addSubview(icon)
-        NSLayoutConstraint.activate([iconBox.widthAnchor.constraint(equalToConstant: 36), iconBox.heightAnchor.constraint(equalToConstant: 36),
-                                     icon.centerXAnchor.constraint(equalTo: iconBox.centerXAnchor), icon.centerYAnchor.constraint(equalTo: iconBox.centerYAnchor)])
-        let name = smallLabel(FeedbackPanel.robotName)
-        let bubble = Bubble(text: text, color: .white)
-        self.bubble = bubble
-        var bubbleViews: [NSView] = [bubble]
-        if let (title, url) = link {
-            self.link = url
-            let b = NSButton(title: title, target: self, action: #selector(openLink))
-            b.bezelStyle = .rounded
-            b.controlSize = .small
-            bubbleViews.append(b)
-        }
-        timeLabel = smallLabel(time)
-        let line = NSStackView(views: bubbleViews + [timeLabel, NSView()])
-        line.alignment = .bottom
-        line.spacing = 4
-        let col = NSStackView(views: [name, line])
-        col.orientation = .vertical
-        col.alignment = .leading
-        col.spacing = 3
-        let row = NSStackView(views: [iconBox, col])
-        row.alignment = .top
-        row.spacing = 6
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
-                                     row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor)])
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    @objc private func openLink() { if let u = link { NSWorkspace.shared.open(u) } }
-}

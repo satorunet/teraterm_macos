@@ -359,11 +359,13 @@ FEEDBACK_FAILED=送れませんでした。
 FEEDBACK_FAILED_INFO=ネットワークの接続を確かめて、もう一度送ってください。ブラウザのフォームから送ることもできます。
 FEEDBACK_OPEN_BROWSER=ブラウザで開く
 FEEDBACK_ROBOT_NAME=てらたーむくん
-FEEDBACK_ROBOT_HELLO=やっほー！Tera Term Mac つかってくれてありがとう🙌\n「ここ使いにくい…」「こんなのほしい！」とか、なんでも気軽に送ってね。読むのは開発者だけだよ。\nお返事はボクの自動返信だけで、ひとりひとりには返せないけど、ちゃんと届いてるから安心してね！
+FEEDBACK_ROBOT_HELLO=やっほー！Tera Term Mac つかってくれてありがとう🙌\n「ここ使いにくい…」「こんなのほしい！」とか、なんでも気軽に送ってね。
 FEEDBACK_ROBOT_THANKS=ご意見アリガトウ！改善ニ役立テマス！
 FEEDBACK_ROBOT_FAILED=アレレ…送レマセンデシタ。\nネットワークヲ 確カメテ、モウ一度 送ッテネ。
 FEEDBACK_PLACEHOLDER=メッセージを入力 (Enter で送信、Shift+Enter で改行)
 FEEDBACK_HEADER=Tera Term Macにお気軽メッセージをどうぞ！
+FEEDBACK_SENT_LINE=送信しました
+FEEDBACK_SEND_ERROR_LINE=送信できませんでした
 FEEDBACK_READ=既読
 FEEDBACK_NOT_SENT=未送信
 ; TABS2

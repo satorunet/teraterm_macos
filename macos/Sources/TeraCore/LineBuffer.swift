@@ -43,6 +43,14 @@ public struct LineBuffer: RandomAccessCollection, ExpressibleByArrayLiteral {
         return old
     }
 
+    /// いっぱいのとき: 一番古い行の場所をその場で書き換えて一番新しい行にする (入れ物を使い回す)
+    public mutating func reuseOldest(_ body: (inout Line) -> Void) {
+        precondition(!storage.isEmpty)
+        body(&storage[start])
+        start += 1
+        if start == storage.count { start = 0 }
+    }
+
     public mutating func removeFirst(_ n: Int) {
         precondition(n >= 0 && n <= count)
         if n == count { removeAll(); return }

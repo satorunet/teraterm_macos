@@ -165,6 +165,24 @@ final class TabSplit: NSObject, NSSplitViewDelegate {
     /// すべての分割をやめる (並べて表示・すべてのウインドウをまとめる の前)
     static func unsplitAll() { all.forEach { $0.unsplit(activate: false) } }
 
+    /// タブの組から外して隠す。外した瞬間に単独のウインドウとして一瞬大きく出る (開くアニメーション) のを見せないよう、
+    /// 先に透明にしてアニメーションを止めてから外す
+    static func hideOutOfTabGroup(_ cw: NSWindow) {
+        let anim = cw.animationBehavior
+        cw.animationBehavior = .none
+        if let g = cw.tabGroup, g.windows.count > 1 {
+            cw.alphaValue = 0
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0
+                ctx.allowsImplicitAnimation = false
+                g.removeWindow(cw)
+            })
+        }
+        cw.orderOut(nil)
+        cw.alphaValue = 1
+        cw.animationBehavior = anim
+    }
+
     /// すべてのセッションのウインドウを、今のウインドウのタブにする
     static func mergeAllWindows() {
         guard let cur = SessionWindowController.current else { return }
@@ -255,8 +273,7 @@ final class TabSplit: NSObject, NSSplitViewDelegate {
     /// セッションのウインドウをタブの組から外して隠し、中身を節 node のペインにする
     private func add(_ c: SessionWindowController, to node: TabSplitNodeView) {
         guard let cw = c.window, let container = cw.contentView as? TerminalContainerView else { return }
-        if let g = cw.tabGroup, g.windows.count > 1 { g.removeWindow(cw) }
-        cw.orderOut(nil)
+        TabSplit.hideOutOfTabGroup(cw)
         // 隠したウインドウには空のビュー (中身はペインへ移す)
         cw.contentView = NSView(frame: container.frame)
         attach(c, container: container, to: node)
@@ -558,8 +575,11 @@ final class TabSplit: NSObject, NSSplitViewDelegate {
     /// ≡ ボタンのドラッグ中: 行き先の見本を出す (自分の上・ペインの外・ウインドウの外なら出さない)。
     /// 上の帯 (タイトルバーなど) の上なら、その帯に「タブに戻す」を出す
     func paneDragMoved(_ p: TabPaneView, to pt: NSPoint) {
-        guard let w = hostWindow else { dropPreview.hide(); return }
-        switch paneDrop(for: p, at: pt) {
+        guard let w = hostWindow else { dropPreview.hide(); PaneDragGhost.shared.hide(); return }
+        let drop = paneDrop(for: p, at: pt)
+        // ウインドウの外へ出したら、タブを引き出したときと同じように、画面の半透明の写しをマウスに付けて見せる
+        if case .outside(let mouse) = drop { PaneDragGhost.shared.show(p, at: mouse) } else { PaneDragGhost.shared.hide() }
+        switch drop {
         case .backToTab:
             if let r = topBarRect() { dropPreview.show(r, over: w, above: nil, label: Lang.m("MENU_PANE_DROP_TO_TAB", "離すとタブに戻ります")) }
         case .pane(_, _, let r, let label):
@@ -576,6 +596,7 @@ final class TabSplit: NSObject, NSSplitViewDelegate {
     /// ≡ ボタンのドラッグを終えた (pt が nil なら Esc で取り消し)
     func paneDragEnded(_ p: TabPaneView, at pt: NSPoint?) {
         dropPreview.hide()
+        PaneDragGhost.shared.hide(forget: true)
         guard let pt = pt, let c = p.session else { return }
         switch paneDrop(for: p, at: pt) {
         case .none:
@@ -795,8 +816,7 @@ final class TabSplit: NSObject, NSSplitViewDelegate {
         }
         // 元の分割のウインドウは、空のビューを入れて隠す (ほかのタブはその組に残る)
         if let cw = oldHost.window {
-            if let g = cw.tabGroup, g.windows.count > 1 { g.removeWindow(cw) }
-            cw.orderOut(nil)
+            TabSplit.hideOutOfTabGroup(cw)
             cw.contentView = NSView(frame: src.root.frame)
         }
         var v: NSView = node
@@ -1664,6 +1684,60 @@ final class PaneMenuButton: NSView {
                                                     .foregroundColor: NSColor.white.withAlphaComponent(hovered ? 1 : 0.65)]
         let sz = s.size(withAttributes: attrs)
         s.draw(at: NSPoint(x: bounds.midX - sz.width / 2, y: bounds.midY - sz.height / 2), withAttributes: attrs)
+    }
+}
+
+// MARK: - ペインをウインドウの外へドラッグしているときの写し
+
+/// ペインの画面を写した半透明のウインドウ。マウスに付いて動く (タブを引き出したときの macOS の見せ方に合わせる)
+final class PaneDragGhost {
+    static let shared = PaneDragGhost()
+    private var win: NSWindow?
+    private var imageView = NSImageView()
+    private weak var source: TabPaneView?
+    private var size = NSSize.zero
+
+    func show(_ p: TabPaneView, at mouse: NSPoint) {
+        if source !== p || win == nil {
+            // ドラッグを始めて最初に外へ出たときに 1 回だけ写す
+            guard let rep = p.bitmapImageRepForCachingDisplay(in: p.bounds) else { return }
+            p.cacheDisplay(in: p.bounds, to: rep)
+            let img = NSImage(size: p.bounds.size); img.addRepresentation(rep)
+            // 大きすぎる画面は縮めて見せる
+            let scale = min(1, 520 / max(1, p.bounds.width), 360 / max(1, p.bounds.height))
+            size = NSSize(width: p.bounds.width * scale, height: p.bounds.height * scale)
+            let w = win ?? {
+                let w = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+                w.isOpaque = false
+                w.backgroundColor = .clear
+                w.hasShadow = true
+                w.ignoresMouseEvents = true
+                w.level = .floating
+                w.isReleasedWhenClosed = false
+                w.animationBehavior = .none
+                imageView.imageScaling = .scaleAxesIndependently
+                imageView.wantsLayer = true
+                imageView.layer?.cornerRadius = 6
+                imageView.layer?.masksToBounds = true
+                w.contentView = imageView
+                return w
+            }()
+            imageView.image = img
+            w.alphaValue = 0.6
+            win = w
+            source = p
+        }
+        // マウスが写しの上の辺の少し内側 (タブをつかんでいる位置) に来るように置く
+        let origin = NSPoint(x: mouse.x - min(60, size.width / 2), y: mouse.y - size.height + 12)
+        win?.setFrame(NSRect(origin: origin, size: size), display: true)
+        win?.orderFront(nil)
+    }
+
+    var windowNumber: Int { win?.windowNumber ?? 0 }
+
+    func hide(forget: Bool = false) {
+        win?.orderOut(nil)
+        if forget { source = nil; imageView.image = nil }
     }
 }
 

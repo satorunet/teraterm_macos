@@ -34,6 +34,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? out.joined(separator: "\n").write(toFile: path + ".out.txt", atomically: true, encoding: .utf8)
             exit(0)
         }
+        if let pre = ProcessInfo.processInfo.environment["TERAMAC_FRAMETEST"] {
+            SelfTest.frameTest(pre)
+            return
+        }
+        if let png = ProcessInfo.processInfo.environment["TERAMAC_GHOSTSNAP"] {
+            SelfTest.ghostSnap(png)
+            return
+        }
+        if ProcessInfo.processInfo.environment["TERAMAC_FLASHTEST"] != nil {
+            SelfTest.flashTest()
+            return
+        }
+        if let sec = ProcessInfo.processInfo.environment["TERAMAC_IDLETEST"], let t = Double(sec) {
+            SelfTest.idle(seconds: t)
+            return
+        }
+        if let p = ProcessInfo.processInfo.environment["TERAMAC_TCPTEST"], let port = Int(p) {
+            SelfTest.tcpThroughput(port: port)
+            return
+        }
+        if let n = ProcessInfo.processInfo.environment["TERAMAC_MEMTEST"] {
+            SelfTest.memtest(rounds: Int(n) ?? 10)
+            return
+        }
         if let png = ProcessInfo.processInfo.environment["TERAMAC_FEEDBACKSNAP"] {
             FeedbackPanel.debugSnap(png)
             return

@@ -359,11 +359,13 @@ FEEDBACK_FAILED=Could not send.
 FEEDBACK_FAILED_INFO=Check your network connection and try again. You can also send it from the form in your browser.
 FEEDBACK_OPEN_BROWSER=Open in Browser
 FEEDBACK_ROBOT_NAME=Tera-bot
-FEEDBACK_ROBOT_HELLO=Hey there! Thanks for using Tera Term Mac 🙌\n"This is awkward to use…" "I wish it could do this!" — send me anything, anytime. Only the developer reads it.\nI can only auto-reply and can't answer each message, but it really gets there, promise!
+FEEDBACK_ROBOT_HELLO=Hey there! Thanks for using Tera Term Mac 🙌\n"This is awkward to use…" "I wish it could do this!" — send me anything, anytime.
 FEEDBACK_ROBOT_THANKS=THANK YOU FOR YOUR FEEDBACK! IT WILL HELP US IMPROVE!
 FEEDBACK_ROBOT_FAILED=OOPS... IT COULD NOT BE SENT.\nCHECK YOUR NETWORK AND TRY AGAIN.
 FEEDBACK_PLACEHOLDER=Type a message (Enter to send, Shift+Enter for a new line)
 FEEDBACK_HEADER=Send Tera Term Mac a quick message!
+FEEDBACK_SENT_LINE=Sent.
+FEEDBACK_SEND_ERROR_LINE=Could not send.
 FEEDBACK_READ=Read
 FEEDBACK_NOT_SENT=Not sent
 ; TABS2
