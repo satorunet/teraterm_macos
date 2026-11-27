@@ -534,8 +534,12 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         refresh()
     }
     /// 起動時に開くもの
-    private let startupPopup = SetupUI.popup([Lang.m("SETUP_STARTUP_MENU", "TeraTerm Menu (接続先リスト)"),
+    private lazy var startupPopup: NSPopUpButton = {
+        let p = SetupUI.popup([Lang.m("SETUP_STARTUP_MENU", "TeraTerm Menu (接続先リスト)"),
                                               Lang.m("SETUP_STARTUP_TERMINAL", "Tera Term (端末と新しい接続の画面)")])
+        p.target = self; p.action = #selector(changed(_:))
+        return p
+    }()
     /// メニューバーにアイコンを出す (TeraTerm Menu)
     private let statusIconCheck = SetupUI.check(Lang.m("SETUP_STATUS_ICON2", "メニューバーに常駐アイコンを表示する"))
     /// TTMado (タブ・窓割り) を使う
@@ -626,6 +630,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                 let iv = NSImageView(image: img)
                 return SetupUI.row([self.statusIconCheck, iv], spacing: 4)
             }(),
+            SetupUI.button(Lang.m("SETUP_RESET_ALL", "すべての設定を初期状態に戻す…"), target: self, action: #selector(resetAllPages)),
         ], spacing: 8)
     }
 
@@ -835,6 +840,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .ui, .findHistory: return false
         default: break
         }
+        // 全般: Mac 版で足した「起動時に開くもの」「メニューバーに常駐アイコン」も見る
+        if page == .general && (startupPopup.indexOfSelectedItem != 0 || statusIconCheck.state != .on) { return true }
         guard let r = pageBinders[page], !r.isEmpty else { return false }
         let keep = s
         s = TermSettings.initial()
@@ -847,8 +854,21 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         tabBar.resetVisible = pageDiffersFromDefault(currentPage)
     }
     /// 今のページを既定に戻す (ほかのページで変えた値はそのまま)
-    private func resetCurrentPage() {
-        let page = currentPage
+    private func resetCurrentPage() { resetPage(currentPage) }
+    /// 全般の「すべての設定を初期状態に戻す」: 全部のページを初めの状態に (OK を押すまでは保存しない)
+    @objc private func resetAllPages() {
+        let a = NSAlert()
+        a.messageText = Lang.m("SETUP_RESET_ALL_TITLE", "すべての設定を初期状態に戻しますか？")
+        a.informativeText = Lang.m("SETUP_RESET_ALL_INFO", "全部のページの設定を初めの状態にします。OK を押すまでは保存されません (キャンセルで元に戻せます)。検索履歴と背景リストはそのまま残ります。")
+        a.addButton(withTitle: Lang.m("SETUP_RESET_ALL_DO", "初期状態に戻す"))
+        a.addButton(withTitle: Lang.t("Tera Term", "BTN_CANCEL", "キャンセル"))
+        a.beginSheetModal(for: panel) { [weak self] r in
+            guard let self = self, r == .alertFirstButtonReturn else { return }
+            for p in Page.allCases where p != .ui && p != .findHistory { self.resetPage(p) }
+            self.refresh()
+        }
+    }
+    private func resetPage(_ page: Page) {
         switch page {
         case .theme:
             schemeGrid.selectedKey = "none"
@@ -867,6 +887,11 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         s = TermSettings.initial()
         for b in binders[r] { b.load() }
         s = keep
+        if page == .general {
+            // 起動時は TTMenu (接続先リスト)、常駐アイコンはあり (アイコンはすぐ出す)
+            startupPopup.selectItem(at: 0)
+            if statusIconCheck.state != .on { statusIconCheck.state = .on; statusIconToggled() }
+        }
         if page == .visual { ansiWork = Array(Palette.colors.prefix(16)); ansiSelected() }
         refresh()
     }

@@ -1,6 +1,7 @@
 import AppKit
-// 元の Tera Term のアイコン (teraterm/common/teraterm.ico) から AppIcon.iconset を作る
-//   swift scripts/make_icon.swift ../teraterm/common/teraterm.ico <出力.iconset>
+// Tera Term のアイコン (.ico) から AppIcon.iconset を作る
+//   swift scripts/make_icon.swift ../teraterm/common/teraterm_classic.ico <出力.iconset>
+// 寺西さん作の classic (Tera Term 2.3 以前) は 16 / 32px しかないので、大きいサイズはドット絵のまま (ぼかさず) 拡大する
 let ico = CommandLine.arguments[1], out = CommandLine.arguments[2]
 guard let img = NSImage(contentsOfFile: ico) else { fatalError("ico を読めません") }
 // いちばん大きい絵 (256px) を元にする。小さいサイズは ico の中の同じ大きさの絵があればそれを使う
@@ -15,9 +16,11 @@ for (name, px) in [("icon_16x16",16),("icon_16x16@2x",32),("icon_32x32",32),("ic
     let dst = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     let ctx = NSGraphicsContext(bitmapImageRep: dst)!
-    ctx.imageInterpolation = .high
+    // 元の絵より大きくするときはドット絵のまま (補間なし)
+    let interp: NSImageInterpolation = src.pixelsWide < px ? .none : .high
+    ctx.imageInterpolation = interp
     NSGraphicsContext.current = ctx
-    src.draw(in: NSRect(x: 0, y: 0, width: px, height: px), from: .zero, operation: .copy, fraction: 1, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.high.rawValue])
+    src.draw(in: NSRect(x: 0, y: 0, width: px, height: px), from: .zero, operation: .copy, fraction: 1, respectFlipped: false, hints: [.interpolation: interp.rawValue])
     NSGraphicsContext.restoreGraphicsState()
     try! dst.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "\(out)/\(name).png"))
 }

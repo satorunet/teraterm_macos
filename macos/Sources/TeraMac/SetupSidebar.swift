@@ -18,7 +18,8 @@ final class SetupSidebarView: NSView {
     var onSelect: ((Int) -> Void)?
     /// 「デフォルトに戻す」(右上。今のページが既定と違うときだけ出す)
     var onReset: (() -> Void)?
-    var resetVisible = false { didSet { resetButton.isHidden = !resetVisible } }
+    /// いつも出しておき、戻すものがないときは押せない (淡い) 表示にする
+    var resetVisible = false { didSet { resetButton.isEnabled = resetVisible } }
     private lazy var resetButton: NSButton = {
         let b = NSButton(title: Lang.m("SETUP_PAGE_RESET", "デフォルトに戻す"), target: self, action: #selector(resetTapped))
         b.bezelStyle = .rounded
@@ -26,7 +27,8 @@ final class SetupSidebarView: NSView {
         b.font = .systemFont(ofSize: 11)
         b.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: nil)
         b.imagePosition = .imageLeading
-        b.isHidden = true
+        b.isEnabled = false
+        b.toolTip = Lang.m("SETUP_PAGE_RESET_TIP", "このページの設定を初めの状態に戻します (初めの状態のときは押せません)")
         return b
     }()
     @objc private func resetTapped() { onReset?() }

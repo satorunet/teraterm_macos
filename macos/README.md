@@ -3,7 +3,9 @@
 Tera Term の主な機能を Swift / AppKit で macOS 用に作り直したものです。
 (元の Tera Term は Win32 API で書かれているため、Mac ではそのまま動きません。)
 
-> **Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受けた Mac 版のプロジェクトで、Windows 版を開発している TeraTerm Project とは別のチームで開発しています。**
+> **Tera Term Mac は、TeraTerm Project の [Tera Term](https://github.com/TeraTermProject/teraterm) を fork し、独自に Mac へ移植したものです。** Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版を開発している TeraTerm Project とは別に開発しています。TeraTerm Project の製品ではありません。
+>
+> Mac 版についての不具合・要望・お問い合わせは、TeraTerm Project ではなく **[このリポジトリの Issues](https://github.com/teraterm-mac/teraterm-mac/issues)** へお願いします。
 
 ## できること
 

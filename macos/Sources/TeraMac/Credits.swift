@@ -59,7 +59,7 @@ final class CreditsWindowController: NSWindowController {
             s.append(NSAttributedString(string: t + "\n", attributes: [.font: font, .foregroundColor: color, .paragraphStyle: p]))
         }
         add("Tera Term Mac", NSFont.boldSystemFont(ofSize: 17), space: 2)
-        add(Lang.m("MENU_CREDITS_DESCRIPTION", "Tera Term の macOS 版。原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。"), body, secondary)
+        add(Lang.m("MENU_CREDITS_DESCRIPTION", "Tera Term の macOS 版。TeraTerm Project の Tera Term を fork し、独自に Mac へ移植したものです。原作者 T. Teranishi (寺西 高) 氏の公認を受け、TeraTerm Project とは別に開発しています。"), body, secondary)
         // 著作者は Tera Term の作者 (寺西 高 氏)。satorunet は Mac 版の開発者
         add(Lang.m("MENU_CREDITS_AUTHOR", "Tera Term の著作者: T. Teranishi (寺西 高)"), body, secondary, space: 2)
         add(Lang.m("MENU_CREDITS_DEVELOPER", "Tera Term Mac の開発: satorunet (Mac 版で追加したコードは MIT License)"), body, secondary, space: 18)
@@ -138,6 +138,16 @@ final class AboutWindowController: NSWindowController {
             links,
             label(Lang.m("MENU_ABOUT_AUTHOR", "Tera Term の著作者: T. Teranishi (寺西 高)"), small, .secondaryLabelColor),
             label(Lang.m("MENU_ABOUT_DEVELOPER", "開発: satorunet"), small, .secondaryLabelColor),
+            // TeraTerm Project とは別に開発していることと、問い合わせ先 (TeraTerm Project にお願いしたこと)
+            { () -> NSTextField in
+                let l = NSTextField(wrappingLabelWithString: Lang.m("MENU_ABOUT_INDEPENDENT", "TeraTerm Project の Tera Term を fork し、独自に Mac へ移植したものです。TeraTerm Project とは別に開発しています。"))
+                l.font = small
+                l.textColor = .secondaryLabelColor
+                l.alignment = .center
+                l.preferredMaxLayoutWidth = 320
+                return l
+            }(),
+            AboutWindowController.link(Lang.m("MENU_ABOUT_CONTACT", "Mac 版のお問い合わせ (GitHub Issues)"), #selector(openIssues(_:)), self),
         ])
         stack.orientation = .vertical
         stack.alignment = .centerX
@@ -176,6 +186,9 @@ final class AboutWindowController: NSWindowController {
     @objc private func openHomepage(_ sender: Any?) { NSWorkspace.shared.open(AppDelegate.homepage) }
     @objc private func openCredits(_ sender: Any?) { CreditsWindowController.shared.show() }
     /// GitHub のリリースの一覧 (各版の更新情報)
+    /// Mac 版のお問い合わせは Tera Term Mac の Issues へ (TeraTerm Project には送らない)
+    static let issuesURL = URL(string: "https://github.com/teraterm-mac/teraterm-mac/issues")!
+    @objc private func openIssues(_ sender: Any?) { NSWorkspace.shared.open(Self.issuesURL) }
     @objc private func openChanges(_ sender: Any?) {
         NSWorkspace.shared.open(URL(string: "https://github.com/teraterm-mac/teraterm-mac/releases")!)
     }

@@ -57,6 +57,7 @@ enum AboutPlugins {
             label("TTProxy", bold: true),
             label("Copyright (C) 2003-2006 蛭子屋本舗\n蛭子屋本舗: http://yebisuya.dip.jp/Software/TTProxy/\n(C) 2006-2026 TeraTerm Project\nTeraTerm Project: https://teratermproject.github.io/"),
             label(Lang.m("MENU_ABOUT_TTPROXY_MAC", "Mac 版では、TTProxy と同じプロキシ接続 (HTTP / SOCKS4 / SOCKS4a / SOCKS5 / TELNET) をアプリに組み込んで使っています。"), small: true),
+            label(Lang.m("MENU_ABOUT_PLUGIN_CONTACT", "Mac 版についてのお問い合わせは、TeraTerm Project ではなく Tera Term Mac の Issues へ: https://github.com/teraterm-mac/teraterm-mac/issues"), small: true),
         ])
     }
 
@@ -93,6 +94,7 @@ enum AboutPlugins {
             label("Includes:\nTTSSH 1.5.4, (C) 1998-2001 Robert O'Callahan\nIPv6 extention version 0.81, (C) 2000-2003 Jun-ya KATO", small: true),
             label(Lang.m("MENU_ABOUT_TTSSH_MAC", "Mac 版では、SSH の接続に macOS の OpenSSH (ssh コマンド) を使っています。\nOpenSSH: %s", ssh), small: true),
             label("TeraTerm Project: https://teratermproject.github.io/", small: true),
+            label(Lang.m("MENU_ABOUT_PLUGIN_CONTACT", "Mac 版についてのお問い合わせは、TeraTerm Project ではなく Tera Term Mac の Issues へ: https://github.com/teraterm-mac/teraterm-mac/issues"), small: true),
             hashRow,
             scroll,
         ])

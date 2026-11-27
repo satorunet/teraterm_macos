@@ -1,4 +1,8 @@
-﻿# Tera Term
+> **このファイルは fork 元の TeraTerm Project (Windows 版 Tera Term) のものです。** ここに書かれている連絡先は TeraTerm Project のものなので、**Tera Term Mac (Mac 版) についてのお問い合わせは送らないでください。** Mac 版の不具合・要望は [Tera Term Mac の Issues](https://github.com/teraterm-mac/teraterm-mac/issues) へお願いします。
+>
+> This file comes from the upstream TeraTerm Project (Tera Term for Windows). Please do not send questions about Tera Term Mac to TeraTerm Project; use the [Tera Term Mac Issues](https://github.com/teraterm-mac/teraterm-mac/issues) instead.
+
+# Tera Term
 
 | CI | Workflow | Status |
 |----|----------|--------|
