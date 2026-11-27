@@ -5,12 +5,12 @@
     <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.6.1</title>
-      <pubDate>Thu, 26 Nov 2026 17:26:42 +0000</pubDate>
-      <sparkle:version>0.6.1</sparkle:version>
-      <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.7.0</title>
+      <pubDate>Fri, 27 Nov 2026 05:25:56 +0000</pubDate>
+      <sparkle:version>0.7.0</sparkle:version>
+      <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.6.1</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.7.0</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -27,26 +27,36 @@ td.r, th.r { text-align: right; }
 td.c, th.c { text-align: center; }
 .note { color: #888; font-size: 11px; }
 </style>
-<p>0.6.0 の「もっさり感の解消」に続いて、メモリと CPU の使い方を最適化した更新です。</p>
-<h3>メモリ＆CPU最適化</h3>
-<table><tr><th>測ったもの</th><th class="r">0.6.0</th><th class="r">0.6.1</th><th class="c"></th></tr><tr><td>履歴 1 万行で増えるメモリ</td><td class="r">約 57MB</td><td class="r"><b>約 17MB</b></td><td class="c">約 1/3</td></tr><tr><td>何もしていないときの CPU (6 ウインドウ)</td><td class="r">2.44%</td><td class="r"><b>0.24%</b></td><td class="c">約 1/10</td></tr><tr><td>23.6 万行 (単語の一覧) を出し終わるまで</td><td class="r">0.47 秒</td><td class="r"><b>約 0.3 秒</b></td><td class="c">約 1.5 倍</td></tr></table>
-<p class="note">測り方: Intel Mac (macOS 12)、ローカルシェル。メモリは大量の出力を 40 回くり返して、増え続けないことも確かめました</p>
+<p>端末の中の文字も、設定の項目も、すぐ探せる検索機能を追加しました🔍</p>
+<p>ほかにも、ターミナルの背景に好きな画像を設定できるように。設定画面をリニューアル。</p>
+<h3>🔍 検索機能</h3>
 <ul>
-<li>画面の 1 文字分の持ち方を詰めました (40 バイト → 16 バイト)</li>
-<li>さかのぼって見る履歴は、行末の空白を持たないようにしました</li>
-<li>カーソルの点滅は、いま操作しているウインドウだけにしました。後ろのウインドウはカーソルを点けたままにします</li>
+<li>端末の中を ⌘F で検索。さかのぼった履歴もふくめて探し、＜ ＞ で候補をたどれます</li>
+<li>ヒットした所すべてに印、いま見ている所は別の色。tail などで新しく出た行にも、その場で印が付きます</li>
+<li>検索履歴を 30 件まで残せます (▽ で最新 10 件を選ぶ・× で消す / ↓↑ でたどる / もっと見る… で全部を管理)</li>
+<li>設定画面の左上の検索欄から、設定したい項目をすぐ探せます</li>
 </ul>
-<h3>要望・お知らせを送る</h3>
+<h3>ターミナル背景機能追加</h3>
 <ul>
-<li>ターミナル風の画面にしました。送ると「てらたーむくん」がすぐお返事します</li>
+<li>端末の背景に好きな画像をうっすら表示できます (見本の画像付き)</li>
+<li>背景は単色カラーか画像を選べます</li>
 </ul>
-<h3>TTMado (タブ・窓割り)</h3>
+<h3>設定画面のリニューアル</h3>
 <ul>
-<li>窓割りの画面をウインドウの外へドラッグすると、タブを引き出したときと同じように半透明の写しが付いてくるようにしました</li>
-<li>タブを窓割りに入れるとき、画面が一瞬消えることがあったのを直しました</li>
+<li>情報を整理して、設定しやすくしました。</li>
+<li>全般、デザイン、通信、操作、その他に分類されています。</li>
+</ul>
+<h3>画面のカーソル選択をスッキリ化✨</h3>
+<ul>
+<li>文字を選んだとき、行末の何もない余白まで塗らないようにしました</li>
+</ul>
+<p><b>そのほか</b> (設定 ＞ 全般)</p>
+<ul>
+<li>初期スタートを、接続先メニュー (TTMenu) か直接入力方式か選べるように</li>
+<li>メニューバー常駐アイコンのオン / オフを選べるように</li>
 </ul>
 <p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。</p>]]></description>
-      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.6.1/TeraTermMac-0.6.1.dmg" sparkle:edSignature="3q8jSa5RVHW3+k83/VeKrxxEroJSJ4bSf3l4d3ye69gFPWXf/ZnVTRT+1pd9wzM/wnp48UzgpmxP5oE1fbu5DQ==" length="10576760" type="application/octet-stream"/>
+      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.7.0/TeraTermMac-0.7.0.dmg" sparkle:edSignature="b/Zjzu3rkyeYEHkIeBAFUu+WMsCrfAPow8iSHvlqekLYmMQpDW+QZOalqSH9l4O3uHPOzcsGLGoMJC0SHgl1Dg==" length="10884531" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
