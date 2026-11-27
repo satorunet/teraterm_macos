@@ -56,6 +56,22 @@ final class TerminalView: NSView, NSTextInputClient {
     private var selAnchor: Pos?
     private var selHead: Pos?
     private var selMode = 1  // 1 = 文字, 2 = 単語, 3 = 行
+    /// ⌘F の検索の欄 (出したことがあれば)
+    var findBar: FindBar?
+    /// 検索のヒット (行の番号 → 桁と幅) と、いま選んでいるもの
+    var findMarks: [Int: [(col: Int, width: Int)]] = [:]
+    var findCurrent: FindHit?
+    func setFindMarks(_ hits: [FindHit]) {
+        var d: [Int: [(col: Int, width: Int)]] = [:]
+        for h in hits { d[h.li, default: []].append((h.col, h.width)) }
+        findMarks = d
+        if hits.isEmpty { findCurrent = nil }
+        needsDisplay = true
+    }
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        findBar?.place()
+    }
     /// ダブルクリックで選んだ単語の範囲 (buffer.c DblClkStart / DblClkEnd)
     private var dblClkStart: Pos?
     private var dblClkEnd: Pos?
@@ -246,6 +262,7 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
+        defer { findBar?.place() }
         super.setFrameSize(newSize)
         let c = min(TermLimits.widthMax, max(10, Int((newSize.width - pad * 2) / cellW)))
         let r = min(TermLimits.heightMax, max(2, Int((newSize.height - pad * 2) / cellH)))
@@ -270,6 +287,8 @@ final class TerminalView: NSView, NSTextInputClient {
     private var shownReverse = false
 
     func dataArrived() {
+        // 検索の欄を開いているときは、新しく出た文字にも印を付け直す
+        if let b = findBar, !b.isHidden, !b.closing { b.scheduleRefresh() }
         if TerminalView.latencyLog && latencyT0 > 0 && latencyData == 0 { latencyData = CFAbsoluteTimeGetCurrent() }
         let delta = max(0, term.scrolledOutTotal - lastScrolledOut)
         lastScrolledOut = term.scrolledOutTotal
@@ -653,7 +672,29 @@ final class TerminalView: NSView, NSTextInputClient {
             }
             flush()
         }
+        drawFindMarks(first: first, r0: r0, r1: r1)
         drawCursor()
+    }
+
+    /// ⌘F の検索: ヒットした所すべてに淡い黄色、いま選んでいる所に濃いオレンジ
+    private func drawFindMarks(first: Int, r0: Int, r1: Int) {
+        guard !findMarks.isEmpty else { return }
+        for r in r0...r1 {
+            guard let list = findMarks[first + r] else { continue }
+            let y = pad + CGFloat(r) * cellH
+            for m in list {
+                let rect = NSRect(x: pad + CGFloat(m.col) * cellW, y: y, width: CGFloat(m.width) * cellW, height: cellH)
+                let cur = findCurrent.map { $0.li == first + r && $0.col == m.col } ?? false
+                (cur ? NSColor.systemOrange.withAlphaComponent(0.6) : NSColor.systemYellow.withAlphaComponent(0.32)).setFill()
+                NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
+                if cur {
+                    NSColor.systemOrange.setStroke()
+                    let p = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 2, yRadius: 2)
+                    p.lineWidth = 1
+                    p.stroke()
+                }
+            }
+        }
     }
 
     /// 罫線は線で描く (フォントによってすき間が出るため)。それ以外は 1 文字ずつ中央に
@@ -1514,6 +1555,13 @@ final class TerminalView: NSView, NSTextInputClient {
         if let w = window, NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) != w.windowNumber {
             return
         }
+        // 検索の欄の上では端末のカーソル (I ビーム) にしない。文字欄以外 (ボタン) の上は矢印
+        if let bar = findBar, !bar.isHidden, let sv = bar.superview,
+           bar.frame.contains(sv.convert(event.locationInWindow, from: nil)) {
+            let p = bar.field.convert(event.locationInWindow, from: nil)
+            if !bar.field.bounds.contains(p) { NSCursor.arrow.set() }
+            return
+        }
         if settings.enableClickableUrl, urlAt(cellPosAt(event)) != nil {
             NSCursor.pointingHand.set()
         } else {
@@ -1750,4 +1798,387 @@ final class TerminalView: NSView, NSTextInputClient {
             return true
         }
     }
+}
+
+// MARK: - 検索 (⌘F。履歴も含めて端末の文字を探す)
+
+extension TerminalView: NSSearchFieldDelegate {
+    /// 見つけた場所 (li = term.line(at:) の番号、col = 桁、width = 桁数)
+    struct FindHit { let li: Int; let col: Int; let width: Int }
+
+    /// 全部の行から探す (大文字・小文字は区別しない)
+    func findAll(_ query: String) -> [FindHit] {
+        let q = Array(query.lowercased())
+        guard !q.isEmpty else { return [] }
+        var hits: [FindHit] = []
+        for li in 0..<term.totalLines {
+            let cells = term.line(at: li).cells
+            var chars: [Character] = [], cols: [(Int, Int)] = []
+            for (x, c) in cells.enumerated() where c.width > 0 {
+                for ch in String(c.ch).lowercased() { chars.append(ch); cols.append((x, Int(c.width))) }
+            }
+            guard chars.count >= q.count else { continue }
+            var i = 0
+            while i + q.count <= chars.count {
+                if chars[i] == q[0] && Array(chars[i..<i + q.count]) == q {
+                    let start = cols[i].0, last = cols[i + q.count - 1]
+                    hits.append(FindHit(li: li, col: start, width: last.0 + last.1 - start))
+                    i += q.count
+                } else { i += 1 }
+            }
+        }
+        return hits
+    }
+
+    /// 行の番号 (term.line(at:)) を、行が増えても変わらない通し番号にする
+    func globalLine(_ li: Int) -> Int { lineBase + li }
+
+    /// 見つけた場所を選択して、見えるところまでスクロールする
+    func reveal(_ h: FindHit) {
+        // 選択はせず、印 (いま選んでいる所はオレンジ) で見せる
+        findCurrent = h
+        let visible = firstLineIndex..<(firstLineIndex + term.rows)
+        if !visible.contains(h.li) {
+            let top = h.li - term.rows / 2
+            scrollOffset = max(0, min(term.scrollback.count, term.totalLines - term.rows - top))
+        }
+        needsDisplay = true
+    }
+
+    @objc func showFind(_ sender: Any?) {
+        // 端末の上に重ねると端末の描き方 (レイヤー) が変わって選択の色が出なくなるので、端末と同じ親 (ウインドウの中身) に置く
+        let bar = findBar ?? {
+            let b = FindBar(term: self)
+            (superview ?? self).addSubview(b, positioned: .above, relativeTo: superview == nil ? nil : self)
+            findBar = b
+            return b
+        }()
+        bar.place()
+        bar.fadeIn()
+        window?.makeFirstResponder(bar.field)
+        bar.field.selectText(nil)
+    }
+    @objc func findNext(_ sender: Any?) { findBar?.step(-1) ?? showFind(sender) }
+    @objc func findPrevious(_ sender: Any?) { findBar?.step(1) ?? showFind(sender) }
+}
+
+/// 端末の右上に出す検索の欄
+final class FindBar: NSView, NSSearchFieldDelegate {
+    unowned let term: TerminalView
+    let field = NSSearchField()
+    private let count = NSTextField(labelWithString: "")
+    private var hits: [TerminalView.FindHit] = []
+    private var index = -1
+
+    init(term: TerminalView) {
+        self.term = term
+        super.init(frame: NSRect(x: 0, y: 0, width: 262, height: 30))
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.separatorColor.cgColor
+        field.placeholderString = Lang.m("FIND_PLACEHOLDER", "端末の中を検索")
+        setupHistoryMenu()
+        NotificationCenter.default.addObserver(self, selector: #selector(historyDidChange), name: Self.historyChanged, object: nil)
+        field.delegate = self
+        field.sendsSearchStringImmediately = true
+        field.target = self; field.action = #selector(changed)
+        func btn(_ sym: String, _ tip: String, _ a: Selector) -> NSButton {
+            let b = NSButton(image: NSImage(systemSymbolName: sym, accessibilityDescription: tip) ?? NSImage(), target: self, action: a)
+            b.isBordered = false
+            b.toolTip = tip
+            return b
+        }
+        let up = btn("chevron.left", Lang.m("FIND_PREV", "前 (上) を検索  Enter / ⌘G"), #selector(older))
+        let down = btn("chevron.right", Lang.m("FIND_NEXT", "次 (下) を検索  ⇧Enter / ⇧⌘G"), #selector(newer))
+        let close = btn("xmark.circle.fill", Lang.m("FIND_CLOSE", "閉じる  esc"), #selector(closeBar))
+        field.controlSize = .small
+        field.font = .systemFont(ofSize: 12)
+        let row = NSStackView(views: [historyButton, field, up, down, close])
+        row.spacing = 2
+        row.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
+            field.widthAnchor.constraint(equalToConstant: 180),
+        ])
+        // 中身にぴったりの大きさにする (右の余白を残さない)
+        setFrameSize(row.fittingSize)
+        // 何件目か / 何件か は、欄の下に小さく出して少しで消す (欄を小さくするため)
+        count.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        count.textColor = .white
+        count.alignment = .center
+        count.drawsBackground = false
+        count.wantsLayer = true
+        count.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
+        count.layer?.cornerRadius = 9
+        count.alphaValue = 0
+        autoresizingMask = [.minXMargin, .minYMargin]
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// 端末の右上に置く (親の座標で)
+    func place() {
+        guard let sv = superview else { return }
+        let t = sv === term ? term.bounds : term.frame
+        frame.origin = NSPoint(x: t.maxX - frame.width - 12, y: sv.isFlipped ? t.minY + 8 : t.maxY - frame.height - 8)
+    }
+
+    // MARK: 検索の履歴 (▽ から選ぶ / ↓↑ でたどる。最大 30 件、アプリ全体で 1 つ)
+
+    static let historyKey = "FindHistory"
+    static let keepHistoryKey = "FindKeepHistory"
+    static var keepHistory: Bool {
+        get { UserDefaults.standard.object(forKey: keepHistoryKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: keepHistoryKey) }
+    }
+    static let historyChanged = Notification.Name("TeraMacFindHistoryChanged")
+    static var history: [String] {
+        get { UserDefaults.standard.stringArray(forKey: historyKey) ?? [] }
+        set {
+            UserDefaults.standard.set(Array(newValue.prefix(30)), forKey: historyKey)
+            NotificationCenter.default.post(name: historyChanged, object: nil)
+        }
+    }
+    private var historyPos = -1
+    /// ▽ のボタンで出すメニュー (新しい 10 件・各行に ×・「検索履歴を残す」・「もっと見る…」・「履歴をクリア」)
+    let historyButton = NSButton()
+    private func setupHistoryMenu() {
+        field.searchMenuTemplate = nil
+        historyButton.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: Lang.m("FIND_HISTORY", "検索履歴"))
+        historyButton.isBordered = false
+        historyButton.toolTip = Lang.m("FIND_HISTORY", "検索履歴")
+        historyButton.target = self
+        historyButton.action = #selector(showHistoryMenu)
+    }
+    @objc private func showHistoryMenu() {
+        let m = NSMenu()
+        m.autoenablesItems = false
+        let title = NSMenuItem(title: Lang.m("FIND_HISTORY", "検索履歴"), action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        m.addItem(title)
+        let recent = Array(Self.history.prefix(10))
+        if recent.isEmpty {
+            let none = NSMenuItem(title: Lang.m("FIND_HISTORY_NONE", "(履歴なし)"), action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            m.addItem(none)
+        }
+        for q in recent {
+            let it = NSMenuItem()
+            it.view = HistoryRowView(text: q, pick: { [weak self] in
+                guard let self = self else { return }
+                m.cancelTracking()
+                self.field.stringValue = q
+                self.changed()
+                self.remember()
+            }, delete: { [weak it] in
+                var h = Self.history
+                h.removeAll { $0 == q }
+                Self.history = h
+                if let it = it { m.removeItem(it) }
+            })
+            m.addItem(it)
+        }
+        m.addItem(.separator())
+        let keep = NSMenuItem(title: Lang.m("FIND_HISTORY_KEEP", "検索履歴を残す"), action: #selector(toggleKeepHistory(_:)), keyEquivalent: "")
+        keep.target = self
+        keep.state = Self.keepHistory ? .on : .off
+        m.addItem(keep)
+        let more = NSMenuItem(title: Lang.m("FIND_HISTORY_MORE", "もっと見る…"), action: #selector(showAllHistory), keyEquivalent: "")
+        more.target = self
+        m.addItem(more)
+        let clear = NSMenuItem(title: Lang.m("FIND_HISTORY_CLEAR", "履歴をクリア"), action: #selector(clearHistory), keyEquivalent: "")
+        clear.target = self
+        m.addItem(clear)
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: historyButton.bounds.maxY + 4), in: historyButton)
+    }
+    /// ▽ のメニューには新しい 10 件だけ (全部は「もっと見る…」の設定画面で)
+    private func syncRecents() {}
+    @objc private func clearHistory() {
+        Self.history = []
+        historyPos = -1
+        pop(Lang.m("FIND_HISTORY_CLEARED", "履歴をクリアしました"))   // 欄の下にトーストで知らせる
+    }
+    @objc private func showAllHistory() {
+        (SessionWindowController.session(for: window) ?? SessionWindowController.current)?.openSetupSheet(.findHistory)
+    }
+    @objc private func toggleKeepHistory(_ sender: NSMenuItem) { Self.keepHistory.toggle() }
+    /// 設定画面で消したり、ほかのウインドウで探したりしたときに合わせる
+    @objc private func historyDidChange() { syncRecents() }
+    /// 探した言葉を履歴に入れる (新しいものが上)
+    func remember() {
+        let q = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard Self.keepHistory, !q.isEmpty else { return }
+        var h = Self.history.filter { $0 != q }
+        h.insert(q, at: 0)
+        Self.history = h
+        syncRecents()
+        historyPos = -1
+    }
+    /// ↓ で古い方へ、↑ で新しい方へ履歴をたどる
+    private func walkHistory(_ dir: Int) {
+        let h = Self.history
+        guard !h.isEmpty else { NSSound.beep(); return }
+        historyPos = max(-1, min(h.count - 1, historyPos + dir))
+        field.stringValue = historyPos >= 0 ? h[historyPos] : ""
+        changed()
+    }
+
+    @objc private func changed() {
+        hits = term.findAll(field.stringValue)
+        term.setFindMarks(hits)
+        // いちばん新しい (下の) ものから
+        index = hits.isEmpty ? -1 : hits.count - 1
+        show()
+    }
+    /// dir = -1: 前 (上・古い方) / +1: 次 (下・新しい方)
+    func step(_ dir: Int) {
+        if hits.isEmpty { changed(); if hits.isEmpty { NSSound.beep(); return } }
+        index = (index + dir + hits.count) % hits.count
+        show()
+    }
+    @objc private func older() { remember(); step(-1) }
+    @objc private func newer() { remember(); step(1) }
+    private func show() {
+        if hits.isEmpty {
+            if !field.stringValue.isEmpty { pop(Lang.m("FIND_NONE", "なし")) }
+            return
+        }
+        pop("\(index + 1) / \(hits.count)")
+        term.reveal(hits[index])
+    }
+    private var popSeq = 0
+    /// ヒット数を欄の右下に小さく出して、少ししたら消す
+    private func pop(_ text: String) {
+        guard let sv = superview else { return }
+        if count.superview !== sv { sv.addSubview(count, positioned: .above, relativeTo: self) }
+        count.stringValue = text
+        count.sizeToFit()
+        let w = count.frame.width + 16, h: CGFloat = 18
+        count.frame = NSRect(x: frame.maxX - w - 4, y: sv.isFlipped ? frame.maxY + 4 : frame.minY - h - 4, width: w, height: h)
+        count.alphaValue = 1
+        popSeq += 1
+        let seq = popSeq
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            guard let self = self, self.popSeq == seq else { return }
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.4; self.count.animator().alphaValue = 0 }
+        }
+    }
+    // 検索の欄に文字を入れているとき (端末が応答者の並びにいないので、ここで受ける)。⌘F は欄を選び直すだけ (閉じない)
+    @objc func showFind(_ sender: Any?) { window?.makeFirstResponder(field); field.selectText(nil) }
+    @objc func findNext(_ sender: Any?) { step(-1) }
+    @objc func findPrevious(_ sender: Any?) { step(1) }
+
+    /// 出力が来たら探し直す (少しまとめてから。今見ている所はそのまま、スクロールもしない)
+    private var refreshPending = false
+    func scheduleRefresh() {
+        guard !refreshPending, !field.stringValue.isEmpty else { return }
+        refreshPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self = self else { return }
+            self.refreshPending = false
+            guard !self.isHidden, !self.closing else { return }
+            let cur = self.hits.indices.contains(self.index) ? self.hits[self.index] : nil
+            let curKey = cur.map { (self.term.globalLine($0.li), $0.col) }
+            self.hits = self.term.findAll(self.field.stringValue)
+            self.term.setFindMarks(self.hits)
+            if let k = curKey, let i = self.hits.firstIndex(where: { self.term.globalLine($0.li) == k.0 && $0.col == k.1 }) {
+                self.index = i
+                self.term.findCurrent = self.hits[i]
+            } else {
+                self.index = self.hits.isEmpty ? -1 : min(max(self.index, 0), self.hits.count - 1)
+                self.term.findCurrent = self.hits.indices.contains(self.index) ? self.hits[self.index] : nil
+            }
+            // ヒット数の札が出ている間は数を合わせる
+            if self.count.alphaValue > 0, !self.hits.isEmpty { self.count.stringValue = "\(self.index + 1) / \(self.hits.count)" }
+        }
+    }
+
+    /// 自己テスト用: 文字を入れて探す
+    func debugSearch(_ q: String) { field.stringValue = q; changed() }
+    /// ふわっと出す
+    func fadeIn() {
+        closing = false
+        if !hits.isEmpty { term.setFindMarks(hits); if hits.indices.contains(index) { term.reveal(hits[index]) } }
+        if isHidden { alphaValue = 0; isHidden = false }
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.18; animator().alphaValue = 1 }
+    }
+    /// 消えかけているところ (もう一度 ⌘F で出し直せるように)
+    private(set) var closing = false
+    @objc func closeBar() {
+        remember()
+        closing = true
+        term.setFindMarks([])
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            animator().alphaValue = 0
+            count.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self = self, self.closing else { return }
+            self.isHidden = true
+        })
+        window?.makeFirstResponder(term)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
+        switch sel {
+        case #selector(NSResponder.insertNewline(_:)):
+            remember()
+            step(NSApp.currentEvent?.modifierFlags.contains(.shift) == true ? 1 : -1); return true
+        case #selector(NSResponder.moveDown(_:)):
+            walkHistory(1); return true
+        case #selector(NSResponder.moveUp(_:)):
+            walkHistory(-1); return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            closeBar(); return true
+        default: return false
+        }
+    }
+}
+
+/// 検索履歴のメニューの 1 行: 押すとその言葉で探す、右の × で消す
+final class HistoryRowView: NSView {
+    private let label: NSTextField
+    private let x = NSButton()
+    private let pick: () -> Void
+    private let delete: () -> Void
+    private var hover = false { didSet { needsDisplay = true; label.textColor = hover ? .selectedMenuItemTextColor : .labelColor } }
+
+    init(text: String, pick: @escaping () -> Void, delete: @escaping () -> Void) {
+        label = NSTextField(labelWithString: text)
+        self.pick = pick
+        self.delete = delete
+        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 22))
+        label.font = .menuFont(ofSize: 0)
+        label.lineBreakMode = .byTruncatingTail
+        label.frame = NSRect(x: 20, y: 3, width: 200, height: 16)
+        x.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil)
+        x.isBordered = false
+        x.contentTintColor = .secondaryLabelColor
+        x.target = self
+        x.action = #selector(deleteTapped)
+        x.frame = NSRect(x: 232, y: 3, width: 16, height: 16)
+        x.toolTip = Lang.m("SETUP_BGIMAGE_REMOVE", "リストから外す")
+        addSubview(label)
+        addSubview(x)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if hover {
+            NSColor.selectedContentBackgroundColor.setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 5, dy: 1), xRadius: 4, yRadius: 4).fill()
+        }
+    }
+    override func mouseEntered(with event: NSEvent) { hover = true }
+    override func mouseExited(with event: NSEvent) { hover = false }
+    override func mouseUp(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        if x.frame.contains(p) { deleteTapped() } else { pick() }
+    }
+    @objc private func deleteTapped() { delete() }
 }

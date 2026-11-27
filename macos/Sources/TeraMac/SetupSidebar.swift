@@ -31,6 +31,14 @@ final class SetupSidebarView: NSView {
     }()
     @objc private func resetTapped() { onReset?() }
 
+    // MARK: 検索 (一覧の上の検索欄。入力に合う項目があるページだけを出す)
+    let searchField = NSSearchField()
+    /// 入力が変わったとき (空文字 = 検索をやめた)
+    var onSearch: ((String) -> Void)?
+    /// 出すページ (nil = 全部)
+    var filter: Set<Int>? { didSet { list.needsDisplay = true; list.noMatch = filter?.isEmpty == true } }
+    @objc private func searchChanged() { onSearch?(searchField.stringValue.trimmingCharacters(in: .whitespaces)) }
+
     static let sidebarWidth: CGFloat = 196
     private let list: SidebarList
     private let header = NSTextField(labelWithString: "")
@@ -49,7 +57,11 @@ final class SetupSidebarView: NSView {
         let sep = NSBox(); sep.boxType = .separator
         header.font = .systemFont(ofSize: 20, weight: .bold)
         header.stringValue = items.first?.title ?? ""
-        for v in [fx, list, sep, header, content, resetButton] as [NSView] {
+        searchField.placeholderString = Lang.m("SETUP_SEARCH", "設定を検索")
+        searchField.target = self
+        searchField.action = #selector(searchChanged)
+        searchField.sendsSearchStringImmediately = true
+        for v in [fx, list, sep, header, content, resetButton, searchField] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -60,7 +72,10 @@ final class SetupSidebarView: NSView {
             fx.bottomAnchor.constraint(equalTo: bottomAnchor),
             fx.widthAnchor.constraint(equalToConstant: w),
             list.leadingAnchor.constraint(equalTo: leadingAnchor),
-            list.topAnchor.constraint(equalTo: topAnchor),
+            searchField.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            searchField.widthAnchor.constraint(equalToConstant: w - 24),
+            list.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 4),
             list.bottomAnchor.constraint(equalTo: bottomAnchor),
             list.widthAnchor.constraint(equalToConstant: w),
             list.heightAnchor.constraint(greaterThanOrEqualToConstant: list.contentHeight),
@@ -87,7 +102,7 @@ final class SetupSidebarView: NSView {
     }
 
     /// 一覧の順 (見出しの順) で上下に動く
-    fileprivate var order: [Int] { sections.flatMap(\.items) }
+    fileprivate var order: [Int] { sections.flatMap(\.items).filter { filter?.contains($0) ?? true } }
 }
 
 /// 左の一覧 (見出し + アイコン付きの行)
@@ -95,7 +110,9 @@ private final class SidebarList: NSView {
     weak var owner: SetupSidebarView?
     private let rowH: CGFloat = 28
     private let headH: CGFloat = 26
-    private let top: CGFloat = 12
+    private let top: CGFloat = 4
+    /// 検索に合うページがないとき
+    var noMatch = false
     private var iconCache: [Int: NSImage] = [:]
 
     override var isFlipped: Bool { true }
@@ -114,9 +131,11 @@ private final class SidebarList: NSView {
         var heads: [(String, CGFloat)] = []
         var rows: [Int: NSRect] = [:]
         for s in o.sections {
+            let items = s.items.filter { o.filter?.contains($0) ?? true }
+            if items.isEmpty { continue }
             heads.append((s.title, y))
             y += headH
-            for i in s.items {
+            for i in items {
                 rows[i] = NSRect(x: 10, y: y, width: bounds.width - 20, height: rowH)
                 y += rowH
             }
@@ -152,6 +171,11 @@ private final class SidebarList: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let o = owner else { return }
+        if noMatch {
+            (Lang.m("SETUP_SEARCH_NONE", "見つかりません") as NSString).draw(at: NSPoint(x: 20, y: top + 10), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor])
+            return
+        }
         let g = geometry()
         let headAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold),
                                                         .foregroundColor: NSColor.secondaryLabelColor]

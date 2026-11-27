@@ -330,7 +330,29 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
     private var hotKeyHandler: EventHandlerRef?
     private var editor: MenuEditorWindowController?
 
+    /// メニューバーにアイコンを出すか (設定 > 全般。既定は出す)
+    static let statusItemKey = "TTMenuShowStatusItem"
+    static var showsStatusItem: Bool {
+        get { UserDefaults.standard.object(forKey: statusItemKey) as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: statusItemKey)
+            shared.applyStatusItemVisibility()
+        }
+    }
+    /// 設定に合わせて、メニューバーのアイコンを出す / 消す (すぐに効く)
+    func applyStatusItemVisibility() {
+        if Self.showsStatusItem {
+            if statusItem == nil { install() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
     func install() {
+        // 設定でアイコンを消しているときは出さない (ホットキーは使える)
+        guard Self.showsStatusItem else { updateHotkey(); return }
+        guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let b = item.button {
             // 元の Tera Term のアイコン (アプリのアイコン) をメニューバーにも使う

@@ -102,8 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let startedAny = args.isEmpty ? TeraMenuLauncher.runStartupEntries() : false
             // ログイン時の起動 (--menu) ではメニューバーだけ。起動時の項目を開いたら空のウインドウは出さない
             if args.isEmpty && (menuOnly || startedAny) { return }
-            // ふつうに起動したときは TeraTerm Menu の接続先一覧を出す (単体の接続ウインドウは出さない)
-            if args.isEmpty {
+            // ふつうに起動したとき: 設定 > 全般 の「起動時に開くもの」に合わせる
+            // (既定は TeraTerm Menu の接続先一覧。「Tera Term」にすると従来どおり端末と新しい接続の画面)
+            if args.isEmpty && AppDelegate.startupOpensMenu {
                 TeraMenuController.shared.showEditor(nil)
                 return
             }
@@ -233,6 +234,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         a.addButton(withTitle: Lang.m("MENU_QUIT_BUTTON", "終了"))
         a.addButton(withTitle: Lang.m("MENU_QUIT_CANCEL", "やめる"))
         return a.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// 起動時に開くもの (設定 > 全般)。true = TeraTerm Menu の接続先一覧 / false = Tera Term (端末と新しい接続)
+    static let startupKey = "StartupOpens"
+    static var startupOpensMenu: Bool {
+        get { (UserDefaults.standard.string(forKey: startupKey) ?? "menu") != "terminal" }
+        set { UserDefaults.standard.set(newValue ? "menu" : "terminal", forKey: startupKey) }
     }
 
     @objc func newWindow(_ sender: Any?) {
@@ -638,6 +646,7 @@ enum SelfTest {
         if ProcessInfo.processInfo.environment["TERAMAC_GUIDESNAP"] != nil { guide(dir: dir); return }
         // TERAMAC_MADOSNAP: かんたんマニュアルの窓割り (TTMado) の写真 (SelfTestMado.swift)
         if ProcessInfo.processInfo.environment["TERAMAC_MADOSNAP"] == "hero" { heroShot(dir: dir); return }
+        if ProcessInfo.processInfo.environment["TERAMAC_MADOSNAP"] == "bgsplit" { bgSplitShot(dir: dir); return }
         if ProcessInfo.processInfo.environment["TERAMAC_MADOSNAP"] != nil { madoGuide(dir: dir); return }
         let c = SessionWindowController()
         c.showWindow(nil)

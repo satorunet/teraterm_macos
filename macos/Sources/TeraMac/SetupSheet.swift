@@ -170,8 +170,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case theme, background, font, window, visual
         case tcpip, serial, localShell
         case keyboard, mouse, copyPaste
-        case log, sequence, plugins, ui
-        static let rowSizes = [3, 5, 3, 3, 4]
+        case log, sequence, plugins, findHistory, ui
+        static let rowSizes = [3, 5, 3, 3, 5]
         static let groupTitles = [Lang.m("SETUP_GROUP_GENERAL", "全般"), Lang.m("SETUP_GROUP_DESIGN", "デザイン"),
                                   Lang.m("SETUP_GROUP_COMM", "通信"), Lang.m("SETUP_GROUP_INPUT", "操作"),
                                   Lang.m("SETUP_GROUP_OTHER", "その他")]
@@ -202,6 +202,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             case .log: return ("doc.text.fill", .systemYellow)
             case .sequence: return ("chevron.left.forwardslash.chevron.right", .systemIndigo)
             case .plugins: return ("puzzlepiece.extension.fill", .systemGreen)
+            case .findHistory: return ("clock.arrow.circlepath", .systemGray)
             }
         }
         var title: String {
@@ -224,6 +225,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             case .serial: return Lang.t("Tera Term", "DLG_SERIAL_TITLE", "シリアルポート")
             case .window: return Lang.t("Tera Term", "DLG_WIN_TITLE", "ウィンドウ")
             case .plugins: return Lang.m("SETUP_TAB_PLUGINS", "プラグイン")
+            case .findHistory: return Lang.m("SETUP_TAB_FINDHISTORY", "検索履歴")
             }
         }
     }
@@ -356,6 +358,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         tabView.tabViewType = .noTabsNoBorder
         tabBar.onSelect = { [unowned self] i in self.selectPage(at: i) }
         tabBar.onReset = { [unowned self] in self.resetCurrentPage() }
+        tabBar.onSearch = { [unowned self] q in self.search(q) }
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         tabBar.widthAnchor.constraint(equalToConstant: SetupSidebarView.sidebarWidth + 1 + size.width).isActive = true
         for b in binders { b.load() }
@@ -372,6 +375,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         tabBar.selectedIndex = i
         scrollToSelectionLater()
         updateResetButton()
+        markSearchHits()
     }
     /// テーマ・背景のページでは、選んでいるタイルが見える位置までスクロールしておく
     private func scrollToSelectionLater() {
@@ -504,11 +508,36 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .serial: return serialPage()
         case .window: return windowPage()
         case .plugins: return pluginsPage()
+        case .findHistory: return findHistoryPage()
         }
+    }
+
+    // MARK: 検索履歴 (⌘F の検索の欄の履歴。1 件ずつ消せる。すぐに効く)
+
+    private let findHistoryList = FindHistoryListView()
+    private func findHistoryPage() -> NSView {
+        let keep = SetupUI.check(Lang.m("FIND_HISTORY_KEEP", "検索履歴を残す"))
+        keep.state = FindBar.keepHistory ? .on : .off
+        keep.target = findHistoryList; keep.action = #selector(FindHistoryListView.keepToggled(_:))
+        let note = NSTextField(wrappingLabelWithString: Lang.m("FIND_HISTORY_NOTE", "端末の中を検索 (⌘F) した言葉です。新しい順に 30 件まで残ります。× で 1 件ずつ消せます (すぐに消えます)。"))
+        note.font = .systemFont(ofSize: 11)
+        note.textColor = .secondaryLabelColor
+        note.preferredMaxLayoutWidth = 520
+        return SetupUI.column([keep, note, findHistoryList], spacing: 10)
     }
 
     // MARK: プラグイン (Mac 版の組み込みプラグイン)
 
+    private var statusIconOriginal: Bool?
+    @objc private func statusIconToggled() {
+        TeraMenuController.showsStatusItem = statusIconCheck.state == .on
+        refresh()
+    }
+    /// 起動時に開くもの
+    private let startupPopup = SetupUI.popup([Lang.m("SETUP_STARTUP_MENU", "TeraTerm Menu (接続先リスト)"),
+                                              Lang.m("SETUP_STARTUP_TERMINAL", "Tera Term (端末と新しい接続の画面)")])
+    /// メニューバーにアイコンを出す (TeraTerm Menu)
+    private let statusIconCheck = SetupUI.check(Lang.m("SETUP_STATUS_ICON2", "メニューバーに常駐アイコンを表示する"))
     /// TTMado (タブ・窓割り) を使う
     private let ttMadoCheck = NSButton(checkboxWithTitle: TTMado.title, target: nil, action: nil)
 
@@ -576,6 +605,27 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             SetupUI.indent(cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_NOTIFIY_SOUND", "通知音"), \.notifySound)),
             SetupUI.label(Lang.m("SETUP_FILE_TRANSFER_DIR", "ファイル転送のフォルダ")),
             SetupUI.indent(SetupUI.row([fileDirField, dirButton])),
+            // ここから下は Mac 版で足した項目
+            // 起動時に開くもの (Mac 版だけの項目)
+            { () -> NSView in
+                custom(load: { [unowned self] in self.startupPopup.selectItem(at: AppDelegate.startupOpensMenu ? 0 : 1) }, store: {})
+                return SetupUI.row([SetupUI.label(Lang.m("SETUP_STARTUP", "起動時に開くもの:")), self.startupPopup])
+            }(),
+            // メニューバーのアイコン (TeraTerm Menu)。Mac 版だけの項目
+            { () -> NSView in
+                custom(load: { [unowned self] in
+                    self.statusIconOriginal = TeraMenuController.showsStatusItem
+                    self.statusIconCheck.state = TeraMenuController.showsStatusItem ? .on : .off
+                }, store: {})
+                // 押したらすぐメニューバーに出す / 消す (キャンセルで元に戻す)
+                self.statusIconCheck.target = self
+                self.statusIconCheck.action = #selector(self.statusIconToggled)
+                // メニューバーに出るのと同じアイコンを横に (どれのことか分かるように)
+                let img = (NSApp.applicationIconImage.copy() as? NSImage) ?? NSImage()
+                img.size = NSSize(width: 18, height: 18)
+                let iv = NSImageView(image: img)
+                return SetupUI.row([self.statusIconCheck, iv], spacing: 4)
+            }(),
         ], spacing: 8)
     }
 
@@ -708,6 +758,65 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             SetupUI.box(Lang.m("SETUP_FONT_SAMPLE", "見本"), attrPreview),
         ], spacing: 8)
     }
+    // MARK: 検索 (一覧の上の検索欄)
+
+    /// ページごとの文字 (項目名・ボタン・選択肢など) と、その部品
+    private lazy var searchIndex: [Page: [(text: String, view: NSView)]] = {
+        var out: [Page: [(String, NSView)]] = [:]
+        for (i, p) in Page.allCases.enumerated() {
+            guard let root = tabView.tabViewItems[safe: i]?.view else { continue }
+            var list: [(String, NSView)] = [(p.title, root)]
+            func walk(_ v: NSView) {
+                var texts: [String] = []
+                if let b = v as? NSBox { texts.append(b.title) }
+                if let pop = v as? NSPopUpButton { texts += pop.itemTitles }
+                else if let b = v as? NSButton { texts.append(b.title) }
+                else if let t = v as? NSTextField, !t.isEditable { texts.append(t.stringValue) }
+                if let tip = v.toolTip { texts.append(tip) }
+                for t in texts where !t.isEmpty { list.append((t, v)) }
+                v.subviews.forEach(walk)
+            }
+            walk(root)
+            out[p] = list
+        }
+        return out
+    }()
+    /// 自己テスト用: 検索欄に入れて探す
+    func debugSearch(_ q: String) { tabBar.searchField.stringValue = q; search(q) }
+    private var searchQuery = ""
+    private var searchMarks: [NSView] = []
+    private func search(_ q: String) {
+        searchQuery = q.lowercased()
+        guard !searchQuery.isEmpty else {
+            tabBar.filter = nil
+            markSearchHits()
+            return
+        }
+        var hits = Set<Int>()
+        for (i, p) in Page.allCases.enumerated() where (searchIndex[p] ?? []).contains(where: { $0.text.lowercased().contains(searchQuery) }) {
+            hits.insert(i)
+        }
+        tabBar.filter = hits
+        // 今のページに合うものがなければ、合う最初のページへ (一覧の順)
+        if !hits.contains(tabBar.selectedIndex), let first = Page.sections.flatMap(\.items).first(where: { hits.contains($0) }) {
+            selectPage(at: first)
+        }
+        markSearchHits()
+    }
+    /// 今のページで検索に合う項目を、淡い黄色で目立たせる
+    private func markSearchHits() {
+        for v in searchMarks { v.layer?.backgroundColor = nil; v.layer?.cornerRadius = 0 }
+        searchMarks = []
+        guard !searchQuery.isEmpty, let items = searchIndex[currentPage] else { return }
+        for (t, v) in items where t.lowercased().contains(searchQuery) && v !== tabView.selectedTabViewItem?.view {
+            v.wantsLayer = true
+            v.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.35).cgColor
+            v.layer?.cornerRadius = 4
+            searchMarks.append(v)
+        }
+        if let first = searchMarks.first { first.scrollToVisible(first.bounds) }
+    }
+
     // MARK: デフォルトに戻す (どのページにも。今のページが既定と違うときだけ出す)
 
     /// ページごとの項目 (binders の範囲)
@@ -723,7 +832,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         switch page {
         case .theme: return currentSchemeKey != "none"
         case .background: return bgImageCheck.state == .on
-        case .ui: return false
+        case .ui, .findHistory: return false
         default: break
         }
         guard let r = pageBinders[page], !r.isEmpty else { return false }
@@ -2121,6 +2230,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         applyThemeTab()
         // TTMado (タブ・窓割り) の入/切 (すぐに効く)
         TTMado.setEnabled(ttMadoCheck.state == .on)
+        TeraMenuController.showsStatusItem = statusIconCheck.state == .on
+        AppDelegate.startupOpensMenu = startupPopup.indexOfSelectedItem != 1
         s.optionAsMeta = s.metaKey.lowercased() != "off"
         // シリアルポート
         if portPopup.isEnabled, let p = portPopup.titleOfSelectedItem { serial.path = p }
@@ -2141,6 +2252,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
     override func cancel() {
         revertPreview()
+        if let o = statusIconOriginal, o != TeraMenuController.showsStatusItem { TeraMenuController.showsStatusItem = o }
         // PSN_RESET: 開いているポートの RTS / DTR / フロー制御を元に戻す
         if let o = serialOriginal, let sc = session?.conn as? SerialConnection { sc.setRTSDTR(rts: o.rts, dtr: o.dtr, flow: o.flow) }
         serialOriginal = nil
@@ -2358,4 +2470,8 @@ final class HostListEditDialog: SheetDialog, NSTableViewDataSource, NSTableViewD
     }
     override func ok() { ConnHistory.hosts = hosts; close(); onSaved?() }
     override func cancel() { close() }
+}
+
+private extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

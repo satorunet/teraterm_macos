@@ -354,6 +354,7 @@ extension SelfTest {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             let name = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_PAGE"] ?? "background"
             c.openSetupSheet(SetupSheet.Page.allCases.first { "\($0)" == name } ?? .background)
+            if let q = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_SEARCH"] { SetupSheet.current?.debugSearch(q) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 if let sh = SetupSheet.current?.panel { snapWindow(sh, path) }
                 exit(0)
@@ -387,13 +388,56 @@ extension SelfTest {
     static func selSnap(_ path: String) {
         TerminalView.debugSelectionOldLook = ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_OLD"] != nil
         let c = SessionWindowController(); c.showWindow(nil)
+        // TERAMAC_SELSNAP_SIZE=幅,高さ: ウインドウの中身の大きさ (写真の余白を減らすため)
+        if let sz = ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_SIZE"]?.split(separator: ",").compactMap({ Double($0) }), sz.count == 2 {
+            c.window?.setContentSize(NSSize(width: sz[0], height: sz[1]))
+        }
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            let text = "$ ls -l\r\ntotal 24\r\n-rw-r--r--  1 user  staff  1024 README.md\r\ndrwxr-xr-x  5 user  staff   160 src\r\n\r\n-rwxr-xr-x  1 user  staff  2048 build.sh\r\n$ echo hello\r\nhello\r\n$ "
+            var text = "$ ls -l\r\ntotal 24\r\n-rw-r--r--  1 user  staff  1024 README.md\r\ndrwxr-xr-x  5 user  staff   160 src\r\n\r\n-rwxr-xr-x  1 user  staff  2048 build.sh\r\n$ echo hello\r\nhello\r\n$ "
+            // TERAMAC_SELSNAP_TEXT=apache: Apache のアクセスログを tail している例 (検索の写真用)
+            if ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_TEXT"] == "apache" {
+                let esc = "\u{1B}"
+                var t = "\(esc)[1;32muser@web1\(esc)[0m:\(esc)[1;34m~\(esc)[0m$ tail -f /var/log/apache2/access.log\r\n"
+                let rows: [(String, String, String, Int, Int)] = [
+                    ("192.0.2.10", "13:40:01", "GET /index.html", 200, 5120),
+                    ("198.51.100.7", "13:40:02", "GET /css/style.css", 200, 1834),
+                    ("203.0.113.42", "13:40:02", "POST /api/login", 302, 0),
+                    ("192.0.2.10", "13:40:03", "GET /images/logo.png", 200, 9812),
+                    ("198.51.100.23", "13:40:05", "GET /about.html", 200, 4210),
+                    ("203.0.113.42", "13:40:06", "POST /api/comment", 201, 92),
+                    ("192.0.2.77", "13:40:07", "GET /favicon.ico", 404, 209),
+                    ("198.51.100.7", "13:40:09", "HEAD /healthz", 200, 0),
+                    ("192.0.2.10", "13:40:11", "GET /js/app.js", 200, 22014),
+                    ("203.0.113.8", "13:40:12", "GET /download/TeraTermMac.dmg", 200, 31457280),
+                ]
+                for r in rows {
+                    let code = r.3 >= 400 ? "\(esc)[31m\(r.3)\(esc)[0m" : "\(r.3)"
+                    t += "\(r.0) - - [27/Nov/2026:\(r.1) +0900] \"\(r.2) HTTP/1.1\" \(code) \(r.4)\r\n"
+                }
+                text = t
+            }
             c.feedReplay(Array(text.utf8))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                c.termView.debugSelect(row: 1, col: 3, row: 7, col: 3)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_NOSEL"] == nil {
+                    c.termView.debugSelect(row: 1, col: 3, row: 7, col: 3)
+                }
+                if let q = ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_FIND"] {
+                    if ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_NOBAR"] != nil {
+                        if let h = c.termView.findAll(q).last { c.termView.reveal(h) }
+                    } else {
+                        c.termView.showFind(nil)
+                        c.termView.findBar?.debugSearch(q)
+                    }
+                }
+                // apache の例: 検索したあとにログが 2 行増えても、新しい行に印が付くかを写す
+                if ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_TEXT"] == "apache" {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        c.feedReplay(Array(("198.51.100.23 - - [27/Nov/2026:13:40:14 +0900] \"GET /blog/2026/11/ HTTP/1.1\" 200 7731\r\n"
+                            + "192.0.2.10 - - [27/Nov/2026:13:40:15 +0900] \"POST /api/like HTTP/1.1\" 200 18\r\n").utf8))
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
                     if let w = c.window { snapWindow(w, path) }
                     exit(0)
                 }

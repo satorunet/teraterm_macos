@@ -108,6 +108,11 @@ enum MenuBar {
             .separator(),
             item(tt("MENU_EDIT_SELECTSCREEN", "表示画面を選択"), #selector(T.selectScreen(_:))),
             item(tt("MENU_EDIT_SELECTALL", "全て選択"), #selector(T.selectAll(_:)), "a"),
+            .separator(),
+            // 端末の中を検索 (履歴も含む)。Mac の決まりどおり ⌘F / ⌘G / ⇧⌘G
+            item(Lang.m("MENU_EDIT_FIND", "検索…"), #selector(T.showFind(_:)), "f"),
+            item(Lang.m("MENU_EDIT_FINDNEXT", "前を検索"), #selector(T.findNext(_:)), "g"),
+            item(Lang.m("MENU_EDIT_FINDPREV", "次を検索"), #selector(T.findPrevious(_:)), "g", [.command, .shift]),
         ])
 
         // 設定 (プロキシと SSH の項目は TTProxy・TTSSH が T&CP/IP の前に入れる)

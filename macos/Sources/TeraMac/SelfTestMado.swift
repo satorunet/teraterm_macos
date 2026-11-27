@@ -267,6 +267,29 @@ extension SelfTest {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
+    /// TERAMAC_MADOSNAP=bgsplit: リリースの写真。窓割り (左 1 つ + 右に上下 2 つ) にした端末に背景画像を出して <dir>/bgsplit.png に写す。
+    /// 背景画像はコマンドラインの -MacBGImageEnable YES -MacBGImageFile <png> で指定する (利用者の設定は変えない)
+    static func bgSplitShot(dir: String) {
+        guideDefaults()
+        let d = UserDefaults.standard
+        var a = d.volatileDomain(forName: UserDefaults.argumentDomain)
+        a[TTMado.defaultsKey] = true
+        a["fontSize"] = 11
+        a["PopupMenu"] = false
+        d.setVolatileDomain(a, forName: UserDefaults.argumentDomain)
+        TTMado.install()
+        NSApp.activate(ignoringOtherApps: true)
+        let smp = samples(Lang.isJapanese)
+        build(count: 3, first: 2, side: true, steps: [.side(1, .below)], smp: smp) { sp, list in
+            guard let sp = sp, let w = sp.hostWindow else { exit(1) }
+            sp.focus(list[0])
+            soon(0.9) {
+                retitle(sp, list, smp)
+                soon(0.4) { snapWindow(w, dir + "/bgsplit.png"); exit(0) }
+            }
+        }
+    }
+
     /// TERAMAC_MADOSNAP=hero: ウェブサイトの最初の写真 (hero.png)。ふつうの 1 つのウインドウ (ウィンドウ内のメニューバー付き) に
     /// 例の SSH の画面を出し、その上に「新しい接続」のダイアログを重ねて 1 枚に写す
     static func heroShot(dir: String) {
