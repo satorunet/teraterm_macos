@@ -684,6 +684,61 @@ struct ThemeSettings: Equatable {
     }
 }
 
+// MARK: - Mac 版の背景画像 (テーマファイルを使わずに、端末の背景にうっすら画像を出す)
+
+struct MacBackgroundImage: Equatable {
+    var enabled = false
+    var file = ""
+    /// 画像の濃さ 5...100 (%)。背景色の上にこの濃さで重ねる
+    var strength = 25
+    var pattern = BGPattern.autofit
+
+    private static let d = UserDefaults.standard
+    static func load() -> MacBackgroundImage {
+        var m = MacBackgroundImage()
+        m.enabled = d.bool(forKey: "MacBGImageEnable")
+        m.file = d.string(forKey: "MacBGImageFile") ?? ""
+        if d.object(forKey: "MacBGImageStrength") != nil { m.strength = max(5, min(100, d.integer(forKey: "MacBGImageStrength"))) }
+        if let p = d.string(forKey: "MacBGImagePattern"), let v = BGPattern(rawValue: p) { m.pattern = v }
+        return m
+    }
+    func save() {
+        Self.d.set(enabled, forKey: "MacBGImageEnable")
+        Self.d.set(file, forKey: "MacBGImageFile")
+        Self.d.set(strength, forKey: "MacBGImageStrength")
+        Self.d.set(pattern.rawValue, forKey: "MacBGImagePattern")
+    }
+
+    /// 背景リストに足した (自分で選んだ) 画像。新しいものが先
+    static var userList: [String] {
+        get { (d.array(forKey: "MacBGImageList") as? [String]) ?? [] }
+        set { d.set(Array(newValue.prefix(30)), forKey: "MacBGImageList") }
+    }
+    /// 背景リストに足す (サンプルは足さない)
+    static func addToList(_ path: String) {
+        guard !path.isEmpty, SampleBackgrounds.sample(at: path) == nil else { return }
+        userList = [path] + userList.filter { $0 != path }
+    }
+    static func removeFromList(_ path: String) { userList = userList.filter { $0 != path } }
+
+    /// 端末の背景色 bg の上に画像を重ねる背景 (ファイルがなければ nil)
+    func spec(bg: NSColor) -> BGImageSpec? {
+        guard enabled, !file.isEmpty, FileManager.default.fileExists(atPath: file) else { return nil }
+        var b = BGImageSpec()
+        b.dest = BGSrc(type: .picture, alpha: Int(Double(strength) / 100 * 255), color: bg)
+        b.dest.enable = true
+        b.dest.file = file
+        b.dest.pattern = pattern
+        b.src1.enable = false
+        b.src2.enable = false
+        // 通常の文字の背景は塗らない (画像が見える)。反転などの背景は塗る
+        b.textBackAlpha = 0
+        b.reverseTextAlpha = 255
+        b.backAlpha = 255
+        return b
+    }
+}
+
 // MARK: - いまのテーマ (ThemeEnable / ThemeIsEnabled と背景)
 
 /// 端末の画面が背景を描くときに見るところ。変わると didChange を送る
@@ -702,6 +757,14 @@ final class ThemeRuntime {
     var background: BGImageSpec? {
         guard enabled, let bg = current?.background, bg.isEnabled else { return nil }
         return bg
+    }
+
+    /// Mac 版の背景画像の設定 (テーマの背景があればそちらが先)
+    var macImage = MacBackgroundImage.load() { didSet { if macImage != oldValue { post() } } }
+
+    /// 端末が描く背景: テーマの背景、なければ Mac 版の背景画像 (背景色 bg の上に重ねる)
+    func background(bg: NSColor) -> BGImageSpec? {
+        background ?? macImage.spec(bg: bg)
     }
 
     func set(_ t: ThemeData?) {

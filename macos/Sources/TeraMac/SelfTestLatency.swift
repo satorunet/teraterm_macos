@@ -1,3 +1,4 @@
+import TeraCore
 import AppKit
 
 /// TERAMAC_LATENCY_TEST=<出力ファイル>: ローカルシェルにつないで、キーを押す (keyDown) → 文字が返る → 描く までの時間を測る。
@@ -316,6 +317,85 @@ extension SelfTest {
                     TabBarDrag.dropForTest(c, into: a.window!, pane: nil, side: .right, partner: a.window, tearOff: true)
                 } else {
                     TabSplit.splitTabs(of: a.window!, sideBySide: true)
+                }
+            }
+        }
+    }
+}
+
+/// TERAMAC_REFLOWTEST=1: 履歴をいっぱい (1 万行) にしてから、幅を変えて折り返し直す時間を測る (ウインドウの大きさを変えるときの重さ)
+extension SelfTest {
+    static func reflowTest() {
+        let c = SessionWindowController()
+        c.showWindow(nil)
+        let t = c.term
+        var s = ""
+        let longText = ProcessInfo.processInfo.environment["TERAMAC_REFLOWLONG"] != nil; for i in 1...12000 { s += "line \(i) the quick brown fox jumps over the lazy dog \(i * 7)" + (longText ? String(repeating: " lorem ipsum dolor", count: 8) : "") + "\r\n" }
+        t.feed(s)
+        print("scrollback=\(t.scrollback.count) cols=\(t.cols)")
+        var times: [Double] = []
+        for k in 0..<20 {
+            let w = k % 2 == 0 ? t.cols - 7 : t.cols + 7
+            let t0 = CFAbsoluteTimeGetCurrent()
+            t.resize(cols: w, rows: t.rows)
+            times.append((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        }
+        times.sort()
+        print(String(format: "REFLOW 1回: 最小 %.1f / 中央 %.1f / 最大 %.1f ms", times.first!, times[times.count / 2], times.last!))
+        exit(0)
+    }
+}
+
+/// TERAMAC_THEMESNAP=<png>: 設定のテーマのタブを開いて写す (保存はしない)
+extension SelfTest {
+    static func themeSnap(_ path: String) {
+        let c = SessionWindowController(); c.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let name = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_PAGE"] ?? "background"
+            c.openSetupSheet(SetupSheet.Page.allCases.first { "\($0)" == name } ?? .background)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                if let sh = SetupSheet.current?.panel { snapWindow(sh, path) }
+                exit(0)
+            }
+        }
+    }
+}
+
+/// TERAMAC_LANGSNAP=<png>: 言語を切り替えて、ウインドウ内のメニューバーが変わるかを写す (<png>_before / _after)。
+/// 言語の設定は最後に元に戻す
+extension SelfTest {
+    static func langSnap(_ path: String) {
+        let c = SessionWindowController(); c.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        let old = UserDefaults.standard.string(forKey: Lang.defaultsKey)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if let w = c.window { snapWindow(w, path.replacingOccurrences(of: ".png", with: "_before.png")) }
+            Lang.chosen = Lang.current == "en_US.lng" || Lang.current.hasPrefix("mac_en") ? "ja_JP.lng" : "en_US.lng"
+            print("LANG now=\(Lang.current) file=\(Lang.raw("Tera Term", "MENU_FILE") ?? "nil") entries=\(InWindowMenuBar.entries.map(\.label))"); fflush(stdout)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if let w = c.window { snapWindow(w, path.replacingOccurrences(of: ".png", with: "_after.png")) }
+                if let o = old { UserDefaults.standard.set(o, forKey: Lang.defaultsKey) } else { UserDefaults.standard.removeObject(forKey: Lang.defaultsKey) }
+                exit(0)
+            }
+        }
+    }
+}
+
+/// TERAMAC_SELSNAP=<png>: 文字を出して何行か選択し、見た目を写す (TERAMAC_SELSNAP_OLD=1 で前の見た目)
+extension SelfTest {
+    static func selSnap(_ path: String) {
+        TerminalView.debugSelectionOldLook = ProcessInfo.processInfo.environment["TERAMAC_SELSNAP_OLD"] != nil
+        let c = SessionWindowController(); c.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            let text = "$ ls -l\r\ntotal 24\r\n-rw-r--r--  1 user  staff  1024 README.md\r\ndrwxr-xr-x  5 user  staff   160 src\r\n\r\n-rwxr-xr-x  1 user  staff  2048 build.sh\r\n$ echo hello\r\nhello\r\n$ "
+            c.feedReplay(Array(text.utf8))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                c.termView.debugSelect(row: 1, col: 3, row: 7, col: 3)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    if let w = c.window { snapWindow(w, path) }
+                    exit(0)
                 }
             }
         }

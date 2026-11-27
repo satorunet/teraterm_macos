@@ -17,9 +17,13 @@ final class MultiRowTabView: NSView {
     /// タブの部分の高さ (選んだタブが 2pt はみ出す分を含む)
     var barHeight: CGFloat { CGFloat(rows) * rowHeight + 2 }
 
-    init(titles: [String], rows: Int = 2, content: NSView) {
+    /// 行ごとのタブ数を決めるとき (nil なら均等に詰める)
+    var rowSizes: [Int]?
+
+    init(titles: [String], rows: Int = 2, rowSizes: [Int]? = nil, content: NSView) {
         self.titles = titles
-        self.rows = rows
+        self.rowSizes = rowSizes
+        self.rows = rowSizes?.count ?? rows
         self.content = content
         super.init(frame: .zero)
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -37,6 +41,12 @@ final class MultiRowTabView: NSView {
 
     /// 行ごとのタブの番号 (前から順に詰める)
     private var rowItems: [[Int]] {
+        if let sizes = rowSizes, sizes.reduce(0, +) == titles.count {
+            var start = 0
+            var out: [[Int]] = []
+            for n in sizes { out.append(Array(start..<start + n)); start += n }
+            return out
+        }
         let per = Int(ceil(Double(titles.count) / Double(max(1, rows))))
         return stride(from: 0, to: titles.count, by: max(1, per)).map { Array($0..<min($0 + per, titles.count)) }
     }

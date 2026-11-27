@@ -34,6 +34,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? out.joined(separator: "\n").write(toFile: path + ".out.txt", atomically: true, encoding: .utf8)
             exit(0)
         }
+        if let dir = ProcessInfo.processInfo.environment["TERAMAC_BGSAMPLES"] {
+            // 背景画像のサンプルを dir に書き出して終わる (見た目の確認用。利用者のフォルダには書かない)
+            for smp in SampleBackgrounds.all { _ = SampleBackgrounds.write(smp, to: (dir as NSString).appendingPathComponent(smp.id + ".png")) }
+            exit(0)
+        }
+        if let png = ProcessInfo.processInfo.environment["TERAMAC_SELSNAP"] {
+            SelfTest.selSnap(png); return
+        }
+        if let png = ProcessInfo.processInfo.environment["TERAMAC_LANGSNAP"] {
+            SelfTest.langSnap(png); return
+        }
+        if let png = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP"] {
+            SelfTest.themeSnap(png)
+            return
+        }
+        if ProcessInfo.processInfo.environment["TERAMAC_REFLOWTEST"] != nil {
+            SelfTest.reflowTest()
+            return
+        }
         if let pre = ProcessInfo.processInfo.environment["TERAMAC_FRAMETEST"] {
             SelfTest.frameTest(pre)
             return
@@ -220,6 +239,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let c = SessionWindowController()
         c.showWindow(nil)
         c.showConnectDialog()
+    }
+
+    // MARK: 設定 (接続していなくても・接続の画面を出していても開けるように)
+    // 端末のウインドウが前にあればそちらが受ける。ここに来るのは、接続の画面が前にあるときやウインドウがないとき
+    private func setupSession() -> SessionWindowController {
+        if let c = SessionWindowController.current ?? SessionWindowController.all.first { return c }
+        let c = SessionWindowController()
+        c.showWindow(nil)
+        return c
+    }
+    @objc func setupTerminal(_ sender: Any?) { setupSession().openSetupSheet(.terminal) }
+    @objc func setupWindow(_ sender: Any?) { setupSession().openSetupSheet(.window) }
+    @objc func setupFont(_ sender: Any?) { setupSession().openSetupSheet(.font) }
+    @objc func setupTheme(_ sender: Any?) { setupSession().openSetupSheet(.theme) }
+    @objc func setupKeyboard(_ sender: Any?) { setupSession().openSetupSheet(.keyboard) }
+    @objc func setupSerialPort(_ sender: Any?) { setupSession().openSetupSheet(.serial) }
+    @objc func setupTCPIP(_ sender: Any?) { setupSession().openSetupSheet(.tcpip) }
+    @objc func setupGeneral(_ sender: Any?) { setupSession().openSetupSheet(.general) }
+    @objc func setupAdditional(_ sender: Any?) { setupSession().openSetupSheet(.general) }
+    @objc func setupPage(_ sender: Any?) {
+        guard let t = (sender as? NSMenuItem)?.tag, let p = SetupSheet.Page(rawValue: t) else { return }
+        setupSession().openSetupSheet(p)
     }
 
     @objc func newShellWindow(_ sender: Any?) {

@@ -165,19 +165,58 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     /// タブ (addsetting.cpp の順。Cygwin の場所は Mac のローカルシェル。Debug / TEK は無い。
     /// Plugin は Mac の組み込みプラグインの一覧 (TTMado の入/切) で、いちばん後ろ)
     enum Page: Int, CaseIterable {
-        case general, ui, sequence, copyPaste, visual, log, localShell, encoding, font, theme, keyboard, mouse, tcpip, terminal, serial, window, plugins
+        // 行ごとにまとめる: 全般 / デザイン系 / 通信系 / 操作系 / その他 (rowSizes と数を合わせる)
+        case general, terminal, encoding
+        case theme, background, font, window, visual
+        case tcpip, serial, localShell
+        case keyboard, mouse, copyPaste
+        case log, sequence, plugins, ui
+        static let rowSizes = [3, 5, 3, 3, 4]
+        static let groupTitles = [Lang.m("SETUP_GROUP_GENERAL", "全般"), Lang.m("SETUP_GROUP_DESIGN", "デザイン"),
+                                  Lang.m("SETUP_GROUP_COMM", "通信"), Lang.m("SETUP_GROUP_INPUT", "操作"),
+                                  Lang.m("SETUP_GROUP_OTHER", "その他")]
+        static var sections: [SetupSidebarView.Section] {
+            var start = 0
+            var out: [SetupSidebarView.Section] = []
+            for (t, n) in zip(groupTitles, rowSizes) { out.append(.init(title: t, items: Array(start..<start + n))); start += n }
+            return out
+        }
+        /// 一覧のアイコン (SF Symbols) と色
+        var icon: (String, NSColor) {
+            switch self {
+            case .general: return ("gearshape.fill", .systemGray)
+            case .terminal: return ("terminal.fill", NSColor(white: 0.2, alpha: 1))
+            case .encoding: return ("character.book.closed.fill", .systemBrown)
+            case .ui: return ("globe", .systemBlue)
+            case .visual: return ("eye.fill", .systemTeal)
+            case .font: return ("textformat", .systemOrange)
+            case .theme: return ("paintpalette.fill", .systemPurple)
+            case .background: return ("photo.fill", .systemPink)
+            case .window: return ("rectangle.on.rectangle", .systemIndigo)
+            case .tcpip: return ("network", .systemBlue)
+            case .serial: return ("cable.connector", .systemGray)
+            case .localShell: return ("laptopcomputer", .systemGreen)
+            case .keyboard: return ("keyboard.fill", .systemGray)
+            case .mouse: return ("computermouse.fill", .systemGray)
+            case .copyPaste: return ("doc.on.clipboard.fill", .systemOrange)
+            case .log: return ("doc.text.fill", .systemYellow)
+            case .sequence: return ("chevron.left.forwardslash.chevron.right", .systemIndigo)
+            case .plugins: return ("puzzlepiece.extension.fill", .systemGreen)
+            }
+        }
         var title: String {
             switch self {
             case .general: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_GENERAL", "全般")
-            case .ui: return "UI"
+            case .ui: return Lang.m("SETUP_TAB_LANGUAGE", "言語")
             case .localShell: return Lang.m("SETUP_TAB_LOCAL_SHELL", "ローカルシェル")
             case .sequence: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_SEQUENCE", "制御シーケンス")
             case .copyPaste: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_COPYPASTE", "コピーと貼り付け")
-            case .visual: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_VISUAL", "表示")
+            case .visual: return Lang.m("SETUP_TAB_DECORATION2", "文字カラー・装飾")
             case .log: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_LOG", "ログ")
             case .encoding: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_ENCODING", "エンコーディング")
             case .font: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_FONT", "フォント")
             case .theme: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_THEME", "テーマ")
+            case .background: return Lang.m("SETUP_TAB_BACKGROUND", "背景")
             case .keyboard: return Lang.t("Tera Term", "DLG_KEYB_TITLE", "キーボード")
             case .mouse: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_MOUSE", "マウス")
             case .tcpip: return Lang.t("Tera Term", "DLG_TCPIP_TITLE", "TCP/IP")
@@ -286,7 +325,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         for p in Page.allCases {
             let item = NSTabViewItem(identifier: p.rawValue)
             item.label = p.title
+            let start = binders.count
             let content = page(p)
+            pageBinders[p] = start..<binders.count
             let host = NSView()
             content.translatesAutoresizingMaskIntoConstraints = false
             host.addSubview(content)
@@ -310,21 +351,40 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         }
         tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.heightAnchor.constraint(equalToConstant: size.height).isActive = true
-        // Windows の Tera Term と同じく、上に 2 段のタブ (Win32 の複数行タブ)
+        // Mac のシステム設定風: 左に見出し付きの一覧、右に中身
+        // (前のタブ方式 = MultiRowTabView / docs/screenshots/setup-tabs-before)
         tabView.tabViewType = .noTabsNoBorder
         tabBar.onSelect = { [unowned self] i in self.selectPage(at: i) }
+        tabBar.onReset = { [unowned self] in self.resetCurrentPage() }
         tabBar.translatesAutoresizingMaskIntoConstraints = false
-        tabBar.widthAnchor.constraint(equalToConstant: max(size.width + 2, tabBar.minimumWidth + 8)).isActive = true
+        tabBar.widthAnchor.constraint(equalToConstant: SetupSidebarView.sidebarWidth + 1 + size.width).isActive = true
         for b in binders { b.load() }
         refresh()
         layout(tabBar)
     }
 
-    private lazy var tabBar = MultiRowTabView(titles: Page.allCases.map(\.title), rows: 2, content: tabView)
+    private lazy var tabBar = SetupSidebarView(
+        items: Page.allCases.map { .init(title: $0.title, symbol: $0.icon.0, color: $0.icon.1) },
+        sections: Page.sections, content: tabView)
 
     private func selectPage(at i: Int) {
         tabView.selectTabViewItem(at: i)
         tabBar.selectedIndex = i
+        scrollToSelectionLater()
+        updateResetButton()
+    }
+    /// テーマ・背景のページでは、選んでいるタイルが見える位置までスクロールしておく
+    private func scrollToSelectionLater() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let i = self.tabBar.selectedIndex
+            guard Page.allCases.indices.contains(i) else { return }
+            switch Page.allCases[i] {
+            case .theme: self.schemeGrid.scrollToSelection()
+            case .background: self.bgPicker.scrollToSelection()
+            default: break
+            }
+        }
     }
 
     // MARK: 項目と ts の対応
@@ -381,11 +441,16 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         }
         refresh()
     }
-    func controlTextDidChange(_ obj: Notification) { refresh() }
+    func controlTextDidChange(_ obj: Notification) {
+        // ANSI の色の数字は打っている途中でも当てる
+        if let f = obj.object as? NSTextField, f === ansiR || f === ansiG || f === ansiB { ansiEdited() }
+        refresh()
+    }
 
     // 依存する項目の有効・無効 (各タブの OnCommand にあたる)
     private func refresh() {
-        defer { livePreview() }
+        // 見本はいつも、いま画面で選んでいる最中の状態 (保存前) を映す
+        defer { livePreview(); updateResetButton(); updatePreview(); updateAttrPreview() }
         termResizeCheck.isEnabled = termIsWinCheck.state == .off
         scrollField.isEnabled = scrollCheck.state == .on
         confirmRButton.isEnabled = disableRButton.state == .off
@@ -431,6 +496,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .encoding: return encodingPage()
         case .font: return fontPage()
         case .theme: return themePage()
+        case .background: return backgroundPage()
         case .keyboard: return keyboardPage()
         case .mouse: return mousePage()
         case .tcpip: return tcpipPage()
@@ -603,11 +669,23 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         sl.widthAnchor.constraint(equalToConstant: 220).isActive = true
         let ttl = SetupUI.label(title)
         let sync = SliderSync(field: f, slider: sl)
+        sl.isContinuous = true
+        // 動かしている方 (アクティブ時 / 非アクティブ時) の濃さを、端末のウィンドウにその場で出す
+        sync.onChange = { [unowned self] in self.previewAlphaKey = kp; self.refresh() }
+        f.target = self; f.action = #selector(alphaFieldEdited(_:))
+        alphaFields[f] = kp
         syncs.append(sync)
         custom(load: { [unowned self] in sl.integerValue = self.s[keyPath: kp]; sync.update() }, store: {})
         return SetupUI.row([ttl, f, sl])
     }
     private var syncs: [SliderSync] = []
+    /// 見本に出す不透明度 (最後に触った方。既定はアクティブ時)
+    private var previewAlphaKey: WritableKeyPath<TermSettings, Int> = \.alphaBlendActive
+    private var alphaFields: [NSTextField: WritableKeyPath<TermSettings, Int>] = [:]
+    @objc private func alphaFieldEdited(_ f: NSTextField) {
+        if let kp = alphaFields[f] { previewAlphaKey = kp }
+        refresh()
+    }
     private func visualPage() -> NSView {
         bind(boldCheckVisual, \.enableBold)
         ansiPopup.target = self; ansiPopup.action = #selector(ansiSelected)
@@ -617,23 +695,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         ansiSample.appearance = NSAppearance(named: .aqua)
         ansiSample.drawsBackground = true
         ansiSample.isBezeled = true
-        custom(load: { [unowned self] in self.ansiWork = self.s.ansi16 ?? Array(Palette.colors.prefix(16)); self.ansiSelected() },
-               store: { [unowned self] in
-                   let std = Array(Palette.colors.prefix(16))
-                   self.s.ansi16 = self.ansiWork.map(TermSettings.rgbString) != std.map(TermSettings.rgbString) ? self.ansiWork : nil
-               })
         return SetupUI.column([
-            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA", "ウィンドウの不透明度")),
-            SetupUI.indent(alphaRow(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA_ACTIVE", "アクテイブ時(&A)"), \.alphaBlendActive)),
-            SetupUI.indent(alphaRow(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA_INACTIVE", "非アクティブ時(&C)"), \.alphaBlendInactive)),
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_MOUSE", "マウスカーソル(&M)")),
-                         pop(["ARROW", "IBEAM", "CROSS", "HAND"], ["ARROW", "IBEAM", "CROSS", "HAND"], \.mouseCursor)]),
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_ANSICOLOR", "AN&SIカラー")), ansiPopup, SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_RED", "赤(&R)")), ansiR, SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_GREEN", "緑(&G)")), ansiG,
-                         SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_BLUE", "青(&B)")), ansiB]),
-            SetupUI.indent(ansiSample),
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY", "フォントの品質(&F)")),
-                         pop([Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_DEFAULT", "デフォルト"), Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_NONANTIALIASED", "アンチエイリアスなし"), Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_ANTIALIASED", "アンチエイリアス")], ["default", "nonantialiased", "antialiased"], \.fontQuality)]),
-            SetupUI.label("Character attributes"),
+            textColorBox(),
+            SetupUI.label(Lang.m("SETUP_VISUAL_ATTRS", "文字の属性")),
             SetupUI.indent(SetupUI.grid([
                 [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_BOLD_COLOR", "太字属性色を有効にする(&O)"), \.enableBoldAttrColor), boldCheckVisual],
                 [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_UNDERLINE_COLOR", "下線属性色を有効にする"), \.underlineAttrColor), cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_UNDERLINE_FONT", "下線属性に下線を付加する"), \.underlineAttrFont)],
@@ -641,7 +705,90 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                 [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_URL_COLOR", "URL属性色を有効にする(&U)"), \.enableURLColor), cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_URL_FONT", "URL文字列に下線を付加する(&U)"), \.urlUnderline)],
                 [cb(Lang.t("Tera Term", "DLG_TAB_VISUAL_ANSI", "ANSIカラーを有効にする(&N)"), \.enableANSIColor), NSGridCell.emptyContentView],
             ], leading: true)),
+            SetupUI.box(Lang.m("SETUP_FONT_SAMPLE", "見本"), attrPreview),
         ], spacing: 8)
+    }
+    // MARK: デフォルトに戻す (どのページにも。今のページが既定と違うときだけ出す)
+
+    /// ページごとの項目 (binders の範囲)
+    private var pageBinders: [Page: Range<Int>] = [:]
+    private var currentPage: Page { Page.allCases.indices.contains(tabBar.selectedIndex) ? Page.allCases[tabBar.selectedIndex] : .general }
+    /// 設定の値を文字にして並べたもの (違いを見るため)
+    private static func fingerprint(_ p: TermSettings) -> [String] {
+        Mirror(reflecting: p).children.map { "\($0.label ?? ""):\(String(describing: $0.value))" }
+    }
+    private lazy var defaultFingerprint = Self.fingerprint(TermSettings.initial())
+    /// ページの項目を既定にしたときと違うか
+    private func pageDiffersFromDefault(_ page: Page) -> Bool {
+        switch page {
+        case .theme: return currentSchemeKey != "none"
+        case .background: return bgImageCheck.state == .on
+        case .ui: return false
+        default: break
+        }
+        guard let r = pageBinders[page], !r.isEmpty else { return false }
+        let keep = s
+        s = TermSettings.initial()
+        for b in binders[r] { b.store() }
+        let x = s
+        s = keep
+        return Self.fingerprint(x) != defaultFingerprint
+    }
+    private func updateResetButton() {
+        tabBar.resetVisible = pageDiffersFromDefault(currentPage)
+    }
+    /// 今のページを既定に戻す (ほかのページで変えた値はそのまま)
+    private func resetCurrentPage() {
+        let page = currentPage
+        switch page {
+        case .theme:
+            schemeGrid.selectedKey = "none"
+            schemeGridPicked("none")
+            return
+        case .background:
+            bgImageCheck.state = .off
+            bgImageSlider.doubleValue = Double(MacBackgroundImage().strength)
+            bgImagePatternPopup.selectItem(at: 0)
+            bgImageCheckToggled()
+            return
+        default: break
+        }
+        guard let r = pageBinders[page] else { return }
+        let keep = s
+        s = TermSettings.initial()
+        for b in binders[r] { b.load() }
+        s = keep
+        if page == .visual { ansiWork = Array(Palette.colors.prefix(16)); ansiSelected() }
+        refresh()
+    }
+    private var ansiWells: [NSColorWell] = []
+    private static let ansiNames = ["黒", "赤", "緑", "黄", "青", "マゼンタ", "シアン", "白"]
+    private func ansiPalette() -> NSView {
+        ansiWells = (0..<16).map { i in
+            let w = NSColorWell()
+            w.translatesAutoresizingMaskIntoConstraints = false
+            w.widthAnchor.constraint(equalToConstant: 40).isActive = true
+            w.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            w.tag = i
+            w.target = self; w.action = #selector(ansiWellChanged(_:))
+            let n = Lang.m("SETUP_ANSI_NAME_\(i % 8)", Self.ansiNames[i % 8])
+            w.toolTip = "\(i): " + (i < 8 ? n : Lang.m("SETUP_ANSI_BRIGHT", "明るい") + n)
+            return w
+        }
+        let note = SetupUI.label(Lang.m("SETUP_ANSI_NOTE", "上の段: 普通の 8 色 / 下の段: 明るい 8 色 (ls や git などが色付きで出す文字の色)"))
+        note.font = .systemFont(ofSize: 11)
+        note.textColor = .secondaryLabelColor
+        return SetupUI.column([SetupUI.row(Array(ansiWells[0..<8]), spacing: 4),
+                               SetupUI.row(Array(ansiWells[8..<16]), spacing: 4), note], spacing: 4)
+    }
+    @objc private func ansiWellChanged(_ w: NSColorWell) {
+        guard w.tag < ansiWork.count else { return }
+        ansiWork[w.tag] = w.color
+        updatePreview()
+        refresh()
+    }
+    private func updateAnsiWells() {
+        for (i, w) in ansiWells.enumerated() where i < ansiWork.count && !w.isActive { w.color = ansiWork[i] }
     }
     @objc private func ansiSelected() {
         let i = max(0, ansiPopup.indexOfSelectedItem)
@@ -655,8 +802,11 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         guard i < ansiWork.count, let r = Int(ansiR.stringValue), let g = Int(ansiG.stringValue), let b = Int(ansiB.stringValue) else { return }
         ansiWork[i] = TermSettings.rgb(r, g, b)
         updateAnsiControls()
+        updatePreview()
+        refresh()
     }
     private func updateAnsiControls() {
+        updateAnsiWells()
         let i = max(0, ansiPopup.indexOfSelectedItem)
         guard i < ansiWork.count else { return }
         ansiSample.backgroundColor = .windowBackgroundColor
@@ -746,16 +896,16 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // エンコーディング (coding_pp.cpp)
     // coding_pp.cpp: ttlib_charset.cpp KanjiList の CodeStrGUI を並べる (#510 で 1 バイトの文字コードが増えた)
     private let recvPopup = SetupUI.popup(TermEncoding.guiList.map { $0.name })
-    private let differentCheck = SetupUI.check("Tra&nsmit (Use different code)")
+    private let differentCheck = SetupUI.check(Lang.m("SETUP_ENC_SEND_DIFFERENT", "送信は受信と別の文字コードにする(&N)"))
     private let sendPopup = SetupUI.popup(TermEncoding.guiList.map { $0.name })
-    private let ambPopup = SetupUI.popup(["1 Cell", "2 Cell"])
-    private let emojiCheck = SetupUI.check("Override Emoji Characters width")
-    private lazy var emojiPopup = popInt(["1 Cell", "2 Cell"], [1, 2], \.unicodeEmojiWidth)
-    private let decRadios = [SetupUI.radio(Lang.t("Tera Term", "DLG_CODING_DECSP_UNICODE_TO_DEC", "UnicodeをDEC Special Graphicsへマッピングする")),
-                             SetupUI.radio(Lang.t("Tera Term", "DLG_CODING_DECSP_DEC_TO_UNICODE", "DEC Special GraphicsをUnicodeへマッピングする")),
-                             SetupUI.radio(Lang.t("Tera Term", "DLG_CODING_DECSP_DO_NOT_MAP", "DEC Special Graphicsをマッピングしない"))]
+    private let ambPopup = SetupUI.popup([Lang.m("SETUP_ENC_CELL1", "1 文字分"), Lang.m("SETUP_ENC_CELL2", "2 文字分")])
+    private let emojiCheck = SetupUI.check(Lang.m("SETUP_ENC_EMOJI", "絵文字の幅を指定する"))
+    private lazy var emojiPopup = popInt([Lang.m("SETUP_ENC_CELL1", "1 文字分"), Lang.m("SETUP_ENC_CELL2", "2 文字分")], [1, 2], \.unicodeEmojiWidth)
+    private let decRadios = [SetupUI.radio(Lang.m("SETUP_ENC_DEC_U2D", "Unicode の罫線などを DEC 特殊図形で表示する")),
+                             SetupUI.radio(Lang.m("SETUP_ENC_DEC_D2U", "DEC 特殊図形を Unicode の文字で表示する")),
+                             SetupUI.radio(Lang.m("SETUP_ENC_DEC_NONE", "置き換えない"))]
     private let boxCheck = SetupUI.check(Lang.t("Tera Term", "DLG_CODING_UNICODE_TO_DEC_BOXDRAWING", "罫線素片(U+2500-U+257F)"))
-    private let punctCheck = SetupUI.check(Lang.t("Tera Term", "DLG_CODING_UNICODE_TO_DEC_PUNCTUATION", "Punctuation, Block Elements, Shade"))
+    private let punctCheck = SetupUI.check(Lang.m("SETUP_ENC_PUNCT", "句読点・ブロック要素・網かけ"))
     private let middleDotCheck = SetupUI.check(Lang.t("Tera Term", "DLG_CODING_UNICODE_TO_DEC_MIDDLEDOT", "中点(U+00B7,U+2024,U+2219)"))
     private let kanaRecvCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_KANA", "半角カナ(&F)"))
     private let kanaSendCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_KANASEND", "半角カナ(&D)"))
@@ -791,18 +941,21 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             self.s.ambiguousWide = self.ambPopup.indexOfSelectedItem == 1
         })
         return SetupUI.column([
-            SetupUI.box("Encoding", SetupUI.grid([
-                [SetupUI.label("R&eceive"), recvPopup],
-                [differentCheck, sendPopup],
-            ])),
+            SetupUI.box(Lang.m("SETUP_ENC_BOX", "文字コード"), SetupUI.column([
+                SetupUI.grid([
+                    [SetupUI.label(Lang.m("SETUP_ENC_RECEIVE", "受信(&E)")), recvPopup],
+                    [SetupUI.label(Lang.m("SETUP_ENC_SEND", "送信")), sendPopup],
+                ]),
+                differentCheck,
+            ], spacing: 8)),
             SetupUI.box("Unicode", SetupUI.grid([
-                [SetupUI.label("Ambiguous Characters width"), ambPopup],
+                [SetupUI.label(Lang.m("SETUP_ENC_AMBIGUOUS", "幅があいまいな文字 (○・→ など) の幅")), ambPopup],
                 [emojiCheck, emojiPopup],
             ])),
-            SetupUI.box("DEC Special Graphics", SetupUI.column(decRadios + [SetupUI.indent(SetupUI.column([boxCheck, punctCheck, middleDotCheck]))])),
+            SetupUI.box(Lang.m("SETUP_ENC_DECSP_BOX", "DEC 特殊図形 (罫線など)"), SetupUI.column(decRadios + [SetupUI.indent(SetupUI.column([boxCheck, punctCheck, middleDotCheck]))])),
             SetupUI.box("JIS", SetupUI.grid([
-                [SetupUI.label("Receive"), kanaRecvCheck],
-                [SetupUI.label("Transmit"), SetupUI.row([kanaSendCheck, SetupUI.label(Lang.t("Tera Term", "DLG_TERM_KIN", "漢字イン(&N):")), kanjiInPopup,
+                [SetupUI.label(Lang.m("SETUP_ENC_JIS_RECEIVE", "受信")), kanaRecvCheck],
+                [SetupUI.label(Lang.m("SETUP_ENC_JIS_SEND", "送信")), SetupUI.row([kanaSendCheck, SetupUI.label(Lang.t("Tera Term", "DLG_TERM_KIN", "漢字イン(&N):")), kanjiInPopup,
                                                          SetupUI.label(Lang.t("Tera Term", "DLG_TERM_KOUT", "漢字アウト(&O):")), kanjiOutPopup])],
             ])),
         ], spacing: 8)
@@ -849,9 +1002,72 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             SetupUI.indent(fontRow),
             SetupUI.button(Lang.t("Tera Term", "DLG_TAB_FONT_FOLDER", "フォント設定/フォントフォルダ(%s)を開く", fontsDir), target: self, action: #selector(openFontFolder)),
             cb(Lang.t("Tera Term", "DLG_TAB_FONT_RESIZED_FONT", "描画幅に合わせてリサイズしたフォントを描画(&W)"), \.drawingResizedFont),
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY", "フォントの品質(&F)")),
+                         pop([Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_DEFAULT", "デフォルト"), Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_NONANTIALIASED", "アンチエイリアスなし"), Lang.t("Tera Term", "DLG_TAB_VISUAL_FONT_QUALITY_ANTIALIASED", "アンチエイリアス")], ["default", "nonantialiased", "antialiased"], \.fontQuality)]),
             SetupUI.box(Lang.t("Tera Term", "DLG_TAB_FONT_CHARACTER_SPACE", "文字間スペース"), spaceBox),
+            SetupUI.box(Lang.m("SETUP_FONT_SAMPLE", "見本"), fontPreview),
         ], spacing: 10)
     }
+    /// 表示のページの見本 (ANSI カラーなどを変えるとすぐ変わる)
+    private lazy var visualPreview: SchemePreview = makePreviewView()
+    /// 表示のページの見本 (項目ごとに 1 行)
+    private lazy var attrPreview: AttrPreview = {
+        let v = AttrPreview()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.widthAnchor.constraint(equalToConstant: 520).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        v.wantsLayer = true
+        v.layer?.cornerRadius = 6
+        v.layer?.masksToBounds = true
+        return v
+    }()
+    private func updateAttrPreview() {
+        guard let r = pageBinders[.visual], workColors.count >= 6 else { return }
+        let keep = s
+        for b in binders[r] { b.store() }
+        let p = s
+        s = keep
+        var m = AttrPreview.Model()
+        // テーマ・配色・背景画像・フォントは、ほかの見本と同じ (いま選んでいる最中の状態)
+        m.fg = preview.fg; m.bg = preview.bg
+        m.font = NSFont(name: s.fontName, size: 13) ?? m.font
+        m.ansi = preview.ansi.count >= 16 ? preview.ansi : m.ansi
+        m.background = preview.background
+        m.cursor = preview.cursor
+        m.ansiOn = p.enableANSIColor
+        m.boldColor = p.enableBoldAttrColor ? workColors[1] : nil
+        m.blinkColor = p.enableBlinkAttrColor ? workColors[2] : nil
+        m.reverseColor = p.enableReverseAttrColor ? workColors[3] : nil
+        m.urlColor = p.enableURLColor ? workColors[4] : nil
+        m.underlineColor = p.underlineAttrColor ? workColors[5] : nil
+        m.boldFont = p.enableBold
+        m.underlineLine = p.underlineAttrFont
+        m.urlUnderline = p.urlUnderline
+        attrPreview.model = m
+    }
+    private lazy var windowPreview: SchemePreview = makePreviewView()
+    private lazy var bgPreview: SchemePreview = makePreviewView(width: 300, height: 150)
+    private func makePreviewView(width: CGFloat = 520, height: CGFloat = 130) -> SchemePreview {
+        let v = SchemePreview()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.widthAnchor.constraint(equalToConstant: width).isActive = true
+        v.heightAnchor.constraint(equalToConstant: height).isActive = true
+        v.wantsLayer = true
+        v.layer?.cornerRadius = 6
+        v.layer?.masksToBounds = true
+        return v
+    }
+    /// フォントのページの見本 (今のフォント・色で端末の様子を出す)
+    private lazy var fontPreview: SchemePreview = {
+        let v = SchemePreview()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.widthAnchor.constraint(equalToConstant: 520).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        v.wantsLayer = true
+        v.layer?.cornerRadius = 6
+        v.layer?.masksToBounds = true
+        return v
+    }()
     // 文字間スペース: 各欄の横の上下ボタンで 1 ずつ変えられる。変えるとその場で端末に映る
     private var spaceSteppers: [ObjectIdentifier: NSStepper] = [:]
     private func spaceCell(_ f: NSTextField) -> NSView {
@@ -938,6 +1154,189 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private let schemePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let preview = SchemePreview()
     private let cursorWell = NSColorWell()
+    // Mac 版の背景画像 (端末の背景にうっすら出す)
+    private let bgImageCheck = SetupUI.check(Lang.m("SETUP_BGIMAGE_USE", "背景に画像をうっすら表示する"))
+    private let bgImageField = SetupUI.field(width: 300)
+    private lazy var bgImageButton = SetupUI.button(Lang.m("SETUP_BGIMAGE_CHOOSE", "選ぶ…"), target: self, action: #selector(chooseBGImage))
+    private let bgImageSlider = NSSlider(value: 25, minValue: 5, maxValue: 100, target: nil, action: nil)
+    private let bgImageStrengthLabel = SetupUI.label("25%")
+    private let bgImagePatterns: [(BGPattern, String)] = [
+        (.autofit, Lang.m("SETUP_BGIMAGE_FILL", "画面いっぱい (はみ出す部分は切る)")),
+        (.autofill, Lang.m("SETUP_BGIMAGE_FIT", "全体が入るように")),
+        (.stretch, Lang.m("SETUP_BGIMAGE_STRETCH", "引き伸ばす")),
+        (.center, Lang.m("SETUP_BGIMAGE_CENTER", "中央")),
+        (.tile, Lang.m("SETUP_BGIMAGE_TILE", "並べる")),
+    ]
+    private lazy var bgImagePatternPopup = SetupUI.popup(bgImagePatterns.map { $0.1 })
+    /// 背景リスト (サムネイルを並べたパネル。背景タブの中にそのまま出す)
+    private lazy var bgPicker: SampleBackgroundPicker = {
+        let vc = SampleBackgroundPicker(currentPath: "", embedded: true)
+        vc.onAdd = { [weak self] in self?.chooseBGImage() }
+        vc.onPick = { [weak self] path in
+            guard let self = self else { return }
+            if path.isEmpty {
+                // 使用しない (ファイルの欄はそのまま残す)
+                self.bgImageCheck.state = .off
+                self.bgImageControlsChanged()
+                self.bgPicker.reload(current: "")
+                return
+            }
+            self.bgImageField.stringValue = path
+            self.bgImageCheck.state = .on
+            self.bgImageControlsChanged()
+            self.bgPicker.reload(current: path)
+            self.updateBGColorControls()   // 画像を選んだらカラーの印は外す
+        }
+        return vc
+    }()
+    /// 今使っている自分の画像がリストになければ足して、リストを並べ直す
+    private func reloadBGPicker() {
+        let cur = bgImageField.stringValue.trimmingCharacters(in: .whitespaces)
+        if !cur.isEmpty, FileManager.default.fileExists(atPath: cur), !MacBackgroundImage.userList.contains(cur),
+           SampleBackgrounds.sample(at: cur) == nil { MacBackgroundImage.addToList(cur) }
+        bgPicker.reload(current: bgImageCheck.state == .on ? cur : "")
+    }
+    /// 画面の値から背景画像の設定を作る
+    private var bgImageFromControls: MacBackgroundImage {
+        var m = MacBackgroundImage()
+        m.enabled = bgImageCheck.state == .on
+        m.file = bgImageField.stringValue.trimmingCharacters(in: .whitespaces)
+        m.strength = Int(bgImageSlider.doubleValue)
+        m.pattern = bgImagePatterns[max(0, bgImagePatternPopup.indexOfSelectedItem)].0
+        return m
+    }
+    @objc private func chooseBGImage() {
+        let p = NSOpenPanel()
+        p.allowedFileTypes = ["png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff", "heic", "webp"]
+        p.allowsOtherFileTypes = true
+        if !bgImageField.stringValue.isEmpty { p.directoryURL = URL(fileURLWithPath: (bgImageField.stringValue as NSString).deletingLastPathComponent) }
+        else { p.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/Pictures") }
+        p.beginSheetModal(for: panel) { r in
+            if r == .OK, let u = p.url {
+                // 選んだ画像は背景リストにも足す (あとでリストから選び直せる)
+                MacBackgroundImage.addToList(u.path)
+                self.bgImageField.stringValue = u.path; self.bgImageCheck.state = .on; self.bgImageControlsChanged()
+                self.reloadBGPicker()
+            }
+        }
+    }
+    @objc private func bgImageCheckToggled() {
+        bgImageControlsChanged()
+        reloadBGPicker()
+        updateBGColorControls()
+    }
+    @objc private func bgImageControlsChanged() {
+        bgImageStrengthLabel.stringValue = "\(Int(bgImageSlider.doubleValue))%"
+        let on = bgImageCheck.state == .on
+        for c in [bgImageField, bgImageSlider, bgImagePatternPopup] as [NSControl] { c.isEnabled = on }
+        updatePreview()
+        refresh()   // その場で端末に反映 (キャンセルで戻す)
+    }
+    /// 背景色 (単色)。よく使う色から選ぶか、色パネルで好きな色に
+    private static let bgSwatches: [(String, NSColor)] = [
+        ("SETUP_BGCOLOR_BLACK", .black),
+        ("SETUP_BGCOLOR_CHARCOAL", NSColor(srgbRed: 0.12, green: 0.12, blue: 0.13, alpha: 1)),
+        ("SETUP_BGCOLOR_NAVY", NSColor(srgbRed: 0.05, green: 0.10, blue: 0.20, alpha: 1)),
+        ("SETUP_BGCOLOR_GREEN", NSColor(srgbRed: 0.05, green: 0.16, blue: 0.10, alpha: 1)),
+        ("SETUP_BGCOLOR_WINE", NSColor(srgbRed: 0.17, green: 0.05, blue: 0.08, alpha: 1)),
+        ("SETUP_BGCOLOR_PURPLE", NSColor(srgbRed: 0.13, green: 0.08, blue: 0.22, alpha: 1)),
+        ("SETUP_BGCOLOR_GRAY", NSColor(srgbRed: 0.75, green: 0.75, blue: 0.75, alpha: 1)),
+        ("SETUP_BGCOLOR_CREAM", NSColor(srgbRed: 0.99, green: 0.96, blue: 0.89, alpha: 1)),
+        ("SETUP_BGCOLOR_WHITE", .white),
+    ]
+    private var bgSwatchButtons: [NSButton] = []
+    private let bgColorWell = NSColorWell()
+    private func bgColorBox() -> NSView {
+        let names = ["黒", "チャコール", "ネイビー", "深緑", "ワイン", "紫", "グレー", "クリーム", "白"]
+        bgSwatchButtons = Self.bgSwatches.enumerated().map { i, sw in
+            let b = NSButton(title: "", target: self, action: #selector(bgSwatchTapped(_:)))
+            b.isBordered = false
+            b.wantsLayer = true
+            b.layer?.backgroundColor = sw.1.cgColor
+            b.layer?.cornerRadius = 6
+            b.layer?.borderWidth = 1
+            b.layer?.borderColor = NSColor.separatorColor.cgColor
+            b.tag = i
+            b.toolTip = Lang.m(sw.0, names[i])
+            b.translatesAutoresizingMaskIntoConstraints = false
+            b.widthAnchor.constraint(equalToConstant: 34).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            return b
+        }
+        bgColorWell.translatesAutoresizingMaskIntoConstraints = false
+        bgColorWell.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        bgColorWell.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        bgColorWell.target = self; bgColorWell.action = #selector(bgColorWellChanged)
+        let other = SetupUI.label(Lang.m("SETUP_BGCOLOR_OTHER", "ほかの色:"))
+        return SetupUI.box(Lang.m("SETUP_BGCOLOR_BOX2", "背景カラー"), SetupUI.column([
+            SetupUI.row(bgSwatchButtons + [other, bgColorWell], spacing: 8),
+            cb(Lang.t("Tera Term", "DLG_WIN_ALWAYSBG", "常に標準の背景色を使う(&U)"), \.useNormalBGColor),
+        ], spacing: 8))
+    }
+    private func setBackgroundColor(_ c: NSColor) {
+        guard !workColors.isEmpty else { return }
+        // 背景はカラーか画像のどちらか: カラーを選んだら画像は外す
+        if bgImageCheck.state == .on {
+            bgImageCheck.state = .off
+            bgImageControlsChanged()
+            bgPicker.reload(current: "")
+        }
+        workColors[0].bg = c
+        updateColorControls()
+        refresh()
+    }
+    @objc private func bgSwatchTapped(_ b: NSButton) { setBackgroundColor(Self.bgSwatches[b.tag].1) }
+    @objc private func bgColorWellChanged() { setBackgroundColor(bgColorWell.color) }
+    /// 背景色の見た目 (今の色の見本に印を付ける)
+    private func updateBGColorControls() {
+        guard let bg = workColors.first?.bg else { return }
+        if !bgColorWell.isActive { bgColorWell.color = bg }
+        let cur = TermSettings.rgbString(bg)
+        let imageOn = bgImageCheck.state == .on   // 画像を使っているときはカラーの印を付けない
+        for (i, b) in bgSwatchButtons.enumerated() {
+            let on = !imageOn && TermSettings.rgbString(Self.bgSwatches[i].1) == cur
+            b.layer?.borderWidth = on ? 3 : 1
+            b.layer?.borderColor = on ? NSColor.controlAccentColor.cgColor : NSColor.separatorColor.cgColor
+        }
+    }
+    /// 背景タブ (Mac 版): 端末の背景にうっすら出す画像
+    private func backgroundPage() -> NSView {
+        // 先に背景リストで選び、細かい調整 (ファイル・濃さ・表示のしかた) は下の枠で
+        SetupUI.column([bgColorBox(),
+                        SetupUI.box(Lang.m("SETUP_BGIMAGE_LIST_TITLE2", "背景画像"), bgPicker.view),
+                        SetupUI.row([bgImageBox(), SetupUI.box(Lang.m("SETUP_FONT_SAMPLE", "見本"), bgPreview)], spacing: 12, align: .top)],
+                       spacing: 10)
+    }
+    private func bgImageBox() -> NSView {
+        bgImageCheck.target = self; bgImageCheck.action = #selector(bgImageCheckToggled)
+        bgImageSlider.target = self; bgImageSlider.action = #selector(bgImageControlsChanged)
+        bgImageSlider.isContinuous = true
+        bgImagePatternPopup.target = self; bgImagePatternPopup.action = #selector(bgImageControlsChanged)
+        bgImageField.delegate = self
+
+        bgImageSlider.translatesAutoresizingMaskIntoConstraints = false
+        bgImageSlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        custom(load: { [unowned self] in
+            let m = MacBackgroundImage.load()
+            self.bgImageCheck.state = m.enabled ? .on : .off
+            self.bgImageField.stringValue = m.file
+            self.bgImageSlider.doubleValue = Double(m.strength)
+            self.bgImagePatternPopup.selectItem(at: self.bgImagePatterns.firstIndex { $0.0 == m.pattern } ?? 0)
+            self.bgImageControlsChanged()
+            self.reloadBGPicker()
+        }, store: {})
+        let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_BGIMAGE_NOTE", "［テーマ］の Theme で背景を使っているときは、そちらが優先されます。"))
+        note.textColor = .secondaryLabelColor
+        note.font = .systemFont(ofSize: 11)
+        note.preferredMaxLayoutWidth = 380
+        return SetupUI.box(Lang.m("SETUP_BGIMAGE_BOX2", "カスタマイズ"), SetupUI.column([
+            bgImageCheck,
+            SetupUI.row([bgImageField, bgImageButton]),
+            SetupUI.row([SetupUI.label(Lang.m("SETUP_BGIMAGE_STRENGTH", "濃さ")), bgImageSlider, bgImageStrengthLabel]),
+            SetupUI.row([SetupUI.label(Lang.m("SETUP_BGIMAGE_PATTERN", "表示のしかた")), bgImagePatternPopup]),
+            note,
+        ]))
+    }
     private func themePage() -> NSView {
         // テーマ
         themeEnableCheck.target = self; themeEnableCheck.action = #selector(changed(_:))
@@ -963,6 +1362,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         // Mac の配色の候補
         schemes = ColorScheme.presets + ColorScheme.terminalProfiles()
         schemePopup.addItem(withTitle: Lang.t("Tera Term", "DLG_TAB_VISUAL_THEME_STARTUP_NO_USE", "使用しない"))
+        schemePopup.lastItem?.tag = -1   // 配色の番号 (0〜) と重ならないように
         for (i, sc) in schemes.enumerated() {
             if i == ColorScheme.presets.count { schemePopup.menu?.addItem(.separator()) }
             let item = NSMenuItem(title: sc.title, action: nil, keyEquivalent: "")
@@ -979,7 +1379,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         preview.layer?.cornerRadius = 6
         preview.layer?.masksToBounds = true
         cursorWell.translatesAutoresizingMaskIntoConstraints = false
-        cursorWell.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        cursorWell.widthAnchor.constraint(equalToConstant: 40).isActive = true
         cursorWell.heightAnchor.constraint(equalToConstant: 24).isActive = true
         cursorWell.target = self; cursorWell.action = #selector(changed(_:))
         custom(load: { [unowned self] in
@@ -988,26 +1388,128 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                 self.schemePopup.selectItem(withTag: i)
             } else { self.schemePopup.selectItem(at: 0) }
         }, store: { [unowned self] in self.s.cursorColor = self.cursorWell.color })
-        let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_SCHEME_NOTE", "配色を選ぶと、文字色・背景色・カーソルの色・ANSIカラーをその配色にします (OK で確定)。"))
-        note.preferredMaxLayoutWidth = 440
+        // 配色とテーマを 1 つの一覧に (Enable / Startup / 配色 (Mac) を選ぶだけで済むように)
+        var entries: [SchemeGrid.Entry] = []
+        let none = Lang.t("Tera Term", "DLG_TAB_VISUAL_THEME_STARTUP_NO_USE", "使用しない")
+        entries.append(.init(key: "none", title: none, image: nil))   // 見出しなし (いつも見える)
+        // 「使用しない」の横に、テーマの毎回ランダム・ファイルから選ぶ
+        entries.append(.init(key: "random", title: Lang.m("SETUP_SCHEME_RANDOM", "🎲 毎回ランダム"), image: nil))
+        entries.append(.init(key: "file", title: Lang.m("SETUP_SCHEME_FILE", "＋ ファイルから選ぶ…"), image: nil))
+        func schemeEntry(_ i: Int) -> SchemeGrid.Entry {
+            let sc = schemes[i]
+            return SchemeGrid.Entry(key: "scheme:\(i)", title: sc.title,
+                                    image: SchemeGrid.tileImage(fg: sc.fg, bg: sc.bg, ansi: sc.ansi16 ?? Array(Palette.colors.prefix(16))))
+        }
+        for i in 0..<min(ColorScheme.presets.count, schemes.count) {
+            var e = schemeEntry(i)
+            if i == 0 { e.header = Lang.m("SETUP_SCHEME_GROUP_MAC", "基本テーマ") }
+            entries.append(e)
+        }
+        let base = themeBase(s)
+        var first = true
+        for path in ThemeFile.bundledThemes() {
+            let d = ThemeFile.load(path, base: base)
+            let name = ThemeFile.storedName(for: path)
+            let title = ((name as NSString).lastPathComponent as NSString).deletingPathExtension
+            var e = SchemeGrid.Entry(key: "theme:" + name, title: title,
+                                     image: SchemeGrid.tileImage(fg: d.colors.vt.fg, bg: d.colors.vt.bg, ansi: d.colors.ansi,
+                                                                 background: d.background.isEnabled ? d.background : nil))
+            if first { e.header = Lang.m("SETUP_SCHEME_GROUP_THEME", "従来のテーマ (Windows 版 Tera Term)"); first = false }
+            entries.append(e)
+        }
+        // ターミナル.app のプロファイル (あれば最後に)
+        for i in ColorScheme.presets.count..<max(ColorScheme.presets.count, schemes.count) {
+            var e = schemeEntry(i)
+            if i == ColorScheme.presets.count { e.header = Lang.m("SETUP_SCHEME_GROUP_TERMINAL", "ターミナル.app のプロファイル") }
+            entries.append(e)
+        }
+        schemeGrid.setEntries(entries)
+        schemeGrid.onPick = { [unowned self] key in self.schemeGridPicked(key) }
+        custom(load: { [unowned self] in
+            self.schemeGrid.selectedKey = self.currentSchemeKey
+            self.schemeGrid.expandSelection()
+            if ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_EXPAND"] != nil { self.schemeGrid.expandAll() }
+            DispatchQueue.main.async { self.schemeGrid.scrollToSelection() }
+        }, store: {})
+
+        let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_SCHEME_NOTE2", "クリックすると下の見本と端末に当てて見られます (OK で確定)。"))
+        note.textColor = .secondaryLabelColor
+        note.font = .systemFont(ofSize: 11)
+        note.preferredMaxLayoutWidth = 540
+        themeFileField.placeholderString = Lang.m("SETUP_THEME_FILE_PLACEHOLDER", "テーマファイル (.ini)")
         return SetupUI.column([
-            SetupUI.label("Theme"),
-            SetupUI.indent(SetupUI.column([
-                themeEnableCheck,
-                themeEditorButton,
-                fastSizeMoveCheck,
-                SetupUI.label("Startup"),
-                SetupUI.indent(SetupUI.column([
-                    SetupUI.row([themeStartupPopup, bundledThemePopup]),
-                    SetupUI.row([themeFileField, themeFileButton]),
-                ])),
-            ], spacing: 8)),
+            SetupUI.box(Lang.m("SETUP_SCHEME_BOX2", "配色・テーマ"), SetupUI.column([note, schemeGrid], spacing: 8)),
             SetupUI.indent(preview),
-            SetupUI.box(Lang.m("SETUP_SCHEME_BOX", "配色 (Mac)"), SetupUI.column([
-                SetupUI.row([SetupUI.label(Lang.m("SETUP_SCHEME", "配色")), schemePopup, SetupUI.label(Lang.m("SETUP_CURSOR_COLOR", "カーソルの色")), cursorWell]),
-                note,
-            ])),
         ], spacing: 10)
+    }
+    private let schemeGrid = SchemeGrid(height: 400)
+    /// 今の設定がどのタイルか
+    private var currentSchemeKey: String {
+        if themeEnableCheck.state == .on {
+            switch themeStartupPopup.indexOfSelectedItem {
+            case 1: return "theme:" + themeFileField.stringValue.trimmingCharacters(in: .whitespaces)
+            case 2: return "random"
+            default: break
+            }
+        }
+        if !s.themeName.isEmpty, let i = schemes.firstIndex(where: { $0.name == s.themeName }) { return "scheme:\(i)" }
+        return "none"
+    }
+    /// 「使用しない」を選んだ (OK のとき、テーマの前の色ではなく既定の色にする)
+    private var colorsResetToDefault = false
+    private func resetColorsToDefault() {
+        let d = TermSettings()
+        guard !workColors.isEmpty else { return }
+        workColors[0] = ColorPair(fg: d.fg, bg: d.bg)
+        cursorWell.color = d.cursorColor
+        ansiWork = Array(Palette.colors.prefix(16))
+        colorsResetToDefault = true
+    }
+    /// 既定の色を設定に当てる (テーマの前の色を戻したあとに使う)
+    private func applyDefaultColors(_ p: inout TermSettings) {
+        let d = TermSettings()
+        p.fg = d.fg; p.bg = d.bg; p.cursorColor = d.cursorColor; p.ansi16 = nil
+    }
+    /// タイルを選んだ: テーマ (Enable + Startup) と Mac の配色をまとめて切り替える
+    private func schemeGridPicked(_ key: String) {
+        func useTheme(_ startup: Int, _ file: String?) {
+            colorsResetToDefault = false
+            themeEnableCheck.state = .on
+            themeStartupPopup.selectItem(at: startup)
+            if let f = file { themeFileField.stringValue = f }
+            s.themeName = ""
+            schemePopup.selectItem(at: 0)
+            refresh()
+        }
+        func noTheme() {
+            themeEnableCheck.state = .off
+            themeStartupPopup.selectItem(at: 0)
+        }
+        if key == "none" {
+            // 使用しない: テーマも配色も外し、色を初めの状態 (Tera Term の既定) に戻す
+            noTheme(); schemePopup.selectItem(at: 0); s.themeName = ""
+            resetColorsToDefault()
+            refresh()
+        } else if key.hasPrefix("scheme:"), let i = Int(key.dropFirst(7)) {
+            colorsResetToDefault = false
+            // ポップアップの「使用しない」も tag 0 なので、selectItem(withTag:) を使わずに番号で当てる (ダークが当たらなかった原因)
+            noTheme(); applyScheme(i)
+        } else if key.hasPrefix("theme:") {
+            useTheme(1, String(key.dropFirst(6)))
+        } else if key == "random" {
+            useTheme(2, nil)
+        } else if key == "file" {
+            schemeGrid.selectedKey = currentSchemeKey
+            let p = NSOpenPanel()
+            p.allowedFileTypes = ["ini", "INI"]
+            p.allowsOtherFileTypes = true
+            p.directoryURL = URL(fileURLWithPath: ThemeFile.themeDirectory ?? NSHomeDirectory())
+            p.beginSheetModal(for: panel) { r in
+                guard r == .OK, let u = p.url else { return }
+                useTheme(1, ThemeFile.storedName(for: u.path))
+                self.schemeGrid.selectedKey = self.currentSchemeKey
+            }
+        }
     }
     /// テーマタブの有効・無効 (theme_pp.cpp ArrangeControls / CBN_SELCHANGE)
     private func updateThemeControls() {
@@ -1052,6 +1554,11 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     }
     /// OK: テーマの設定を保存し、変わっていればすぐ当てる (Tera Term は次の接続から。BGLoadThemeFile)
     private func applyThemeTab() {
+        // Mac 版の背景画像
+        let m = bgImageFromControls
+        m.save()
+        previewMacImage = nil
+        ThemeRuntime.shared.macImage = m
         let old = ThemeSettings.load()
         var t = ThemeSettings()
         t.bgEnable = max(0, themeStartupPopup.indexOfSelectedItem)
@@ -1073,18 +1580,26 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             if let b = ThemeSettings.colorBackup { ThemeSettings.restore(b, to: &s); ThemeSettings.colorBackup = nil }
             ThemeRuntime.shared.set(nil)
         }
+        if colorsResetToDefault && t.bgEnable == 0 { applyDefaultColors(&s) }
         t.save()
     }
     @objc private func schemeChosen() {
         guard schemePopup.indexOfSelectedItem > 0, let item = schemePopup.selectedItem else { s.themeName = ""; return }
-        let sc = schemes[item.tag]
+        applyScheme(item.tag)
+    }
+    /// 配色を当てる (i = schemes の番号)
+    private func applyScheme(_ i: Int) {
+        guard schemes.indices.contains(i) else { return }
+        let sc = schemes[i]
         s.themeName = sc.name
+        guard !workColors.isEmpty else { return }
         workColors[0] = ColorPair(fg: sc.fg, bg: sc.bg)
         cursorWell.color = sc.cursor
         ansiWork = sc.ansi16 ?? Array(Palette.colors.prefix(16))
         refresh()
     }
     private func updatePreview() {
+        updateAnsiWells()
         if let th = previewTheme {
             preview.fg = th.colors.vt.fg
             preview.bg = th.colors.vt.bg
@@ -1094,10 +1609,34 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             preview.fg = workColors.first?.fg ?? s.fg
             preview.bg = workColors.first?.bg ?? s.bg
             if !ansiWork.isEmpty { preview.ansi = ansiWork }
-            preview.background = nil
+            // テーマを使わないときは、背景のページで選んでいる画像 (Mac 版) を見本にも重ねる
+            preview.background = bgImageFromControls.spec(bg: preview.bg)
         }
         preview.cursor = cursorWell.color
         preview.font = NSFont(name: s.fontName, size: 12) ?? preview.font
+        // フォントのページの見本は、選んだ大きさのまま
+        fontPreview.fg = preview.fg; fontPreview.bg = preview.bg; fontPreview.ansi = preview.ansi
+        fontPreview.background = preview.background; fontPreview.cursor = preview.cursor
+        fontPreview.font = NSFont(name: s.fontName, size: s.fontSize) ?? fontPreview.font
+        visualPreview.fg = preview.fg; visualPreview.bg = preview.bg; visualPreview.ansi = preview.ansi
+        visualPreview.background = preview.background; visualPreview.cursor = preview.cursor
+        visualPreview.font = NSFont(name: s.fontName, size: 13) ?? visualPreview.font
+        for v in [windowPreview, bgPreview] {
+            v.fg = preview.fg; v.bg = preview.bg; v.ansi = preview.ansi; v.cursor = preview.cursor
+            v.font = visualPreview.font
+        }
+        windowPreview.background = preview.background
+        // 見本にも、いじっている不透明度を当てる
+        let alphaKeep = s
+        if let r = pageBinders[.window] { for b in binders[r] { b.store() } }
+        let alpha = CGFloat(max(16, min(255, s[keyPath: previewAlphaKey]))) / 255
+        s = alphaKeep
+        for v in [preview, fontPreview, visualPreview, windowPreview, bgPreview] as [NSView] { v.alphaValue = alpha }
+        attrPreview.alphaValue = alpha
+        let kind = cursorRadios.firstIndex { $0.state == .on } ?? 0
+        for v in [preview, fontPreview, visualPreview, windowPreview, bgPreview] { v.cursorKind = kind }
+        // 背景のページ: テーマの背景がなければ、Mac 版の背景画像 (今の欄の値) を見せる
+        bgPreview.background = preview.background ?? bgImageFromControls.spec(bg: preview.bg)
     }
 
     // UI (ui_pp.cpp)。UI言語は本家の言語ファイル (lang_utf8/*.lng) から選ぶ。先頭は「自動」(macOS の言語設定に従う)。
@@ -1116,6 +1655,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         }
         uiLangInitial = Lang.chosen.flatMap { c in Lang.available.firstIndex { $0.file == c }.map { $0 + 1 } } ?? 0
         uiLangPopup.selectItem(at: uiLangInitial)
+        uiLangPopup.target = self; uiLangPopup.action = #selector(uiLangChosen)
         let fontsDir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Fonts")
         let link = NSButton(title: Lang.t("Tera Term", "DLG_TAB_FONT_FOLDER", "フォント設定/フォントフォルダ(%s)を開く", fontsDir),
                             target: self, action: #selector(openFontFolder))
@@ -1126,8 +1666,27 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         return SetupUI.column([
             SetupUI.label(Lang.t("Tera Term", "DLG_GEN_LANG_UI", "UI言語(&L):")),
             SetupUI.indent(uiLangPopup),
+            SetupUI.indent({ let n = NSTextField(wrappingLabelWithString: Lang.m("SETUP_UI_LANG_NOTE", "選ぶとすぐに切り替わります (ほかのページで変えた設定も確定します)。"))
+                             n.textColor = .secondaryLabelColor; n.font = .systemFont(ofSize: 11); n.preferredMaxLayoutWidth = 420; return n }()),
             SetupUI.indent(link),
         ], spacing: 8)
+    }
+    /// 言語を選んだらその場で切り替える: ほかの変更も OK と同じく確定し、
+    /// メニューやウインドウを新しい言語にして、設定画面も新しい言語で開き直す
+    @objc private func uiLangChosen() {
+        guard uiLangPopup.indexOfSelectedItem != uiLangInitial else { return }
+        let session = self.session
+        // 開き直したあとも同じ位置に出す (左上をそろえる。言語で幅が変わっても動かないように)
+        let topLeft = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        ok()
+        guard closed else { return }   // 入力の誤りなどで閉じなかった
+        DispatchQueue.main.async {
+            (session ?? SessionWindowController.all.first)?.openSetupSheet(.ui)
+            if let p = SetupSheet.current?.panel {
+                p.setFrameTopLeftPoint(topLeft)
+                DispatchQueue.main.async { p.setFrameTopLeftPoint(topLeft) }
+            }
+        }
     }
     /// OK: UI言語が変わっていれば切り替える (nil = 自動)
     private func applyUILanguage() {
@@ -1209,6 +1768,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // マウス (mouse_pp.cpp)
     private func mousePage() -> NSView {
         SetupUI.column([
+            // マウスカーソルの形 (本家では「表示」のタブ。Mac 版ではマウスのページに)
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_MOUSE", "マウスカーソル(&M)")),
+                         pop(["ARROW", "IBEAM", "CROSS", "HAND"], ["ARROW", "IBEAM", "CROSS", "HAND"], \.mouseCursor)]),
             cb(Lang.t("Tera Term", "DLG_TAB_GENERAL_CLICKURL", "クリッカブルURLを有効にする(&E)"), \.enableClickableUrl),
             SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_TAB_GENERAL_MOUSEWHEEL_SCROLL_LINE", "ホイールのスクロール行数(&W)")), num(\.mouseWheelScrollLine, width: 50, range: 1...100)]),
         ], spacing: 10)
@@ -1232,6 +1794,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private let termResizeCheck = SetupUI.check(Lang.t("Tera Term", "DLG_TERM_RESIZE", "自動的に調整(&W):"))
     private let colsField = SetupUI.field(width: 50), rowsField = SetupUI.field(width: 50)
     private func terminalPage() -> NSView {
+        bind(scrollCheck, \.enableScrollBuff)
         bind(termIsWinCheck, \.termIsWin)
         bind(termResizeCheck, \.autoWinResize)
         for f in [colsField, rowsField] { f.delegate = self }
@@ -1257,6 +1820,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             ]),
             cb(Lang.t("Tera Term", "DLG_TERM_LOCALECHO", "ローカルエコー(&L):"), \.localEcho),
             cb(Lang.t("Tera Term", "DLG_TERM_AUTOSWITCH", "自動切り替え(VT<->TEK)(&U):"), \.autoWinSwitch),
+            // スクロールバッファ (本家ではウィンドウのタブ。端末の項目なので Mac 版はここ)
+            SetupUI.row([scrollCheck, scrollField, SetupUI.label(Lang.t("Tera Term", "DLG_WIN_SCROLL3", "行(&N)"))]),
         ], spacing: 10)
     }
 
@@ -1374,57 +1939,135 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private var workColors: [ColorPair] = []
     private static let attrKeys: [WritableKeyPath<TermSettings, ColorPair>] = [\.boldColor, \.blinkColor, \.reverseColor, \.urlColor, \.underlineColor]
     private func windowPage() -> NSView {
-        bind(scrollCheck, \.enableScrollBuff)
-        bind(boldCheckWindow, \.enableBold)
+        // 「太字を有効」は［文字カラー・装飾］の「太字属性フォントを有効にする」と同じ設定 (EnableBold) なので、そちらだけに置く
         for (i, r) in cursorRadios.enumerated() {
+            // 本家の "四角(&L):" の末尾の ":" は外す
+            r.title = r.title.trimmingCharacters(in: CharacterSet(charactersIn: ":：")).trimmingCharacters(in: .whitespaces)
             r.target = self; r.action = #selector(cursorChanged(_:))
             let v = ["block", "vertical", "horizontal"][i]
             custom(load: { [unowned self] in r.state = self.s.cursorShape == v ? .on : .off },
                    store: { [unowned self] in if r.state == .on { self.s.cursorShape = v } })
         }
+        let left = SetupUI.column([
+            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_TITLELABEL", "タイトル(&T):")), text(\.title, width: 200)]),
+            SetupUI.box(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA", "ウィンドウの不透明度"), SetupUI.column([
+                alphaRow(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA_ACTIVE", "アクテイブ時(&A)"), \.alphaBlendActive),
+                alphaRow(Lang.t("Tera Term", "DLG_TAB_VISUAL_ALPHA_INACTIVE", "非アクティブ時(&C)"), \.alphaBlendInactive),
+            ])),
+            SetupUI.box(Lang.t("Tera Term", "DLG_WIN_CURSOR", "カーソルの形"), SetupUI.column(cursorRows() + [cb(Lang.m("SETUP_CURSOR_BLINK", "カーソルを点滅"), \.cursorBlink)])),
+            cb(Lang.t("Tera Term", "DLG_WIN_PCBOLD16", "&16色モード(PC形式):"), \.pcBoldColor),
+            cb(Lang.t("Tera Term", "DLG_WIN_AIXTERM16", "1&6色モード(aixterm形式):"), \.aixterm16Color),
+            cb(Lang.t("Tera Term", "DLG_WIN_XTERM256", "&256色モード(xterm形式):"), \.xterm256Color),
+        ], spacing: 8)
+        return SetupUI.column([
+            left,
+            SetupUI.box(Lang.m("SETUP_FONT_SAMPLE", "見本"), windowPreview),
+        ], spacing: 10)
+    }
+    /// 文字の色 (本家のウィンドウの「カラー」。Mac 版ではフォントのページに置く)
+    private func textColorBox() -> NSView {
         custom(load: { [unowned self] in
             self.workColors = [ColorPair(fg: self.s.fg, bg: self.s.bg)] + Self.attrKeys.map { self.s[keyPath: $0] }
             self.textRadio.state = .on
         }, store: { [unowned self] in
+            // 読み込む前 (ほかのページの読み込み中に見本を作るとき) は何もしない
+            guard self.workColors.count == Self.attrKeys.count + 1 else { return }
             self.s.fg = self.workColors[0].fg; self.s.bg = self.workColors[0].bg
             for (i, k) in Self.attrKeys.enumerated() { self.s[keyPath: k] = self.workColors[i + 1] }
         })
-        for r in [textRadio, backRadio] { r.target = self; r.action = #selector(fgbgChanged(_:)) }
-        attrPopup.target = self; attrPopup.action = #selector(changed(_:))
-        for sl in rgbSliders {
-            sl.target = self; sl.action = #selector(rgbChanged)
-            sl.translatesAutoresizingMaskIntoConstraints = false
-            sl.widthAnchor.constraint(equalToConstant: 160).isActive = true
-        }
-        for l in rgbLabels {
-            l.translatesAutoresizingMaskIntoConstraints = false
-            l.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        }
+        // 文字の色だけを色パネルから選ぶ (背景の色は［背景］のページ。数字の入力はやめた)
+        textRadio.state = .on
+        attrPopup.target = self; attrPopup.action = #selector(attrChosen)
+        textColorWell.translatesAutoresizingMaskIntoConstraints = false
+        textColorWell.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        textColorWell.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        textColorWell.target = self; textColorWell.action = #selector(textColorWellChanged)
         sampleView.translatesAutoresizingMaskIntoConstraints = false
         sampleView.widthAnchor.constraint(equalToConstant: 200).isActive = true
         sampleView.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let swap = SetupUI.button(Lang.t("Tera Term", "DLG_WIN_SWAP_COLORS", "色入れ替え(&W)"), target: self, action: #selector(swapColors))
-        let left = SetupUI.column([
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_TITLELABEL", "タイトル(&T):")), text(\.title, width: 200)]),
-            SetupUI.box(Lang.t("Tera Term", "DLG_WIN_CURSOR", "カーソルの形"), SetupUI.column(cursorRadios + [cb(Lang.m("SETUP_CURSOR_BLINK", "カーソルを点滅"), \.cursorBlink)])),
-            cb(Lang.t("Tera Term", "DLG_WIN_PCBOLD16", "&16色モード(PC形式):"), \.pcBoldColor),
-            cb(Lang.t("Tera Term", "DLG_WIN_AIXTERM16", "1&6色モード(aixterm形式):"), \.aixterm16Color),
-            cb(Lang.t("Tera Term", "DLG_WIN_XTERM256", "&256色モード(xterm形式):"), \.xterm256Color),
-            SetupUI.row([scrollCheck, scrollField, SetupUI.label(Lang.t("Tera Term", "DLG_WIN_SCROLL3", "行(&N)"))]),
-            boldCheckWindow,
-        ], spacing: 8)
-        let colorBox = SetupUI.box(Lang.t("Tera Term", "DLG_WIN_COLOR", "カラー"), SetupUI.column([
-            SetupUI.row([textRadio, backRadio, SetupUI.label(Lang.t("Tera Term", "DLG_WIN_ATTRIB", "属性(&A)")), attrPopup]),
-            swap,
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_R", "赤(&R):")), rgbSliders[0], rgbLabels[0]]),
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_G", "緑(&G):")), rgbSliders[1], rgbLabels[1]]),
-            SetupUI.row([SetupUI.label(Lang.t("Tera Term", "DLG_WIN_B", "青(&B):")), rgbSliders[2], rgbLabels[2]]),
-            cb(Lang.t("Tera Term", "DLG_WIN_ALWAYSBG", "常に標準の背景色を使う(&U)"), \.useNormalBGColor),
-            sampleView,
-        ], spacing: 6))
-        return SetupUI.row([left, colorBox], spacing: 20, align: .top)
+        custom(load: { [unowned self] in self.ansiWork = self.s.ansi16 ?? Array(Palette.colors.prefix(16)); self.ansiSelected() },
+               store: { [unowned self] in
+                   let std = Array(Palette.colors.prefix(16))
+                   self.s.ansi16 = self.ansiWork.map(TermSettings.rgbString) != std.map(TermSettings.rgbString) ? self.ansiWork : nil
+               })
+        // 属性ごとの色と、ANSI カラー (プログラムが色を指定した文字) は同じ「文字の色」の仲間
+        // 属性ごとの色を一覧で全部並べる (プルダウンで切り替えない)
+        let names = (0..<attrPopup.numberOfItems).map { attrPopup.item(at: $0)?.title ?? "" }
+        attrWells = names.enumerated().map { i, _ in
+            let w = NSColorWell()
+            w.translatesAutoresizingMaskIntoConstraints = false
+            w.widthAnchor.constraint(equalToConstant: 40).isActive = true
+            w.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            w.tag = i
+            w.target = self; w.action = #selector(attrWellChanged(_:))
+            return w
+        }
+        var cells: [NSView] = names.enumerated().map { i, n in
+            SetupUI.column([attrWells[i], { let l = SetupUI.label(n); l.font = .systemFont(ofSize: 11); return l }()], spacing: 2)
+        }
+        // カーソルの色も文字の色の仲間としてここに (本家にはない Mac 版の項目。前は［テーマ］のページ)
+        cursorWell.removeFromSuperview()
+        cells.append(SetupUI.column([cursorWell, { let l = SetupUI.label(Lang.m("SETUP_CURSOR_COLOR_SHORT", "カーソル")); l.font = .systemFont(ofSize: 11); return l }()], spacing: 2))
+        return SetupUI.box(Lang.m("SETUP_TEXT_COLOR_BOX", "文字の色"), SetupUI.column([
+            SetupUI.row(cells, spacing: 10, align: .top),
+            SetupUI.label(Lang.t("Tera Term", "DLG_TAB_VISUAL_ANSICOLOR", "AN&SIカラー")),
+            ansiPalette(),
+        ], spacing: 8))
     }
-    @objc private func cursorChanged(_ sender: NSButton) { for r in cursorRadios where r !== sender { r.state = .off } }
+    private let textColorWell = NSColorWell()
+    private var attrWells: [NSColorWell] = []
+    @objc private func attrWellChanged(_ w: NSColorWell) {
+        guard w.tag < workColors.count else { return }
+        workColors[w.tag].fg = w.color
+        updateColorControls()
+        refresh()
+    }
+    @objc private func attrChosen() { textRadio.state = .on; backRadio.state = .off; updateColorControls(); refresh() }
+    @objc private func textColorWellChanged() {
+        guard currentAttr < workColors.count else { return }
+        workColors[currentAttr].fg = textColorWell.color
+        updateColorControls()
+        refresh()
+    }
+    /// カーソルの形の行: ○ [見本の絵] 名前 (絵を押しても選べる)
+    private func cursorRows() -> [NSView] {
+        cursorRadios.enumerated().map { i, r in
+            let title = r.title
+            r.title = ""
+            let pic = NSButton(image: Self.cursorSample(i), target: self, action: #selector(cursorPictureTapped(_:)))
+            pic.isBordered = false
+            pic.tag = i
+            let name = NSButton(title: title, target: self, action: #selector(cursorPictureTapped(_:)))
+            name.isBordered = false
+            name.attributedTitle = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor])
+            name.tag = i
+            return SetupUI.row([r, pic, name], spacing: 6)
+        }
+    }
+    @objc private func cursorPictureTapped(_ b: NSButton) {
+        let r = cursorRadios[b.tag]
+        r.state = .on
+        cursorChanged(r)
+    }
+    /// カーソルの形の見本 (0 = 四角, 1 = 垂直線, 2 = 下線)
+    private static func cursorSample(_ kind: Int) -> NSImage {
+        NSImage(size: NSSize(width: 46, height: 20), flipped: false) { r in
+            NSColor(white: 0.12, alpha: 1).setFill()
+            NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4).fill()
+            let f = NSFont(name: "Menlo", size: 12) ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
+            ("$ " as NSString).draw(at: NSPoint(x: 5, y: 3), withAttributes: [.font: f, .foregroundColor: NSColor(white: 0.85, alpha: 1)])
+            let x: CGFloat = 5 + ("$ " as NSString).size(withAttributes: [.font: f]).width
+            let cw: CGFloat = 7.5, top: CGFloat = 16, bottom: CGFloat = 3
+            NSColor(srgbRed: 0.6, green: 1.0, blue: 0.6, alpha: 1).setFill()
+            switch kind {
+            case 0: NSRect(x: x, y: bottom, width: cw, height: top - bottom).fill()
+            case 1: NSRect(x: x, y: bottom, width: 2, height: top - bottom).fill()
+            default: NSRect(x: x, y: bottom, width: cw, height: 2).fill()
+            }
+            return true
+        }
+    }
+    @objc private func cursorChanged(_ sender: NSButton) { for r in cursorRadios where r !== sender { r.state = .off }; updatePreview(); refresh() }
     @objc private func fgbgChanged(_ sender: NSButton) {
         for r in [textRadio, backRadio] where r !== sender { r.state = .off }
         refresh()
@@ -1436,8 +2079,11 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         let c = textRadio.state == .on ? p.fg : p.bg
         let (r, g, b) = TermSettings.rgbComponents(c)
         for (i, v) in [r, g, b].enumerated() { rgbSliders[i].integerValue = v; rgbLabels[i].stringValue = String(v) }
+        if !textColorWell.isActive { textColorWell.color = p.fg }
+        for (i, w) in attrWells.enumerated() where i < workColors.count && !w.isActive { w.color = workColors[i].fg }
         sampleView.pair = p
         updatePreview()
+        updateBGColorControls()
     }
     @objc private func rgbChanged() {
         guard currentAttr < workColors.count else { return }
@@ -1508,6 +2154,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private var previewReady = false
     private var previewing = false
     private var previewOriginal: (settings: TermSettings, theme: ThemeData?, themeEnabled: Bool)?
+    /// 開いたときの背景画像の設定 (キャンセルで戻す)
+    private var previewMacImage: MacBackgroundImage?
     /// 開いたときの端末のウィンドウの位置と大きさ (キャンセルでそのまま戻す)
     private var previewFrame: NSRect?
 
@@ -1537,9 +2185,15 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             ThemeRuntime.shared.set(th)
         } else if !themeOn {
             if let b = ThemeSettings.colorBackup { ThemeSettings.restore(b, to: &p) }
+            if colorsResetToDefault { applyDefaultColors(&p) }
             if ThemeRuntime.shared.current != nil { ThemeRuntime.shared.set(nil) }
         }
+        // 背景画像 (Mac 版)
+        if previewMacImage == nil { previewMacImage = ThemeRuntime.shared.macImage }
+        ThemeRuntime.shared.macImage = bgImageFromControls
         sess.applySettings(p)
+        // 設定画面が前にあるので端末は「非アクティブ」になるが、いじっている方の濃さで見せる
+        sess.previewAlpha = p[keyPath: previewAlphaKey]
         sess.updateWindowAlpha()   // 不透明度 (applyRuntimeSettings はスクロールバッファも変えるので呼ばない)
     }
 
@@ -1551,6 +2205,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         previewOriginal = nil
         ThemeRuntime.shared.enabled = o.themeEnabled
         ThemeRuntime.shared.set(o.theme)
+        if let m = previewMacImage { ThemeRuntime.shared.macImage = m; previewMacImage = nil }
         sess.applySettings(o.settings)
         if let f = previewFrame, let w = sess.window, w.frame != f { w.setFrame(f, display: true) }
         previewFrame = nil
@@ -1561,8 +2216,12 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         statusTimer?.invalidate()
         statusTimer = nil
         NSFontManager.shared.fontPanel(false)?.orderOut(nil)
+        if let sess = session { sess.previewAlpha = nil; sess.updateWindowAlpha() }
+        closed = true
+        if Self.current === self { Self.current = nil }
         close()
     }
+    private var closed = false
 }
 
 /// 以前の名前 (main.swift のスナップショット自己テストが使う)
@@ -1590,7 +2249,9 @@ final class SliderSync: NSObject, NSTextFieldDelegate {
         otherDelegate = field.delegate
         field.delegate = self
     }
-    @objc private func slid() { field.stringValue = String(slider.integerValue) }
+    /// スライダーを動かしたとき (その場で端末に当てる)
+    var onChange: (() -> Void)?
+    @objc private func slid() { field.stringValue = String(slider.integerValue); onChange?() }
     func update() { slider.integerValue = Int(field.stringValue) ?? slider.integerValue }
     func controlTextDidChange(_ obj: Notification) {
         update()

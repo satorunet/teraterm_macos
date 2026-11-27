@@ -105,8 +105,22 @@ final class InWindowMenuBar: NSView {
         highlight.isHidden = true
         addSubview(highlight)
         _ = overlay
+        // 言語が変わったら題を描き直す (題の幅も変わるので並べ直す)
+        langObserver = NotificationCenter.default.addObserver(forName: Lang.didChange, object: nil, queue: .main) { [weak self] _ in
+            self?.redrawTitles()
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
+    private var langObserver: NSObjectProtocol?
+    deinit { if let o = langObserver { NotificationCenter.default.removeObserver(o) } }
+    func redrawTitles() {
+        hover = nil
+        layoutTitles()
+        overlay.frame = bounds
+        overlay.setNeedsDisplay(overlay.bounds)
+        overlay.displayIfNeeded()
+        setNeedsDisplay(bounds)
+    }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) { backdrop.frame = bounds }
 

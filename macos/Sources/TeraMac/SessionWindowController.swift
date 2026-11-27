@@ -26,6 +26,8 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     /// TTProxy のコマンドライン (-proxy=URL / -noproxy) で置き換えたプロキシ。本家はプロセスごと (defaultProxy) なので、
     /// Mac ではウインドウごとに持つ (起動時の引数は最初のウインドウ、connect マクロはそのウインドウ)
     var proxyOverride: ProxyURL?
+    /// 設定画面で不透明度を調整中のとき、その値で見せる (nil = いつもどおり)
+    var previewAlpha: Int?
     /// シリアルポートの自動再接続 (AutoComPortReconnect)
     private(set) lazy var serialReconnect = SerialReconnect(session: self)
     /// ログ (filesys_log.cpp の LogVar)
@@ -171,6 +173,9 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         win.contentView = TerminalContainerView(termView: termView)  // ウィンドウ内のメニューバー + 端末
         win.backgroundColor = settings.bg
         applyNewlineSettings()
+        // 不透明度 (アクティブ時 / 非アクティブ時) は作った時点から効かせる。前は設定の OK のあとだけだった
+        updateWindowAlpha()
+        installAlphaObservers()
         fitWindow(cols: settings.cols, rows: settings.rows)
         win.center()
         if let last = SessionWindowController.all.last?.window {

@@ -57,6 +57,8 @@ enum MenuBar {
             item(tt("MENU_FILE_NEW", "新しい接続..."), #selector(S.newConnectionMenu(_:)), "n"),
             item(tt("MENU_FILE_DUPLICATE", "セッションの複製"), #selector(S.duplicateSessionMenu(_:)), "d"),
             item(Lang.m("MENU_FILE_LOCALSHELL", "ローカルシェル接続"), #selector(S.localShellConnection(_:)), "g"),
+            // TeraTerm Menu の接続先リスト (リスト設定の画面)。開いていればそれを前に出す
+            item(Lang.m("MENU_FILE_CONNLIST", "接続先リスト…"), #selector(AppDelegate.showMenuEditor(_:))),
             .separator(),
             item(tt("MENU_FILE_LOG", "ログ..."), #selector(S.openLogDialog(_:))),
             item(tt("MENU_FILE_PAUSELOG", "ログを中断"), #selector(S.togglePauseLog(_:))),
@@ -109,20 +111,50 @@ enum MenuBar {
         ])
 
         // 設定 (プロキシと SSH の項目は TTProxy・TTSSH が T&CP/IP の前に入れる)
-        _ = add(tt("MENU_SETUP", "設定"), [
-            item(tt("MENU_SETUP_TERMINAL", "端末..."), #selector(S.setupTerminal(_:)), ","),
-            item(tt("MENU_SETUP_WINDOW", "ウィンドウ..."), #selector(S.setupWindow(_:))),
-            item(tt("MENU_SETUP_FONT", "フォント..."), #selector(S.setupFont(_:))),
-            item(Lang.m("MENU_SETUP_THEME", "テーマ..."), #selector(S.setupTheme(_:))),
-            item(tt("MENU_SETUP_KEYBOARD", "キーボード..."), #selector(S.setupKeyboard(_:))),
-            item(tt("MENU_SETUP_SERIALPORT", "シリアルポート..."), #selector(S.setupSerialPort(_:))),
-            item(proxy("MENU_SETUP", "プロキシ..."), #selector(S.proxySetup(_:))),
-            item(ssh("MENU_SSH", "SSH..."), #selector(S.sshSetup(_:))),
-            item(ssh("MENU_SSH_AUTH", "SSH認証..."), #selector(S.sshAuthSetup(_:))),
-            item(ssh("MENU_SSH_FORWARD", "SSH転送..."), #selector(S.sshForwardSetup(_:))),
-            item(ssh("MENU_SSH_KEYGEN", "SSH鍵生成..."), #selector(S.sshKeyGenerate(_:))),
-            item(tt("MENU_SETUP_TCPIP", "TCP/IP..."), #selector(S.setupTCPIP(_:))),
-            item(tt("MENU_SETUP_GENERAL", "全般..."), #selector(S.setupGeneral(_:))),
+        // 設定: その他の設定と同じ 5 つのまとまり (全般/デザイン/通信/操作/その他) から選んで進む
+        // (本家の項目はすべてこの中にある。プロキシと SSH は「通信」に入れる)
+        func pageItem(_ p: SetupSheet.Page) -> NSMenuItem {
+            let known: [SetupSheet.Page: (String, String, Selector)] = [
+                .terminal: ("MENU_SETUP_TERMINAL", "端末...", #selector(S.setupTerminal(_:))),
+                .window: ("MENU_SETUP_WINDOW", "ウィンドウ...", #selector(S.setupWindow(_:))),
+                .font: ("MENU_SETUP_FONT", "フォント...", #selector(S.setupFont(_:))),
+                .keyboard: ("MENU_SETUP_KEYBOARD", "キーボード...", #selector(S.setupKeyboard(_:))),
+                .serial: ("MENU_SETUP_SERIALPORT", "シリアルポート...", #selector(S.setupSerialPort(_:))),
+                .tcpip: ("MENU_SETUP_TCPIP", "TCP/IP...", #selector(S.setupTCPIP(_:))),
+                .general: ("MENU_SETUP_GENERAL", "全般...", #selector(S.setupGeneral(_:))),
+            ]
+            let i: NSMenuItem
+            if let k = known[p] {
+                i = item(tt(k.0, k.1), k.2, p == .terminal ? "," : "")
+            } else if p == .theme {
+                i = item(Lang.m("MENU_SETUP_THEME", "テーマ..."), #selector(S.setupTheme(_:)))
+            } else {
+                i = item(p.title + "...", #selector(S.setupPage(_:)))
+                i.tag = p.rawValue
+            }
+            i.image = NSImage(systemSymbolName: p.icon.0, accessibilityDescription: nil)
+            return i
+        }
+        let groupSymbols = ["gearshape", "paintbrush", "network", "keyboard", "ellipsis.circle"]
+        var groups: [NSMenuItem] = []
+        for (n, sec) in SetupSheet.Page.sections.enumerated() {
+            var items = sec.items.map { pageItem(SetupSheet.Page.allCases[$0]) }
+            if n == 2 {
+                items += [
+                    .separator(),
+                    item(proxy("MENU_SETUP", "プロキシ..."), #selector(S.proxySetup(_:))),
+                    item(ssh("MENU_SSH", "SSH..."), #selector(S.sshSetup(_:))),
+                    item(ssh("MENU_SSH_AUTH", "SSH認証..."), #selector(S.sshAuthSetup(_:))),
+                    item(ssh("MENU_SSH_FORWARD", "SSH転送..."), #selector(S.sshForwardSetup(_:))),
+                    item(ssh("MENU_SSH_KEYGEN", "SSH鍵生成..."), #selector(S.sshKeyGenerate(_:))),
+                ]
+            }
+            let g = sub(sec.title, items)
+            g.image = NSImage(systemSymbolName: groupSymbols[n], accessibilityDescription: nil)
+            groups.append(g)
+        }
+        _ = add(tt("MENU_SETUP", "設定"), groups + [
+            .separator(),
             item(tt("MENU_SETUP_ADDITION", "その他の設定..."), #selector(S.setupAdditional(_:))),
             .separator(),
             item(tt("MENU_SETUP_SAVE", "設定の保存..."), #selector(S.saveSetup(_:))),

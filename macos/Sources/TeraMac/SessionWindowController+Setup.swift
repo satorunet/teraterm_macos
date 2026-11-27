@@ -16,13 +16,19 @@ extension SessionWindowController {
     @objc func setupTCPIP(_ sender: Any?) { openSetupSheet(.tcpip) }
     @objc func setupGeneral(_ sender: Any?) { openSetupSheet(.general) }
     @objc func setupAdditional(_ sender: Any?) { openSetupSheet(.general) }
+    /// 設定 > (まとまり) > 各項目 (専用のメニュー項目がないページ。tag = SetupSheet.Page)
+    @objc func setupPage(_ sender: Any?) {
+        guard let t = (sender as? NSMenuItem)?.tag, let p = SetupSheet.Page(rawValue: t) else { return }
+        openSetupSheet(p)
+    }
     /// ファイル > ディレクトリを変更… (TT5 では全般タブの「ファイル転送のフォルダ」)
     @objc func changeDirectory(_ sender: Any?) { openSetupSheet(.general) }
 
     func openSetupSheet(_ page: SetupSheet.Page) {
         // 設定画面はアプリ全体で 1 つ。開いていれば前に出す
         if let open = SetupSheet.current { open.bringToFront(page: page); return }
-        guard let w = presentingWindow, w.attachedSheet == nil else { NSSound.beep(); return }
+        // 設定画面は別のウインドウで出すので、接続の画面 (シート) を出していても開ける
+        guard let w = presentingWindow else { NSSound.beep(); return }
         // 開いたときの端末の大きさ (ウインドウで変えたあとならそれ)
         var cur = settings
         cur.cols = term.cols
@@ -91,12 +97,12 @@ extension SessionWindowController {
 
     func updateWindowAlpha() {
         guard let w = window else { return }
-        let a = w.isKeyWindow ? settings.alphaBlendActive : settings.alphaBlendInactive
+        let a = previewAlpha ?? (w.isKeyWindow ? settings.alphaBlendActive : settings.alphaBlendInactive)
         w.alphaValue = CGFloat(max(16, min(255, a))) / 255
     }
 
     private static var alphaObserved = Set<ObjectIdentifier>()
-    private func installAlphaObservers() {
+    func installAlphaObservers() {
         guard let w = window, !Self.alphaObserved.contains(ObjectIdentifier(w)) else { return }
         Self.alphaObserved.insert(ObjectIdentifier(w))
         for n in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {

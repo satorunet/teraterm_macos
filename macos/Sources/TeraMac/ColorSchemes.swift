@@ -123,6 +123,8 @@ final class SchemePreview: NSView {
     var font = NSFont(name: "Menlo-Regular", size: 12)! { didSet { needsDisplay = true } }
     /// テーマの背景 (BG Theme)。あれば背景色の代わりに描く
     var background: BGImageSpec? { didSet { bgImage = nil; needsDisplay = true } }
+    /// カーソルの形 (0 = 四角, 1 = 垂直線, 2 = 下線)
+    var cursorKind = 0 { didSet { needsDisplay = true } }
     private var bgImage: NSImage?
 
     override var isFlipped: Bool { true }
@@ -155,7 +157,12 @@ final class SchemePreview: NSView {
         ("$ " as NSString).draw(at: NSPoint(x: 8, y: y), withAttributes: a)
         let w = ("$ " as NSString).size(withAttributes: a).width
         cursor.setFill()
-        NSRect(x: 8 + w, y: y, width: ("M" as NSString).size(withAttributes: a).width, height: lh).fill()
+        let cw = ("M" as NSString).size(withAttributes: a).width
+        switch cursorKind {
+        case 1: NSRect(x: 8 + w, y: y, width: 2, height: lh).fill()
+        case 2: NSRect(x: 8 + w, y: y + lh - 2, width: cw, height: 2).fill()
+        default: NSRect(x: 8 + w, y: y, width: cw, height: lh).fill()
+        }
         // ANSI 16 色の並び
         for i in 0..<16 {
             ansi[i].setFill()

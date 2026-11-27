@@ -10,6 +10,7 @@ final class TerminalView: NSView, NSTextInputClient {
             applyFont()
             delimChars = TTKeyMap.hex2Str(settings.delimList)
             window?.invalidateCursorRects(for: self)
+            if settings.bg != oldValue.bg { themeChanged() }
             needsDisplay = true
         }
     }
@@ -79,7 +80,7 @@ final class TerminalView: NSView, NSTextInputClient {
         startBlink()
         registerForDraggedTypes([.fileURL])
         NotificationCenter.default.addObserver(self, selector: #selector(themeChanged), name: ThemeRuntime.didChange, object: nil)
-        bgSpec = ThemeRuntime.shared.background
+        bgSpec = ThemeRuntime.shared.background(bg: settings.bg)
         lastScrolledOut = term.scrolledOutTotal
         _ = KeyMapStore.current   // 保存されたキーボード設定ファイルを読んでおく
     }
@@ -157,7 +158,7 @@ final class TerminalView: NSView, NSTextInputClient {
     private var moveObserver: NSObjectProtocol?
 
     @objc private func themeChanged() {
-        bgSpec = ThemeRuntime.shared.background
+        bgSpec = ThemeRuntime.shared.background(bg: settings.bg)
         bgImage = nil
         bgImageKey = nil
         observeWindowMove()
@@ -176,7 +177,6 @@ final class TerminalView: NSView, NSTextInputClient {
         guard let w = window, bgSpec?.src1.enable == true else { return }
         moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: w, queue: .main) { [weak self] _ in
             guard let self = self else { return }
-            if ThemeSettings.load().fastSizeMove && self.inLiveResize { return }
             self.bgImage = nil
             self.needsDisplay = true
         }
@@ -187,10 +187,11 @@ final class TerminalView: NSView, NSTextInputClient {
         if bgSpec != nil { bgImage = nil; needsDisplay = true }
     }
 
-    /// 背景の絵を描く。描けたら true (FastSizeMove なら、大きさを変えている間は描かない)
+    /// 背景の絵を描く。描けたら true
     private func drawBackgroundImage(_ dirtyRect: NSRect) -> Bool {
         guard let spec = bgSpec else { return false }
-        if inLiveResize && ThemeSettings.load().fastSizeMove { return false }
+        // Mac 版では「ウィンドウ移動/リサイズ時テーマを一時的に disable する」は使わない:
+        // テーマの背景も Mac 版の背景画像も、動かしたり大きさを変えている間も描く (消えたり切り替わったりしないように)
         let scale = window?.backingScaleFactor ?? 2
         let wf: NSRect? = spec.src1.enable ? window.map { w in w.convertToScreen(convert(bounds, to: nil)) } : nil
         if let k = bgImageKey, bgImage != nil, k.0 == bounds.size, k.1 == scale, k.2 == wf {
@@ -549,6 +550,15 @@ final class TerminalView: NSView, NSTextInputClient {
             let global = base + li
             let y = pad + CGFloat(r) * cellH
             let urls = wantURL ? urlColumns(li, cache: &urlCache) : []
+            // 選択の色は、文字のあるところまで (行末の何もない余白は塗らない)。次の行へ折り返している行は最後まで
+            var textEnd = line.cells.count
+            if !line.wrapped, sel != nil, !Self.debugSelectionOldLook {
+                while textEnd > 0 {
+                    let c = line.cells[textEnd - 1]
+                    let v = c.scalarValue
+                    if c.width == 0 || v == 0x20 || v == 0 { textEnd -= 1 } else { break }
+                }
+            }
             var x = 0
             // 同じ見た目の半角 ASCII はまとめて描く
             var run = ""
@@ -574,7 +584,7 @@ final class TerminalView: NSView, NSTextInputClient {
                 let w = Int(cell.width)
                 let a = cell.attr
                 let isURL = urls.contains(x)
-                let selNow = isSelected(global, x, sel)
+                let selNow = x < textEnd && isSelected(global, x, sel)
                 if memoAttr != a || memoSel != selNow || memoURL != isURL {
                     memoColors = drawColors(a, selected: selNow, url: isURL)
                     memoAttr = a; memoSel = selNow; memoURL = isURL
@@ -1240,6 +1250,15 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     /// 押したセル (半分より右でも次の桁にしない)
+    /// 自己テスト用: 見えている行・桁で選択する。oldLook = 前の見た目 (行末の余白まで塗る)
+    static var debugSelectionOldLook = false
+    func debugSelect(row r0: Int, col c0: Int, row r1: Int, col c1: Int) {
+        selMode = 1
+        selAnchor = Pos(line: lineBase + firstLineIndex + r0, col: c0)
+        selHead = Pos(line: lineBase + firstLineIndex + r1, col: c1)
+        needsDisplay = true
+    }
+
     private func cellPosAt(_ e: NSEvent) -> Pos {
         let c = cellAt(e)
         return Pos(line: lineBase + firstLineIndex + c.row, col: min(c.col, term.cols - 1))
@@ -1483,15 +1502,18 @@ final class TerminalView: NSView, NSTextInputClient {
         }
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: baseCursor)
-    }
+    // カーソルの形は cursorUpdate (追跡領域) だけで決める。カーソル領域 (addCursorRect) を使うと、
+    // 設定画面など上に重なったウインドウの上でも端末のカーソル (I ビーム) になってしまうため
 
     override func cursorUpdate(with event: NSEvent) {
         updateCursor(event)
     }
 
     private func updateCursor(_ event: NSEvent) {
+        // ほかのウインドウ (設定画面など) が上に重なっているところでは、端末のカーソルにしない
+        if let w = window, NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) != w.windowNumber {
+            return
+        }
         if settings.enableClickableUrl, urlAt(cellPosAt(event)) != nil {
             NSCursor.pointingHand.set()
         } else {
