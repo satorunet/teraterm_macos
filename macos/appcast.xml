@@ -5,12 +5,12 @@
     <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.7.0</title>
-      <pubDate>Fri, 27 Nov 2026 05:25:56 +0000</pubDate>
-      <sparkle:version>0.7.0</sparkle:version>
-      <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.7.1</title>
+      <pubDate>Fri, 27 Nov 2026 06:43:03 +0000</pubDate>
+      <sparkle:version>0.7.1</sparkle:version>
+      <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.7.0</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.7.1</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -27,36 +27,19 @@ td.r, th.r { text-align: right; }
 td.c, th.c { text-align: center; }
 .note { color: #888; font-size: 11px; }
 </style>
-<p>端末の中の文字も、設定の項目も、すぐ探せる検索機能を追加しました🔍</p>
-<p>ほかにも、ターミナルの背景に好きな画像を設定できるように。設定画面をリニューアル。</p>
-<h3>🔍 検索機能</h3>
+<p>アイコンを、Tera Term の原作者 T. Teranishi (寺西 高) 氏が作られた昔ながらのアイコンに変えました。</p>
+<h3>アイコンの変更</h3>
 <ul>
-<li>端末の中を ⌘F で検索。さかのぼった履歴もふくめて探し、＜ ＞ で候補をたどれます</li>
-<li>ヒットした所すべてに印、いま見ている所は別の色。tail などで新しく出た行にも、その場で印が付きます</li>
-<li>検索履歴を 30 件まで残せます (▽ で最新 10 件を選ぶ・× で消す / ↓↑ でたどる / もっと見る… で全部を管理)</li>
-<li>設定画面の左上の検索欄から、設定したい項目をすぐ探せます</li>
+<li>Tera Term 2.3 以前の、寺西さん作のアイコンにしました (アプリ・メニューバー・サイト)</li>
+<li>今後、Mac 版のための別のアイコンに差し替える可能性はありますが、当面はこのアイコンを使います</li>
 </ul>
-<h3>ターミナル背景機能追加</h3>
+<h3>Tera Term Mac について</h3>
 <ul>
-<li>端末の背景に好きな画像をうっすら表示できます (見本の画像付き)</li>
-<li>背景は単色カラーか画像を選べます</li>
+<li>TeraTerm Project の Tera Term を fork し、独自に Mac へ移植したもので、TeraTerm Project とは別に開発していることを、About 画面・README・サイトに明記しました</li>
+<li>Mac 版についてのお問い合わせは、TeraTerm Project ではなく <a href="https://github.com/teraterm-mac/teraterm-mac/issues">Tera Term Mac の Issues</a> へお願いします</li>
 </ul>
-<h3>設定画面のリニューアル</h3>
-<ul>
-<li>情報を整理して、設定しやすくしました。</li>
-<li>全般、デザイン、通信、操作、その他に分類されています。</li>
-</ul>
-<h3>画面のカーソル選択をスッキリ化✨</h3>
-<ul>
-<li>文字を選んだとき、行末の何もない余白まで塗らないようにしました</li>
-</ul>
-<p><b>そのほか</b> (設定 ＞ 全般)</p>
-<ul>
-<li>初期スタートを、接続先メニュー (TTMenu) か直接入力方式か選べるように</li>
-<li>メニューバー常駐アイコンのオン / オフを選べるように</li>
-</ul>
-<p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、Windows 版の TeraTerm Project とは別のチームで開発しています。</p>]]></description>
-      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.7.0/TeraTermMac-0.7.0.dmg" sparkle:edSignature="b/Zjzu3rkyeYEHkIeBAFUu+WMsCrfAPow8iSHvlqekLYmMQpDW+QZOalqSH9l4O3uHPOzcsGLGoMJC0SHgl1Dg==" length="10884531" type="application/octet-stream"/>
+<p class="foot">対応: macOS 11 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、TeraTerm Project とは別に開発しています。</p>]]></description>
+      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.7.1/TeraTermMac-0.7.1.dmg" sparkle:edSignature="TA1c+snFyc2SdrJkVJcx0JX0vkbtM0YOoYJbHmQvTjHqkAbU5HW2iOvL3xkvtj06yS4toJ/XggOsPv1+j6BCBA==" length="10803068" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
