@@ -5,12 +5,12 @@
     <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.8.0</title>
-      <pubDate>Sat, 28 Nov 2026 00:57:49 +0000</pubDate>
-      <sparkle:version>0.8.0</sparkle:version>
-      <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.8.1</title>
+      <pubDate>Sat, 28 Nov 2026 01:35:29 +0000</pubDate>
+      <sparkle:version>0.8.1</sparkle:version>
+      <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>10.14.4</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.8.0</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.8.1</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -27,46 +27,15 @@ td.r, th.r { text-align: right; }
 td.c, th.c { text-align: center; }
 .note { color: #888; font-size: 11px; }
 </style>
-<p>アイコンを新しくしました。SSH エージェント (1Password など) に対応し、macOS 10.14 Mojave / 10.15 Catalina でも使えるようになりました。</p>
-<h3>新しいアイコン</h3>
+<p>アップデートしても、Dock などのアイコンが前のままになることがあったのを直しました。</p>
 <ul>
-<li>寺西さんのクラシックアイコンをもとにした、黄色い画面に T のモニターのアイコンにしました</li>
+<li>起動したときに、Dock のアイコンをいつも新しいアイコンにするようにしました</li>
+<li>アップデート後に初めて起動したとき、Finder・Launchpad にもアイコンが変わったことを知らせます</li>
 </ul>
-<p><b>SSH エージェント (1Password など) に対応</b> (ご意見をもとに対応)</p>
-<ul>
-<li>秘密鍵のファイルが Mac になくても、1Password などの SSH エージェントにある鍵で接続できます</li>
-<li>接続先の編集で「ssh-agent を使う」を選び、ソケットを「既定 / 1Password / 任意path指定する」から選びます</li>
-<li>設定 ＞ SSH認証… でも選べます</li>
-</ul>
-<p><b>macOS 10.14 / 10.15 に対応</b> (ご意見をもとに対応)</p>
-<ul>
-<li>これまでは macOS 11 以降だけで、古い macOS ではインストール画面のアイコンに 🚫 が付いて入れられませんでした</li>
-<li>macOS 10.14.4 以降で使えます (一部のアイコンが文字になります)</li>
-</ul>
-<h3>初期設定</h3>
-<ul>
-<li>初めて起動したときに、起動時に開く画面・設定画面のデザイン (一覧 / Windows 版と同じタブ) を絵を見ながら選べるようにしました</li>
-<li>メニューバーのアイコン・タブ窓割り (TTMado)・背景画像・端末の検索は、使わなければ切れます</li>
-<li>あとから 設定 ＞ 初期設定 で変えられます</li>
-</ul>
-<h3>そのほか</h3>
-<ul>
-<li>キーを長押しすると、アクセント記号の選択が出ずに同じ文字が続けて入力されるようにしました (ご意見をもとに対応)</li>
-<li>「Tera Term Mac」メニューに「セキュアキーボード入力」を追加しました</li>
-<li>ほかのアプリを使っているあいだにベルが鳴ると、Dock のアイコンが跳ねます</li>
-<li>11 の言語で、英語のまま出ていた項目を翻訳しました</li>
-<li>設定のページ名で「&amp;」が消えていたのを直しました</li>
-<li>端末のタイトルバーのアイコンをなくしました (ドラッグでウインドウを動かすときにアイコンが浮いてしまうため)</li>
-</ul>
-<h3>いただいたご意見から対応したもの</h3>
-<ul>
-<li>「1Password の SSH エージェントにある鍵で接続したい」 → SSH エージェントに対応</li>
-<li>「古い macOS でインストール画面のアイコンに 🚫 が付いて入れられない」 → macOS 10.14 / 10.15 に対応</li>
-<li>「キーを長押ししても文字が続けて入力されず、アクセント記号の選択が出る」 → 長押しで続けて入力されるように</li>
-</ul>
-<p>ご意見をくださったみなさん、ありがとうございます！「こうなったら使いやすい」「ここが困る」など、どんなことでもお気軽にお寄せください。アプリの ヘルプ ＞ 要望・お知らせを送る… から簡単に送れます。X (<a href="https://x.com/satorunet">@satorunet</a>) でも OK です。GitHub の <a href="https://github.com/teraterm-mac/teraterm-mac/issues">Issues</a> でも受け付けています。</p>
+<p>かんたんマニュアルの「起動と終了、アップデート」に、初めて起動したときの初期設定の説明を足しました。</p>
+<p>それでも前のアイコンのままのときは、Dock のアイコンを右クリック ＞ オプション ＞ Dock から削除 してから起動し直すか、Mac を再起動してください。</p>
 <p class="foot">対応: macOS 10.14.4 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、TeraTerm Project とは別に開発しています。</p>]]></description>
-      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.8.0/TeraTermMac-0.8.0.dmg" sparkle:edSignature="N7Jct2RDuNqA/kGPraZIpZkqik8QTt6Gy2/00kQlfWDo9xC/SxrFzs281WnE82MOCrgaiSkztYFvC9j883S3DQ==" length="12328464" type="application/octet-stream"/>
+      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.8.1/TeraTermMac-0.8.1.dmg" sparkle:edSignature="e9GMBrF9VSVqvfyY6kP+AmCf2txMVXwLPxbfJQgX4zJ9QdP7DLScMv/5vD833qxm/RGXhc81Urpv7lSciAcQAA==" length="12682848" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
