@@ -179,7 +179,7 @@ final class ScpJob {
             DispatchQueue.main.async { self?.finished(p.terminationStatus == 0) }
         }
         do { try process.run() } catch { close(m); return false }
-        try? slave.close()
+        slave.closeFile()
         let src = DispatchSource.makeReadSource(fileDescriptor: m, queue: .main)
         src.setEventHandler { [weak self] in self?.readOutput() }
         source = src

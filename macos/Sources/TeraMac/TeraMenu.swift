@@ -24,6 +24,8 @@ struct MenuEntry: Codable, Equatable {
     var challenge = false
     /// Pageant を使う (ttpmenu.ini の Pageant=。ttpmenu 1.08)。Mac では ssh-agent の公開鍵認証
     var pageant = false
+    /// SSH エージェントのソケット (Mac だけ。空は既定: ~/.ssh/config か SSH_AUTH_SOCK)。Pageant を使うときだけ効く
+    var agentSocket = ""
     var macroFile = ""
     var startup = false
     // 詳細設定
@@ -75,6 +77,7 @@ struct MenuEntry: Codable, Equatable {
         if !h.isEmpty { parts.append(h) }
         parts.append(useSSH ? "/ssh" : "/telnet")
         if withUser, let a = sshAuth { parts.append("/auth=\(a)") }   // /auth=challenge / /auth=pageant
+        if withUser && sshAuth == "pageant" && !agentSocket.isEmpty { parts.append("/agentsock=" + MenuEntry.dquote(agentSocket)) }
         if useSSH && withUser && useUser && !user.isEmpty { parts.append("/user=" + MenuEntry.dquote(user)) }
         // チャレンジ・Pageant のときは鍵ファイルを使わない (ダイアログでも入れられない)
         if useSSH && !keyFile.isEmpty && !(withUser && sshAuth != nil) { parts.append("/keyfile=" + MenuEntry.dquote(keyFile)) }
@@ -123,6 +126,7 @@ extension MenuEntry {
         keyFile = try c.decodeIfPresent(String.self, forKey: .keyFile) ?? d.keyFile
         challenge = try c.decodeIfPresent(Bool.self, forKey: .challenge) ?? d.challenge
         pageant = try c.decodeIfPresent(Bool.self, forKey: .pageant) ?? d.pageant
+        agentSocket = try c.decodeIfPresent(String.self, forKey: .agentSocket) ?? d.agentSocket
         macroFile = try c.decodeIfPresent(String.self, forKey: .macroFile) ?? d.macroFile
         startup = try c.decodeIfPresent(Bool.self, forKey: .startup) ?? d.startup
         logFile = try c.decodeIfPresent(String.self, forKey: .logFile) ?? d.logFile
@@ -383,10 +387,8 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
         let size: CGFloat = store.largeIcon ? 32 : 16
         let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         func icon(_ name: String) -> NSImage? {
-            guard let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return nil }
-            let sized = img.withSymbolConfiguration(.init(pointSize: size * 0.8, weight: .regular)) ?? img
+            guard let sized = Sym.image(name, nil, size: size * 0.8) else { return nil }
             sized.size = NSSize(width: size, height: size)
-            sized.isTemplate = true
             return sized
         }
         // フォルダはサブメニューにする
@@ -606,7 +608,9 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
     private let startupCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_STARTUP", "起動時に実行"), target: nil, action: nil)
     // IDC_CHALLENGE_CHECK / IDC_PAGEANT_CHECK (ttpmenu.rc: 鍵ファイルの下)
     private let challengeCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_CHALLENGE", "チャレンジレスポンス認証"), target: nil, action: nil)
-    private let pageantCheck = NSButton(checkboxWithTitle: Lang.t("TTMenu", "DLG_CONFIG_PAGEANT", "Pageantを使う"), target: nil, action: nil)
+    // Mac では Pageant の代わりに ssh-agent (1Password などのエージェントも) を使うので、名前もそう書く
+    private let pageantCheck = NSButton(checkboxWithTitle: Lang.m("CONN_USE_SSH_AGENT", "ssh-agent を使う (Pageant にあたるもの)"), target: nil, action: nil)
+    private let agentPicker = SSHAgentSocketPicker()
     /// パスワード欄で Ctrl+A〜Ctrl+_ を制御文字として入れる (winmisc.cpp password_wnd_proc。ttpmenu 1.11)
     private var passKeyMonitor: Any?
     private static let dragType = NSPasteboard.PasteboardType("net.satoru.teramac.menunode")
@@ -662,8 +666,10 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         up.toolTip = Lang.t("Tera Term", "DLG_TCPIP_UP", "上へ")
         down.toolTip = Lang.t("Tera Term", "DLG_TCPIP_DOWN", "下へ")
         let newButton = NSButton(title: Lang.m("CONN_NEW", "新規"), target: self, action: #selector(newEntry(_:)))
+        newButton.image = Sym.image("plus", nil)
+        newButton.imagePosition = .imageLeading
         let folderButton = NSButton(title: Lang.m("CONN_FOLDER", "フォルダ"), target: self, action: #selector(newFolder(_:)))
-        folderButton.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: nil)
+        folderButton.image = Sym.image("folder.badge.plus", nil)
         folderButton.imagePosition = .imageLeading
         folderButton.toolTip = Lang.m("CONN_NEW_FOLDER_TIP", "新しいフォルダ (一覧の右クリックでも作れます)")
         let hint = NSTextField(wrappingLabelWithString: Lang.m("CONN_EDITOR_HINT", "右クリックでフォルダの作成・名前の変更。ドラッグでフォルダに入れられます"))
@@ -686,7 +692,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             self.loadSelected()
             self.confirmDelete(n)
         }
-        delButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: Lang.m("CONN_DELETE", "削除"))
+        delButton.image = Sym.image("trash", Lang.m("CONN_DELETE", "削除"))
         delButton.imagePosition = .imageLeading
         let mid = NSStackView(views: [setButton, delButton])
         mid.orientation = .vertical
@@ -725,6 +731,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             indent(hstack([keyLabel, keyField, keyButton])),
             indent(challengeCheck),
             indent(pageantCheck),
+            indent(indent(agentPicker)),
             macroRadio,
             indent(hstack([macroField, macroButton])),
             directRadio,
@@ -764,7 +771,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         // ttpmenu.ini (TeraTerm Menu の接続先の一覧) の読み書きは 1 つのメニューにまとめる
         let iniMenu = NSPopUpButton(frame: .zero, pullsDown: true)
         iniMenu.addItem(withTitle: "ttpmenu.ini")
-        iniMenu.item(at: 0)?.image = NSImage(systemSymbolName: "arrow.left.arrow.right", accessibilityDescription: nil)
+        iniMenu.item(at: 0)?.image = Sym.image("arrow.left.arrow.right", nil)
         let imp = NSMenuItem(title: Lang.m("CONN_IMPORT", "読み込み…"), action: #selector(importTTMenu(_:)), keyEquivalent: "")
         let exp = NSMenuItem(title: Lang.m("CONN_EXPORT", "書き出し…"), action: #selector(exportTTMenu(_:)), keyEquivalent: "")
         imp.target = self
@@ -909,6 +916,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         keyField.stringValue = e.keyFile
         challengeCheck.state = e.challenge ? .on : .off
         pageantCheck.state = e.pageant && !e.challenge ? .on : .off
+        agentPicker.socket = e.agentSocket
         macroField.stringValue = e.macroFile
         startupCheck.state = e.startup ? .on : .off
         folderLabel.stringValue = folderPath(targetFolder)
@@ -929,6 +937,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         if e.useSSH {   // ttpmenu.cpp: bTtssh のときだけチェックを読む
             e.challenge = challengeCheck.state == .on
             e.pageant = pageantCheck.state == .on
+            e.agentSocket = e.pageant ? agentPicker.socket : e.agentSocket
         }
         e.macroFile = macroField.stringValue
         e.startup = startupCheck.state == .on
@@ -958,6 +967,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         let ssh = login && sshCheck.state == .on
         challengeCheck.isEnabled = ssh && pageantCheck.state != .on
         pageantCheck.isEnabled = ssh && challengeCheck.state != .on
+        agentPicker.isEnabled = ssh && pageantCheck.state == .on
         keyField.isEnabled = ssh && challengeCheck.state != .on && pageantCheck.state != .on
         keyButton.isEnabled = keyField.isEnabled
         macroField.isEnabled = macroRadio.state == .on
@@ -1151,7 +1161,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
         func add(_ t: String, _ a: Selector, _ symbol: String) {
             let i = NSMenuItem(title: t, action: a, keyEquivalent: "")
             i.target = self
-            i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            i.image = Sym.image(symbol, nil)
             menu.addItem(i)
         }
         let n = outline.clickedRow >= 0 ? outline.item(atRow: outline.clickedRow) as? MenuNode : nil
@@ -1404,7 +1414,7 @@ final class MenuEditorWindowController: NSWindowController, NSOutlineViewDataSou
             title = (e?.name ?? "") + ((e?.startup ?? false) ? "  ⏻" : "")
             cell.toolTip = e?.host
         }
-        let img = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        let img = NSImageView(image: Sym.image(symbol, nil) ?? NSImage())
         if n.isFolder { img.contentTintColor = .controlAccentColor }
         let text = NSTextField(labelWithString: title)
         text.lineBreakMode = .byTruncatingTail

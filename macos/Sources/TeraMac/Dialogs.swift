@@ -111,6 +111,8 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     private(set) var historyList = false
     /// /B (Telnet バイナリ): ホスト欄に "host /B" と書いたか、/B 付きの履歴を選んだ
     private(set) var telnetBinary = false
+    /// TTMenu の接続先を選んだときの ssh の引数 (/auth=pageant の公開鍵認証・エージェントのソケットなど)。ホスト欄を変えると消す
+    private(set) var entrySSHArgs: [String] = []
     private let historyCheck = NSButton(checkboxWithTitle: Lang.t("TTSSH", "DLG_HOST_TCPIPHISTORY", "ホストリストへ追加"), target: nil, action: nil)
     private var completion: ((ConnectionSpec?, String?) -> Void)?
 
@@ -294,6 +296,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
 
     /// TTMenu の接続先を選んだ: ホスト・ポート・ユーザー・鍵・パスワード (キーチェーン) を欄に入れる
     private func fill(from e: MenuEntry) {
+        entrySSHArgs = e.sshArguments(withUser: true)
         guard let s = e.spec(withUser: true) else { hostBox.stringValue = e.host; return }
         telnetBinary = TTCommandLine.parse(e.commandLine(withUser: true)).telBin == true
         tcpRadio.state = .on; serialRadio.state = .off; shellRadio.state = .off
@@ -321,7 +324,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
     func comboBoxWillPopUp(_ notification: Notification) { hostBeforeEdit = hostBox.stringValue }
 
     func controlTextDidChange(_ obj: Notification) {
-        if (obj.object as AnyObject?) === hostBox { telnetBinary = false }
+        if (obj.object as AnyObject?) === hostBox { telnetBinary = false; entrySSHArgs = [] }
     }
 
     func comboBoxSelectionDidChange(_ notification: Notification) {
@@ -342,6 +345,7 @@ final class ConnectDialog: SheetDialog, NSComboBoxDelegate {
             DispatchQueue.main.async { self.fill(from: e) }
             return
         }
+        entrySSHArgs = []
         DispatchQueue.main.async {
             let v = self.hostBox.stringValue
             guard let s = ConnectionSpec.parse(v) else { return }

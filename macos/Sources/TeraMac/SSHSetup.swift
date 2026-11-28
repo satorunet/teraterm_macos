@@ -25,6 +25,7 @@ struct SSHSettings: Equatable {
     var defaultUserName = ""            // DefaultUserName
     var defaultAuthMethod = 3           // DefaultAuthMethod 3: パスワード 2: 鍵 5: キーボードインタラクティブ 16: エージェント (Pageant)
     var defaultRSAPrivateKeyFile = ""   // DefaultRSAPrivateKeyFile
+    var agentSocket = ""                // TeraMacAgentSocket (エージェントを使うときのソケット。空は ~/.ssh/config か SSH_AUTH_SOCK)
     // SSH転送…
     var defaultForwarding = ""          // DefaultForwarding  "L8080:host:80;R...;D1080;X"
     var gatewayPorts = false            // TeraMacGatewayPorts (他のホストからの接続を受け入れる → ssh -g)
@@ -41,6 +42,7 @@ struct SSHSettings: Equatable {
     static let stringKeys: [(String, WritableKeyPath<SSHSettings, String>)] = [
         ("DefaultUserName", \.defaultUserName), ("DefaultRSAPrivateKeyFile", \.defaultRSAPrivateKeyFile),
         ("DefaultForwarding", \.defaultForwarding),
+        ("TeraMacAgentSocket", \.agentSocket),
     ]
     static let listKeys: [(String, WritableKeyPath<SSHSettings, [String]>)] = [
         ("TeraMacCiphers", \.cipherOrder), ("TeraMacKexAlgorithms", \.kexOrder),
@@ -135,6 +137,7 @@ struct SSHSettings: Equatable {
         case 5: o("PreferredAuthentications=keyboard-interactive,password,publickey")
         default: break   // パスワード: ssh の標準の順のまま (公開鍵がなければパスワードを聞く)
         }
+        if defaultAuthMethod == 16 { a += SSHAgent.sshArgs(agentSocket) }   // Mac だけ: 1Password などのエージェント
         for f in ForwardSpec.parseList(defaultForwarding) { a += f.sshArgs }
         if gatewayPorts { a.append("-g") }
         return a
@@ -534,6 +537,7 @@ final class SSHAuthSetupDialog: SheetDialog {
     private let mKey = SetupUI.radio(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD_RSA", "&RSA/DSA/ECDSA/ED25519鍵を使う"))
     private let mChallenge = SetupUI.radio("SSH2:" + Lang.t("TTSSH", "DLG_AUTH_METHOD_CHALLENGE2", "キーボードインタラクティブ認証を使う"))
     private let mAgent = SetupUI.radio(Lang.m("CONN_USE_SSH_AGENT", "ssh-agent を使う (Pageant にあたるもの)"))
+    private let agentPicker = SSHAgentSocketPicker()
     private let keyField = SetupUI.field(width: 240)
 
     func begin(on w: NSWindow) {
@@ -549,13 +553,14 @@ final class SSHAuthSetupDialog: SheetDialog {
         default: mPassword.state = .on
         }
         keyField.stringValue = s.defaultRSAPrivateKeyFile.isEmpty ? ConnHistory.lastKeyFile : s.defaultRSAPrivateKeyFile
+        agentPicker.socket = s.agentSocket
         let keyButton = SetupUI.button(Lang.m("CONN_PRIVATE_KEY_BUTTON", "秘密鍵(&K)..."), target: self, action: #selector(chooseKey))
         let userBox = SetupUI.box(Lang.t("TTSSH", "DLG_AUTHSETUP_USERNAME", "ユーザ名"), SetupUI.column([
             noUser, SetupUI.row([defUser, userField]),
             SetupUI.row([logonUser, SetupUI.label(Lang.t("TTSSH", "DLG_AUTHSETUP_LOGON_USERNAME_TEXT", "現在のログオンユーザ名 \"%s\"", NSUserName()))]),
         ]))
         let methodBox = SetupUI.box(Lang.t("TTSSH", "DLG_AUTHSETUP_METHOD", "認証方式"), SetupUI.column([
-            mPassword, mKey, SetupUI.indent(SetupUI.row([keyButton, keyField])), mChallenge, mAgent,
+            mPassword, mKey, SetupUI.indent(SetupUI.row([keyButton, keyField])), mChallenge, mAgent, SetupUI.indent(agentPicker),
         ]))
         layout(SetupUI.column([SetupUI.label(Lang.t("TTSSH", "DLG_AUTHSETUP_BANNER", "通常使用する認証設定:")), userBox, methodBox], spacing: 10))
         userTypeChanged(nil)
@@ -570,6 +575,7 @@ final class SSHAuthSetupDialog: SheetDialog {
     @objc private func methodChanged(_ sender: NSButton?) {
         if let b = sender { for r in [mPassword, mKey, mChallenge, mAgent] where r !== b { r.state = .off } }
         keyField.isEnabled = mKey.state == .on
+        agentPicker.isEnabled = mAgent.state == .on
     }
     @objc private func chooseKey() {
         let p = NSOpenPanel()
@@ -583,6 +589,7 @@ final class SSHAuthSetupDialog: SheetDialog {
         s.defaultUserName = userField.stringValue
         s.defaultAuthMethod = mKey.state == .on ? 2 : (mChallenge.state == .on ? 5 : (mAgent.state == .on ? 16 : 3))
         s.defaultRSAPrivateKeyFile = keyField.stringValue
+        if mAgent.state == .on { s.agentSocket = agentPicker.socket }
         s.save()
         // 接続ダイアログの既定に使う
         ConnHistory.lastUser = s.defaultUser

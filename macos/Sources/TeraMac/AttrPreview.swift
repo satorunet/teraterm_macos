@@ -5,7 +5,7 @@ import TeraCore
 final class AttrPreview: NSView {
     struct Model {
         var fg = NSColor.white, bg = NSColor.black
-        var font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        var font = NSFont.monoSystemFont(ofSize: 13, weight: .regular)
         var ansi: [NSColor] = Array(Palette.colors.prefix(16))
         var ansiOn = true
         /// 属性の色 (nil = 属性の色を使わない)

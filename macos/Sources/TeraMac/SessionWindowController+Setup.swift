@@ -86,14 +86,12 @@ extension SessionWindowController {
         if !s.answerback.isEmpty { term.answerback = String(decoding: s.answerbackBytes, as: UTF8.self) }
         switch s.beep.lowercased() {
         case "off": term.onBell = {}
-        case "visual": term.onBell = { [weak self] in self?.visualBell() }
-        default: term.onBell = { NSSound.beep() }
+        case "visual": term.onBell = { [weak self] in self?.ringBell(visual: true) }
+        default: term.onBell = { [weak self] in self?.ringBell(visual: false) }
         }
         updateWindowAlpha()
         installAlphaObservers()
     }
-
-    private func visualBell() { flashTerminal() }
 
     func updateWindowAlpha() {
         guard let w = window else { return }
@@ -381,11 +379,10 @@ enum LogViewer {
     static func open(_ path: String, settings s: TermSettings) {
         let ed = (s.viewlogEditor as NSString).expandingTildeInPath
         let file = URL(fileURLWithPath: path)
-        let cfg = NSWorkspace.OpenConfiguration()
         if ed.isEmpty || ed.lowercased() == "notepad.exe" || ed.hasSuffix(".app") {
             let app = ed.hasSuffix(".app") ? URL(fileURLWithPath: ed)
                 : (NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") ?? URL(fileURLWithPath: "/System/Applications/TextEdit.app"))
-            NSWorkspace.shared.open([file], withApplicationAt: app, configuration: cfg, completionHandler: nil)
+            NSWorkspace.shared.compatOpen(file, withApplicationAt: app)
         } else {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: ed)

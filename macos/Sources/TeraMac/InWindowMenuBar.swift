@@ -369,7 +369,7 @@ final class TerminalContainerView: NSView {
     /// タイトルバーの右端のボタン。押すたびにメニューバーを出す / 隠す
     private let menuButtonAccessory = NSTitlebarAccessoryViewController()
     private lazy var menuButton: NSButton = {
-        let img = NSImage(systemSymbolName: "line.horizontal.3", accessibilityDescription: Lang.m("MENU_MENU_BUTTON", "メニュー")) ?? NSImage()
+        let img = Sym.image("line.horizontal.3", Lang.m("MENU_MENU_BUTTON", "メニュー")) ?? NSImage()
         let b = HoverButton(image: img, target: self, action: #selector(openMenuFromButton(_:)))
         b.isBordered = false
         b.bezelStyle = .regularSquare

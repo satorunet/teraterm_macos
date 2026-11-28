@@ -43,7 +43,7 @@ cat > appcast.xml <<XML
       <pubDate>${DATE}</pubDate>
       <sparkle:version>${VER}</sparkle:version>
       <sparkle:shortVersionString>${VER}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>10.14.4</sparkle:minimumSystemVersion>
       <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v${VER}</sparkle:fullReleaseNotesLink>
       <description><![CDATA[${DESC}]]></description>
       <enclosure url="${URL}" ${SIG} type="application/octet-stream"/>

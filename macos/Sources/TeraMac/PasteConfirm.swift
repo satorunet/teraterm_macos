@@ -22,7 +22,7 @@ enum PasteConfirmDialog {
         let tv = scroll.documentView as! NSTextView
         tv.isRichText = false
         tv.allowsUndo = true
-        tv.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        tv.font = NSFont.monoSystemFont(ofSize: 12, weight: .regular)
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticTextReplacementEnabled = false

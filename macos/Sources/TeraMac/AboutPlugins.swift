@@ -66,7 +66,7 @@ enum AboutPlugins {
         let ssh = run("/usr/bin/ssh", ["-V"]).trimmingCharacters(in: .whitespacesAndNewlines)
         let info = NSTextView()
         info.isEditable = false
-        info.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        info.font = .monoSystemFont(ofSize: 11, weight: .regular)
         let scroll = NSScrollView()
         scroll.documentView = info
         scroll.hasVerticalScroller = true

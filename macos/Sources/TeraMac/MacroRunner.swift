@@ -60,7 +60,7 @@ final class MacroRunner: NSObject, TTLHost {
             file.lineBreakMode = .byTruncatingTail
             let line = NSTextField(labelWithString: "")
             line.lineBreakMode = .byTruncatingTail
-            line.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            line.font = NSFont.monoSystemFont(ofSize: 11, weight: .regular)
             let pause = NSButton(title: Lang.t("Tera Term", "BTN_PAUSE", "中断"), target: self, action: #selector(togglePause(_:)))
             let end = NSButton(title: Lang.t("Tera Term", "BTN_END", "終了"), target: self, action: #selector(endMacro(_:)))
             let buttons = NSStackView(views: [pause, end])

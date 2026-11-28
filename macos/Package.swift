@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "TeraMac",
-    platforms: [.macOS(.v11)],
+    platforms: [.macOS(.v10_14)],
     dependencies: [
         // 自動アップデート (MIT License)
         .package(url: "https://github.com/sparkle-project/Sparkle", .upToNextMinor(from: "2.9.6")),   // 2.10 からは macOS 12 以上になるので 2.9 系

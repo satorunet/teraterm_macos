@@ -5,8 +5,15 @@ import TeraUninstall
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openedByFile = false
 
+    func applicationWillFinishLaunching(_ n: Notification) {
+        // キーの長押しでアクセント記号の文字選択を出さず、連続入力にする (Terminal.app・iTerm2 と同じ)。
+        // 既定値なので、defaults write net.satoru.teramac ApplePressAndHoldEnabled -bool true で元に戻せる
+        UserDefaults.standard.register(defaults: ["ApplePressAndHoldEnabled": false])
+    }
+
     func applicationDidFinishLaunching(_ n: Notification) {
         AsciiInput.install()
+        SecureInput.shared.install()
         AppUpdater.shared.start()
         buildMenu()
         // TTMado (タブ・窓割り): 入のときだけ、タブの Shift+クリック・タブやウインドウのドラッグを見張る (TTMado/)
@@ -44,6 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let png = ProcessInfo.processInfo.environment["TERAMAC_LANGSNAP"] {
             SelfTest.langSnap(png); return
+        }
+        // TERAMAC_WELCOMESNAP=<png>: 初めて起動したときの「ようこそ」を写す (設定は変えない)
+        if let png = ProcessInfo.processInfo.environment["TERAMAC_WELCOMESNAP"] {
+            WelcomeWindowController.snapshot(to: png); exit(0)
         }
         if let png = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP"] {
             SelfTest.themeSnap(png)
@@ -102,27 +113,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let startedAny = args.isEmpty ? TeraMenuLauncher.runStartupEntries() : false
             // ログイン時の起動 (--menu) ではメニューバーだけ。起動時の項目を開いたら空のウインドウは出さない
             if args.isEmpty && (menuOnly || startedAny) { return }
-            // ふつうに起動したとき: 設定 > 全般 の「起動時に開くもの」に合わせる
-            // (既定は TeraTerm Menu の接続先一覧。「Tera Term」にすると従来どおり端末と新しい接続の画面)
-            if args.isEmpty && AppDelegate.startupOpensMenu {
-                TeraMenuController.shared.showEditor(nil)
+            // 初めて起動したとき: 「ようこそ」で起動時の画面・設定画面のデザイン・使う機能を選んでもらってから開く
+            // (自己テスト TERAMAC_* のときは出さない)
+            let selfTest = ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("TERAMAC_") }
+            if args.isEmpty && WelcomeWindowController.shouldShow && !selfTest {
+                WelcomeWindowController.show { self.openStartupWindow(args: args) }
                 return
             }
-            let c = SessionWindowController()
-            c.showWindow(nil)
-            // /M=マクロ.ttl でマクロを実行 (Tera Term と同じ)
-            if let m = args.first(where: { $0.lowercased().hasPrefix("/m=") }) {
-                let path = (String(m.dropFirst(3)) as NSString).expandingTildeInPath
-                let rest = args.filter { $0 != m }
-                if !rest.isEmpty, let spec = ConnectionSpec.parse(rest.joined(separator: " ")) { c.connect(spec) }
-                c.runMacro(url: URL(fileURLWithPath: path))
-                return
-            }
-            if let spec = ConnectionSpec.parse(args.joined(separator: " ")) {
-                c.connect(spec)
-            } else {
-                c.showConnectDialog()
-            }
+            self.openStartupWindow(args: args)
         }
         if !CommandLine.arguments.contains("--menu") { NSApp.activate(ignoringOtherApps: true) }
         if let out = ProcessInfo.processInfo.environment["TERAMAC_DEBUG_WINDOWS"] {
@@ -133,6 +131,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 try? t.joined(separator: "\n").write(toFile: out, atomically: true, encoding: .utf8)
             }
+        }
+    }
+
+    /// 起動したときの画面を開く (設定 ＞ セットアップ の「起動したときに開く画面」とコマンドライン)
+    private func openStartupWindow(args: [String]) {
+        // ふつうに起動したとき: 設定 > セットアップ の「起動したときに開く画面」に合わせる
+        // (既定は TeraTerm Menu の接続先一覧。「Tera Term」にすると従来どおり端末と新しい接続の画面)
+        if args.isEmpty && AppDelegate.startupOpensMenu {
+            TeraMenuController.shared.showEditor(nil)
+            return
+        }
+        let c = SessionWindowController()
+        c.showWindow(nil)
+        // /M=マクロ.ttl でマクロを実行 (Tera Term と同じ)
+        if let m = args.first(where: { $0.lowercased().hasPrefix("/m=") }) {
+            let path = (String(m.dropFirst(3)) as NSString).expandingTildeInPath
+            let rest = args.filter { $0 != m }
+            if !rest.isEmpty, let spec = ConnectionSpec.parse(rest.joined(separator: " ")) { c.connect(spec) }
+            c.runMacro(url: URL(fileURLWithPath: path))
+            return
+        }
+        if let spec = ConnectionSpec.parse(args.joined(separator: " ")) {
+            c.connect(spec)
+        } else {
+            c.showConnectDialog()
         }
     }
 
@@ -288,6 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() {
         NSApp.mainMenu = MenuBar.build(app: self)
     }
+    /// メニューを作り直す (端末の検索の入/切など)
+    func rebuildMenu() { buildMenu() }
 
     /// 言語の切り替え (Lang.didChange): メニューを作り直す。ウインドウ内のメニューバーは自分で描き直す
     @objc private func languageDidChange(_ n: Notification) {

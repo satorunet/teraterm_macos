@@ -73,7 +73,7 @@ final class CreditsWindowController: NSWindowController {
         }
 
         add(Lang.m("MENU_CREDITS_LICENSE_TEXT", "ライセンス全文"), NSFont.boldSystemFont(ofSize: 14), space: 8)
-        let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let mono = NSFont.monoSystemFont(ofSize: 11, weight: .regular)
         if let url = Bundle.main.url(forResource: "LICENSE", withExtension: "txt"),
            let t = try? String(contentsOf: url, encoding: .utf8) {
             add(t, mono, secondary)

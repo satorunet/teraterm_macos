@@ -56,7 +56,7 @@ enum SampleBackgrounds {
     // MARK: - 絵
 
     private static func color(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor {
-        CGColor(srgbRed: r / 255, green: g / 255, blue: b / 255, alpha: a)
+        NSColor(srgbRed: r / 255, green: g / 255, blue: b / 255, alpha: a).cgColor   // CGColor(srgbRed:) は 10.15〜
     }
     private static func gradient(_ ctx: CGContext, _ size: CGSize, _ colors: [CGColor], from: CGPoint, to: CGPoint) {
         let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray, locations: nil)!
@@ -300,8 +300,7 @@ final class SampleBackgroundPicker: NSViewController {
         if removable {
             // リストから外す (ファイルは消さない)。押しやすいように大きめの丸い × をサムネイルの右上に
             let x = NSButton(title: "", target: self, action: #selector(removeTapped(_:)))
-            x.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: Lang.m("SETUP_BGIMAGE_REMOVE", "リストから外す"))?
-                .withSymbolConfiguration(.init(pointSize: 20, weight: .bold))
+            x.image = Sym.image("xmark.circle.fill", Lang.m("SETUP_BGIMAGE_REMOVE", "リストから外す"), size: 20, weight: .bold)
             x.isBordered = false
             x.contentTintColor = NSColor.white
             x.wantsLayer = true

@@ -122,11 +122,7 @@ extension SessionWindowController {
                 if !ws.open(file) { fail(0) }
                 return
             }
-            let cfg = NSWorkspace.OpenConfiguration()
-            cfg.arguments = args
-            ws.open([file], withApplicationAt: appURL, configuration: cfg) { _, err in
-                if let err = err { fail((err as NSError).code) }
-            }
+            ws.compatOpen(file, withApplicationAt: appURL, arguments: args) { err in fail((err as NSError).code) }
             return
         }
         let proc = Process()

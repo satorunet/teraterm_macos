@@ -32,10 +32,10 @@ final class TerminalView: NSView, NSTextInputClient {
     private var textDX: CGFloat = 0
     private var textDY: CGFloat = 0
     private var kern: CGFloat = 0
-    private var font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    private var boldFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
-    private var italicFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    private var boldItalicFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
+    private var font = NSFont.monoSystemFont(ofSize: 14, weight: .regular)
+    private var boldFont = NSFont.monoSystemFont(ofSize: 14, weight: .bold)
+    private var italicFont = NSFont.monoSystemFont(ofSize: 14, weight: .regular)
+    private var boldItalicFont = NSFont.monoSystemFont(ofSize: 14, weight: .bold)
     let pad: CGFloat = 4
 
     /// 何行ぶん過去にさかのぼって表示しているか
@@ -846,7 +846,7 @@ final class TerminalView: NSView, NSTextInputClient {
             if let code = controlCode(c) { sendKey(meta ? [0x1B, code] : [code]); return }
         }
         if meta, !mods.contains(.command),
-           let s = event.characters(byApplyingModifiers: mods.intersection(.shift)), !s.isEmpty, !TerminalView.isFunctionKeyText(s) {
+           let s = event.charactersWithShiftOnly, !s.isEmpty, !TerminalView.isFunctionKeyText(s) {
             clearSelection()
             scrollToBottom()
             onSendBytes?([0x1B])
@@ -1846,6 +1846,8 @@ extension TerminalView: NSSearchFieldDelegate {
     }
 
     @objc func showFind(_ sender: Any?) {
+        // セットアップで端末の検索を切っているときは出さない
+        guard FindFeature.isEnabled else { NSSound.beep(); return }
         // 端末の上に重ねると端末の描き方 (レイヤー) が変わって選択の色が出なくなるので、端末と同じ親 (ウインドウの中身) に置く
         let bar = findBar ?? {
             let b = FindBar(term: self)
@@ -1858,8 +1860,8 @@ extension TerminalView: NSSearchFieldDelegate {
         window?.makeFirstResponder(bar.field)
         bar.field.selectText(nil)
     }
-    @objc func findNext(_ sender: Any?) { findBar?.step(-1) ?? showFind(sender) }
-    @objc func findPrevious(_ sender: Any?) { findBar?.step(1) ?? showFind(sender) }
+    @objc func findNext(_ sender: Any?) { guard FindFeature.isEnabled else { return showFind(sender) }; findBar?.step(-1) ?? showFind(sender) }
+    @objc func findPrevious(_ sender: Any?) { guard FindFeature.isEnabled else { return showFind(sender) }; findBar?.step(1) ?? showFind(sender) }
 }
 
 /// 端末の右上に出す検索の欄
@@ -1885,7 +1887,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         field.sendsSearchStringImmediately = true
         field.target = self; field.action = #selector(changed)
         func btn(_ sym: String, _ tip: String, _ a: Selector) -> NSButton {
-            let b = NSButton(image: NSImage(systemSymbolName: sym, accessibilityDescription: tip) ?? NSImage(), target: self, action: a)
+            let b = NSButton(image: Sym.image(sym, tip) ?? NSImage(), target: self, action: a)
             b.isBordered = false
             b.toolTip = tip
             return b
@@ -1948,7 +1950,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     let historyButton = NSButton()
     private func setupHistoryMenu() {
         field.searchMenuTemplate = nil
-        historyButton.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: Lang.m("FIND_HISTORY", "検索履歴"))
+        historyButton.image = Sym.image("chevron.down", Lang.m("FIND_HISTORY", "検索履歴"))
         historyButton.isBordered = false
         historyButton.toolTip = Lang.m("FIND_HISTORY", "検索履歴")
         historyButton.target = self
@@ -2155,7 +2157,7 @@ final class HistoryRowView: NSView {
         label.font = .menuFont(ofSize: 0)
         label.lineBreakMode = .byTruncatingTail
         label.frame = NSRect(x: 20, y: 3, width: 200, height: 16)
-        x.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil)
+        x.image = Sym.image("xmark.circle.fill", nil)
         x.isBordered = false
         x.contentTintColor = .secondaryLabelColor
         x.target = self

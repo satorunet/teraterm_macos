@@ -41,9 +41,9 @@ final class FindHistoryListView: NSView, NSTableViewDataSource, NSTableViewDeleg
     func numberOfRows(in tableView: NSTableView) -> Int { items.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let label = NSTextField(labelWithString: items[row])
-        label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        label.font = .monoSystemFont(ofSize: 12, weight: .regular)
         label.lineBreakMode = .byTruncatingTail
-        let x = NSButton(image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil) ?? NSImage(),
+        let x = NSButton(image: Sym.image("xmark.circle.fill", nil) ?? NSImage(),
                          target: self, action: #selector(deleteRow(_:)))
         x.isBordered = false
         x.contentTintColor = .secondaryLabelColor

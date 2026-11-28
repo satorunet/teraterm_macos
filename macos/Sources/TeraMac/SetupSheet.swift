@@ -166,12 +166,15 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     /// Plugin は Mac の組み込みプラグインの一覧 (TTMado の入/切) で、いちばん後ろ)
     enum Page: Int, CaseIterable {
         // 行ごとにまとめる: 全般 / デザイン系 / 通信系 / 操作系 / その他 (rowSizes と数を合わせる)
-        case general, terminal, encoding
+        case general, terminal, encoding, setup
         case theme, background, font, window, visual
         case tcpip, serial, localShell
         case keyboard, mouse, copyPaste
         case log, sequence, plugins, findHistory, ui
-        static let rowSizes = [3, 5, 3, 3, 5]
+        static let rowSizes = [4, 5, 3, 3, 5]
+        /// 前のタブ方式での並び (本家 addsetting.cpp と同じ順に 2 段。Mac で足したページは近い所・後ろに)
+        static let classicOrder: [Page] = [.setup, .general, .ui, .sequence, .copyPaste, .visual, .log, .localShell, .encoding, .font,
+                                           .theme, .background, .keyboard, .mouse, .tcpip, .terminal, .serial, .window, .plugins, .findHistory]
         static let groupTitles = [Lang.m("SETUP_GROUP_GENERAL", "全般"), Lang.m("SETUP_GROUP_DESIGN", "デザイン"),
                                   Lang.m("SETUP_GROUP_COMM", "通信"), Lang.m("SETUP_GROUP_INPUT", "操作"),
                                   Lang.m("SETUP_GROUP_OTHER", "その他")]
@@ -184,6 +187,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         /// 一覧のアイコン (SF Symbols) と色
         var icon: (String, NSColor) {
             switch self {
+            case .setup: return ("sparkles", .systemPink)
             case .general: return ("gearshape.fill", .systemGray)
             case .terminal: return ("terminal.fill", NSColor(white: 0.2, alpha: 1))
             case .encoding: return ("character.book.closed.fill", .systemBrown)
@@ -192,7 +196,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             case .font: return ("textformat", .systemOrange)
             case .theme: return ("paintpalette.fill", .systemPurple)
             case .background: return ("photo.fill", .systemPink)
-            case .window: return ("rectangle.on.rectangle", .systemIndigo)
+            case .window: return ("rectangle.on.rectangle", .compatIndigo)
             case .tcpip: return ("network", .systemBlue)
             case .serial: return ("cable.connector", .systemGray)
             case .localShell: return ("laptopcomputer", .systemGreen)
@@ -200,13 +204,14 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             case .mouse: return ("computermouse.fill", .systemGray)
             case .copyPaste: return ("doc.on.clipboard.fill", .systemOrange)
             case .log: return ("doc.text.fill", .systemYellow)
-            case .sequence: return ("chevron.left.forwardslash.chevron.right", .systemIndigo)
+            case .sequence: return ("chevron.left.forwardslash.chevron.right", .compatIndigo)
             case .plugins: return ("puzzlepiece.extension.fill", .systemGreen)
             case .findHistory: return ("clock.arrow.circlepath", .systemGray)
             }
         }
         var title: String {
             switch self {
+            case .setup: return Lang.m("SETUP_TAB_SETUP", "初期設定")
             case .general: return Lang.t("Tera Term", "DLG_TABSHEET_TITLE_GENERAL", "全般")
             case .ui: return Lang.m("SETUP_TAB_LANGUAGE", "言語")
             case .localShell: return Lang.m("SETUP_TAB_LOCAL_SHELL", "ローカルシェル")
@@ -353,26 +358,94 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         }
         tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.heightAnchor.constraint(equalToConstant: size.height).isActive = true
-        // Mac のシステム設定風: 左に見出し付きの一覧、右に中身
-        // (前のタブ方式 = MultiRowTabView / docs/screenshots/setup-tabs-before)
         tabView.tabViewType = .noTabsNoBorder
-        tabBar.onSelect = { [unowned self] i in self.selectPage(at: i) }
-        tabBar.onReset = { [unowned self] in self.resetCurrentPage() }
-        tabBar.onSearch = { [unowned self] q in self.search(q) }
-        tabBar.translatesAutoresizingMaskIntoConstraints = false
-        tabBar.widthAnchor.constraint(equalToConstant: SetupSidebarView.sidebarWidth + 1 + size.width).isActive = true
+        pageSize = size
         for b in binders { b.load() }
         refresh()
-        layout(tabBar)
+        applyStyle()
     }
 
-    private lazy var tabBar = SetupSidebarView(
-        items: Page.allCases.map { .init(title: $0.title, symbol: $0.icon.0, color: $0.icon.1) },
-        sections: Page.sections, content: tabView)
+    private var pageSize = NSSize(width: 640, height: 300)
+    /// 新しい方式 (Mac のシステム設定風: 左に見出し付きの一覧、右に中身)
+    private var tabBar: SetupSidebarView?
+    /// 前のタブ方式 (Windows 版と同じ複数行のタブ。検索はなく、「デフォルトに戻す」は下に置く)
+    private var classicBar: MultiRowTabView?
+    private lazy var classicReset: NSButton = {
+        let b = NSButton(title: Lang.m("SETUP_PAGE_RESET", "デフォルトに戻す"), target: self, action: #selector(classicResetTapped))
+        b.bezelStyle = .rounded
+        b.controlSize = .small
+        b.font = .systemFont(ofSize: 11)
+        b.toolTip = Lang.m("SETUP_PAGE_RESET_TIP", "このページの設定を初めの状態に戻します (初めの状態のときは押せません)")
+        return b
+    }()
+    @objc private func classicResetTapped() { resetCurrentPage() }
+
+    /// 設定画面を前のタブ方式で出すか (全般 ＞ 設定画面のデザイン)
+    static let classicKey = "TeraMacSetupClassicTabs"
+    static var classicTabs: Bool {
+        get { UserDefaults.standard.bool(forKey: classicKey) }
+        set { UserDefaults.standard.set(newValue, forKey: classicKey) }
+    }
+    /// いま出している方式 (全般のポップアップを変えると、その場で切り替える)
+    private var classic = SetupSheet.classicTabs
+
+    /// 今の方式で外側を作り直す。ページの中身 (tabView) はそのまま移すので、入力中の値は消えない
+    private func applyStyle() {
+        let keep = selectedIndex
+        let top = panel.frame.maxY
+        tabView.removeFromSuperview()
+        let body: NSView
+        if classic {
+            if !searchQuery.isEmpty { searchQuery = ""; markSearchHits() }
+            let order = Page.classicOrder
+            let bar = MultiRowTabView(titles: order.map(\.title), rows: 2, content: tabView)
+            bar.onSelect = { [unowned self] i in self.selectPage(at: Page.allCases.firstIndex(of: order[i]) ?? 0) }
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            bar.widthAnchor.constraint(equalToConstant: max(pageSize.width + 2, bar.minimumWidth + 8)).isActive = true
+            classicBar = bar
+            let stack = NSStackView(views: [bar, classicReset])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 8
+            body = stack
+        } else {
+            let bar = SetupSidebarView(
+                items: Page.allCases.map { .init(title: $0.title, symbol: $0.icon.0, color: $0.icon.1) },
+                sections: Page.sections, content: tabView)
+            bar.onSelect = { [unowned self] i in self.selectPage(at: i) }
+            bar.onReset = { [unowned self] in self.resetCurrentPage() }
+            bar.onSearch = { [unowned self] q in self.search(q) }
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            bar.widthAnchor.constraint(equalToConstant: SetupSidebarView.sidebarWidth + 1 + pageSize.width).isActive = true
+            tabBar = bar
+            body = bar
+        }
+        let wasVisible = panel.isVisible
+        layout(body)
+        // 上の端をそろえる (大きさが変わっても、ウインドウが下へずれないように)
+        if wasVisible { panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top)) }
+        selectPage(at: keep)
+    }
+
+    /// 自己テスト用: 設定画面のデザインをその場で切り替える (TERAMAC_THEMESNAP_SWITCH)
+    func debugToggleStyle() { stylePopup.selectItem(at: classic ? 0 : 1); styleChanged(stylePopup) }
+
+    /// 全般の「設定画面のデザイン」を変えたとき
+    @objc private func styleChanged(_ sender: Any?) {
+        changed(sender)
+        let want = stylePopup.indexOfSelectedItem == 1
+        guard want != classic else { return }
+        classic = want
+        applyStyle()
+    }
+
+    /// 今のページの番号
+    private var selectedIndex: Int { tabView.selectedTabViewItem.map { tabView.indexOfTabViewItem($0) } ?? 0 }
 
     private func selectPage(at i: Int) {
         tabView.selectTabViewItem(at: i)
-        tabBar.selectedIndex = i
+        tabBar?.selectedIndex = i
+        if Page.allCases.indices.contains(i) { classicBar?.selectedIndex = Page.classicOrder.firstIndex(of: Page.allCases[i]) ?? 0 }
         scrollToSelectionLater()
         updateResetButton()
         markSearchHits()
@@ -381,7 +454,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     private func scrollToSelectionLater() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let i = self.tabBar.selectedIndex
+            let i = self.selectedIndex
             guard Page.allCases.indices.contains(i) else { return }
             switch Page.allCases[i] {
             case .theme: self.schemeGrid.scrollToSelection()
@@ -454,7 +527,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // 依存する項目の有効・無効 (各タブの OnCommand にあたる)
     private func refresh() {
         // 見本はいつも、いま画面で選んでいる最中の状態 (保存前) を映す
-        defer { livePreview(); updateResetButton(); updatePreview(); updateAttrPreview() }
+        defer { livePreview(); syncSetupChoices(); updateResetButton(); updatePreview(); updateAttrPreview() }
         termResizeCheck.isEnabled = termIsWinCheck.state == .off
         scrollField.isEnabled = scrollCheck.state == .on
         confirmRButton.isEnabled = disableRButton.state == .off
@@ -490,6 +563,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
     private func page(_ p: Page) -> NSView {
         switch p {
+        case .setup: return setupPage()
         case .general: return generalPage()
         case .ui: return uiPage()
         case .localShell: return localShellPage()
@@ -510,6 +584,52 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .plugins: return pluginsPage()
         case .findHistory: return findHistoryPage()
         }
+    }
+
+    // MARK: セットアップ (起動時に開くもの・設定画面のデザイン・メニューバーのアイコン・使う機能)
+    // 値はほかのページの項目 (startupPopup・stylePopup・statusIconCheck・ttMadoCheck・bgImageCheck) が持ち、
+    // ここのカードとスイッチはそれを絵で選べるようにしたもの (refresh で写し合う)
+
+    private let setupChoices = SetupChoicesView()
+
+    private func setupPage() -> NSView {
+        custom(load: { [unowned self] in
+            self.statusIconOriginal = TeraMenuController.showsStatusItem
+            self.statusIconCheck.state = TeraMenuController.showsStatusItem ? .on : .off
+            self.startupPopup.selectItem(at: AppDelegate.startupOpensMenu ? 0 : 1)
+            self.stylePopup.selectItem(at: SetupSheet.classicTabs ? 1 : 0)
+            self.setupChoices.find.isOn = FindFeature.isEnabled
+        }, store: {})
+        statusIconCheck.target = self
+        statusIconCheck.action = #selector(statusIconToggled)
+        setupChoices.onChange = { [unowned self] f in
+            let c = self.setupChoices
+            switch f {
+            case .startup: self.startupPopup.selectItem(at: c.startup.selectedIndex); self.changed(nil)
+            case .style: self.stylePopup.selectItem(at: c.style.selectedIndex); self.styleChanged(self.stylePopup)
+            case .statusIcon: self.statusIconCheck.state = c.statusIcon.isOn ? .on : .off; self.statusIconToggled()
+            case .ttmado: self.ttMadoCheck.state = c.ttmado.isOn ? .on : .off; self.changed(nil)
+            case .background:
+                self.bgImageCheck.state = c.background.isOn ? .on : .off
+                if c.background.isOn, self.bgImageField.stringValue.trimmingCharacters(in: .whitespaces).isEmpty {
+                    self.bgImageField.stringValue = SetupChoicesView.defaultBackgroundFile ?? ""
+                }
+                self.bgImageCheckToggled()
+            case .find: self.changed(nil)
+            }
+        }
+        let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_SETUP_NOTE", "使いかたに合わせて選んでください。絵を押すと選べます。"))
+        note.textColor = .secondaryLabelColor
+        return SetupUI.column([note, setupChoices], spacing: 14)
+    }
+    /// ほかのページで変えた値をセットアップのカードとスイッチに写す
+    private func syncSetupChoices() {
+        let c = setupChoices
+        c.startup.selectedIndex = startupPopup.indexOfSelectedItem == 1 ? 1 : 0
+        c.style.selectedIndex = stylePopup.indexOfSelectedItem == 1 ? 1 : 0
+        c.statusIcon.isOn = statusIconCheck.state == .on
+        c.ttmado.isOn = ttMadoCheck.state == .on
+        c.background.isOn = bgImageCheck.state == .on
     }
 
     // MARK: 検索履歴 (⌘F の検索の欄の履歴。1 件ずつ消せる。すぐに効く)
@@ -538,6 +658,13 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         let p = SetupUI.popup([Lang.m("SETUP_STARTUP_MENU", "TeraTerm Menu (接続先リスト)"),
                                               Lang.m("SETUP_STARTUP_TERMINAL", "Tera Term (端末と新しい接続の画面)")])
         p.target = self; p.action = #selector(changed(_:))
+        return p
+    }()
+    /// 設定画面のデザイン (一覧 / タブ)
+    private lazy var stylePopup: NSPopUpButton = {
+        let p = SetupUI.popup([Lang.m("SETUP_STYLE_SIDEBAR", "一覧 (Mac のシステム設定風)"),
+                               Lang.m("SETUP_STYLE_TABS", "タブ (Windows 版と同じ)")])
+        p.target = self; p.action = #selector(styleChanged(_:))
         return p
     }()
     /// メニューバーにアイコンを出す (TeraTerm Menu)
@@ -610,26 +737,6 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             SetupUI.label(Lang.m("SETUP_FILE_TRANSFER_DIR", "ファイル転送のフォルダ")),
             SetupUI.indent(SetupUI.row([fileDirField, dirButton])),
             // ここから下は Mac 版で足した項目
-            // 起動時に開くもの (Mac 版だけの項目)
-            { () -> NSView in
-                custom(load: { [unowned self] in self.startupPopup.selectItem(at: AppDelegate.startupOpensMenu ? 0 : 1) }, store: {})
-                return SetupUI.row([SetupUI.label(Lang.m("SETUP_STARTUP", "起動時に開くもの:")), self.startupPopup])
-            }(),
-            // メニューバーのアイコン (TeraTerm Menu)。Mac 版だけの項目
-            { () -> NSView in
-                custom(load: { [unowned self] in
-                    self.statusIconOriginal = TeraMenuController.showsStatusItem
-                    self.statusIconCheck.state = TeraMenuController.showsStatusItem ? .on : .off
-                }, store: {})
-                // 押したらすぐメニューバーに出す / 消す (キャンセルで元に戻す)
-                self.statusIconCheck.target = self
-                self.statusIconCheck.action = #selector(self.statusIconToggled)
-                // メニューバーに出るのと同じアイコンを横に (どれのことか分かるように)
-                let img = (NSApp.applicationIconImage.copy() as? NSImage) ?? NSImage()
-                img.size = NSSize(width: 18, height: 18)
-                let iv = NSImageView(image: img)
-                return SetupUI.row([self.statusIconCheck, iv], spacing: 4)
-            }(),
             SetupUI.button(Lang.m("SETUP_RESET_ALL", "すべての設定を初期状態に戻す…"), target: self, action: #selector(resetAllPages)),
         ], spacing: 8)
     }
@@ -787,13 +894,13 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         return out
     }()
     /// 自己テスト用: 検索欄に入れて探す
-    func debugSearch(_ q: String) { tabBar.searchField.stringValue = q; search(q) }
+    func debugSearch(_ q: String) { guard !classic, let bar = tabBar else { return }; bar.searchField.stringValue = q; search(q) }
     private var searchQuery = ""
     private var searchMarks: [NSView] = []
     private func search(_ q: String) {
         searchQuery = q.lowercased()
-        guard !searchQuery.isEmpty else {
-            tabBar.filter = nil
+        guard !searchQuery.isEmpty, !classic else {
+            if !classic { tabBar?.filter = nil }
             markSearchHits()
             return
         }
@@ -801,9 +908,9 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         for (i, p) in Page.allCases.enumerated() where (searchIndex[p] ?? []).contains(where: { $0.text.lowercased().contains(searchQuery) }) {
             hits.insert(i)
         }
-        tabBar.filter = hits
+        tabBar?.filter = hits
         // 今のページに合うものがなければ、合う最初のページへ (一覧の順)
-        if !hits.contains(tabBar.selectedIndex), let first = Page.sections.flatMap(\.items).first(where: { hits.contains($0) }) {
+        if !hits.contains(selectedIndex), let first = Page.sections.flatMap(\.items).first(where: { hits.contains($0) }) {
             selectPage(at: first)
         }
         markSearchHits()
@@ -826,7 +933,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
 
     /// ページごとの項目 (binders の範囲)
     private var pageBinders: [Page: Range<Int>] = [:]
-    private var currentPage: Page { Page.allCases.indices.contains(tabBar.selectedIndex) ? Page.allCases[tabBar.selectedIndex] : .general }
+    private var currentPage: Page { Page.allCases.indices.contains(selectedIndex) ? Page.allCases[selectedIndex] : .general }
     /// 設定の値を文字にして並べたもの (違いを見るため)
     private static func fingerprint(_ p: TermSettings) -> [String] {
         Mirror(reflecting: p).children.map { "\($0.label ?? ""):\(String(describing: $0.value))" }
@@ -838,10 +945,11 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .theme: return currentSchemeKey != "none"
         case .background: return bgImageCheck.state == .on
         case .ui, .findHistory: return false
+        case .setup:
+            return startupPopup.indexOfSelectedItem != 0 || stylePopup.indexOfSelectedItem != 0 || statusIconCheck.state != .on
+                || ttMadoCheck.state != .on || bgImageCheck.state == .on || !setupChoices.find.isOn
         default: break
         }
-        // 全般: Mac 版で足した「起動時に開くもの」「メニューバーに常駐アイコン」も見る
-        if page == .general && (startupPopup.indexOfSelectedItem != 0 || statusIconCheck.state != .on) { return true }
         guard let r = pageBinders[page], !r.isEmpty else { return false }
         let keep = s
         s = TermSettings.initial()
@@ -851,7 +959,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         return Self.fingerprint(x) != defaultFingerprint
     }
     private func updateResetButton() {
-        tabBar.resetVisible = pageDiffersFromDefault(currentPage)
+        let on = pageDiffersFromDefault(currentPage)
+        classicReset.isEnabled = on; tabBar?.resetVisible = on
     }
     /// 今のページを既定に戻す (ほかのページで変えた値はそのまま)
     private func resetCurrentPage() { resetPage(currentPage) }
@@ -880,6 +989,17 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             bgImagePatternPopup.selectItem(at: 0)
             bgImageCheckToggled()
             return
+        case .setup:
+            // 起動時は接続先リスト、設定画面は一覧、常駐アイコンあり (すぐ出す)、機能は全部入 (背景画像は切)
+            startupPopup.selectItem(at: 0)
+            stylePopup.selectItem(at: 0)
+            if classic { classic = false; applyStyle() }
+            if statusIconCheck.state != .on { statusIconCheck.state = .on; statusIconToggled() }
+            ttMadoCheck.state = .on
+            setupChoices.find.isOn = true
+            if bgImageCheck.state == .on { bgImageCheck.state = .off; bgImageCheckToggled() }
+            refresh()
+            return
         default: break
         }
         guard let r = pageBinders[page] else { return }
@@ -887,11 +1007,6 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         s = TermSettings.initial()
         for b in binders[r] { b.load() }
         s = keep
-        if page == .general {
-            // 起動時は TTMenu (接続先リスト)、常駐アイコンはあり (アイコンはすぐ出す)
-            startupPopup.selectItem(at: 0)
-            if statusIconCheck.state != .on { statusIconCheck.state = .on; statusIconToggled() }
-        }
         if page == .visual { ansiWork = Array(Palette.colors.prefix(16)); ansiSelected() }
         refresh()
     }
@@ -906,7 +1021,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             w.tag = i
             w.target = self; w.action = #selector(ansiWellChanged(_:))
             let n = Lang.m("SETUP_ANSI_NAME_\(i % 8)", Self.ansiNames[i % 8])
-            w.toolTip = "\(i): " + (i < 8 ? n : Lang.m("SETUP_ANSI_BRIGHT", "明るい") + n)
+            w.toolTip = "\(i): " + (i < 8 ? n : Lang.m("SETUP_ANSI_BRIGHT_FMT", "明るい%s", n))
             return w
         }
         let note = SetupUI.label(Lang.m("SETUP_ANSI_NOTE", "上の段: 普通の 8 色 / 下の段: 明るい 8 色 (ls や git などが色付きで出す文字の色)"))
@@ -2000,7 +2115,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         flowPopup.target = self; flowPopup.action = #selector(serialFlowChanged(_:))
         if let o = open { serialOriginal = (o.params.rts, o.params.dtr, o.flow) }
         setComStatus()
-        serialInfo.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        serialInfo.font = .monoSystemFont(ofSize: 11, weight: .regular)
         serialInfo.preferredMaxLayoutWidth = 260
         if let o = open {
             serialInfo.stringValue = Lang.m("SETUP_SERIAL_OPEN", "%s\n開いています\n%d bps %s", o.params.path, serial.baud,
@@ -2188,7 +2303,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         NSImage(size: NSSize(width: 46, height: 20), flipped: false) { r in
             NSColor(white: 0.12, alpha: 1).setFill()
             NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4).fill()
-            let f = NSFont(name: "Menlo", size: 12) ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
+            let f = NSFont(name: "Menlo", size: 12) ?? .monoSystemFont(ofSize: 12, weight: .regular)
             ("$ " as NSString).draw(at: NSPoint(x: 5, y: 3), withAttributes: [.font: f, .foregroundColor: NSColor(white: 0.85, alpha: 1)])
             let x: CGFloat = 5 + ("$ " as NSString).size(withAttributes: [.font: f]).width
             let cw: CGFloat = 7.5, top: CGFloat = 16, bottom: CGFloat = 3
@@ -2257,6 +2372,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         TTMado.setEnabled(ttMadoCheck.state == .on)
         TeraMenuController.showsStatusItem = statusIconCheck.state == .on
         AppDelegate.startupOpensMenu = startupPopup.indexOfSelectedItem != 1
+        SetupSheet.classicTabs = stylePopup.indexOfSelectedItem == 1
+        FindFeature.isEnabled = setupChoices.find.isOn
         s.optionAsMeta = s.metaKey.lowercased() != "off"
         // シリアルポート
         if portPopup.isEnabled, let p = portPopup.titleOfSelectedItem { serial.path = p }
@@ -2404,7 +2521,7 @@ final class ColorSampleView: NSView {
         bounds.fill()
         NSColor.gray.setStroke()
         NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)).stroke()
-        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let font = NSFont.monoSystemFont(ofSize: 13, weight: .regular)
         let s = NSAttributedString(string: "ABCdef123", attributes: [.font: font, .foregroundColor: pair.fg])
         let sz = s.size()
         s.draw(at: NSPoint(x: (bounds.width - sz.width) / 2, y: (bounds.height - sz.height) / 2))

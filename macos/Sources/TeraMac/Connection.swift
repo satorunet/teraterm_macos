@@ -91,7 +91,7 @@ enum ConnectionSpec: Equatable {
         }
     }
 
-    /// ssh に足す引数 (/auth= /timeout=)。TTSSH の認証方法の指定に近いもの
+    /// ssh に足す引数 (/auth= /timeout= /agentsock=)。TTSSH の認証方法の指定に近いもの
     static func sshArguments(_ cl: TTCommandLine) -> [String] {
         var a: [String] = []
         switch cl.auth {
@@ -101,6 +101,7 @@ enum ConnectionSpec: Equatable {
         default: break
         }
         if let t = cl.timeout, t > 0 { a += ["-o", "ConnectTimeout=\(t)"] }
+        if let s = cl.agentSocket { a += SSHAgent.sshArgs(s) }   // /agentsock= (Mac だけ)
         return a
     }
 }

@@ -25,7 +25,7 @@ final class SetupSidebarView: NSView {
         b.bezelStyle = .rounded
         b.controlSize = .small
         b.font = .systemFont(ofSize: 11)
-        b.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: nil)
+        b.image = Sym.image("arrow.counterclockwise", nil)
         b.imagePosition = .imageLeading
         b.isEnabled = false
         b.toolTip = Lang.m("SETUP_PAGE_RESET_TIP", "このページの設定を初めの状態に戻します (初めの状態のときは押せません)")
@@ -150,8 +150,9 @@ private final class SidebarList: NSView {
         guard let o = owner else { return nil }
         let it = o.items[i]
         let side: CGFloat = 20
-        let cfg = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
-        guard let sym = NSImage(systemSymbolName: it.symbol, accessibilityDescription: it.title)?.withSymbolConfiguration(cfg) else { return nil }
+        // macOS 10.15 (SF Symbols なし) では項目名の頭文字を白抜きにする
+        let sym = Sym.image(it.symbol, it.title, size: 11, weight: .semibold)
+            ?? Sym.glyphImage(String(it.title.prefix(1)), size: 11, weight: .bold)
         let img = NSImage(size: NSSize(width: side, height: side), flipped: false) { r in
             it.color.setFill()
             NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()

@@ -23,6 +23,8 @@ public struct TTCommandLine: Equatable {
     public var user: String?
     public var password: String?
     public var keyFile: String?
+    /// /agentsock= (Mac だけ): SSH エージェントのソケット (ssh の IdentityAgent)
+    public var agentSocket: String?
     /// /auth= の値 (password / publickey / challenge / keyboard-interactive / pageant)
     public var auth: String?
     public var ask4passwd = false
@@ -187,6 +189,7 @@ public struct TTCommandLine: Equatable {
                 } else if o.hasPrefix("user=") { r.user = String(o.dropFirst(5))
                 } else if o.hasPrefix("passwd=") { r.password = String(o.dropFirst(7))
                 } else if o.hasPrefix("keyfile=") { r.keyFile = String(o.dropFirst(8))
+                } else if ol.hasPrefix("agentsock=") { r.agentSocket = String(o.dropFirst(10))
                 } else if o == "ask4passwd" { r.ask4passwd = true
                 } else if o == "nosecuritywarning" {
                 } else {

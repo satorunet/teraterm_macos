@@ -40,7 +40,7 @@ struct TEKWindowSettings {
     }
 
     var font: NSFont {
-        NSFont(name: fontName, size: fontSize) ?? NSFont.userFixedPitchFont(ofSize: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        NSFont(name: fontName, size: fontSize) ?? NSFont.userFixedPitchFont(ofSize: fontSize) ?? NSFont.monoSystemFont(ofSize: fontSize, weight: .regular)
     }
 }
 

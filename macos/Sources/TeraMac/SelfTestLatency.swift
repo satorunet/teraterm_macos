@@ -355,6 +355,8 @@ extension SelfTest {
             let name = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_PAGE"] ?? "background"
             c.openSetupSheet(SetupSheet.Page.allCases.first { "\($0)" == name } ?? .background)
             if let q = ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_SEARCH"] { SetupSheet.current?.debugSearch(q) }
+            // TERAMAC_THEMESNAP_SWITCH=回数: 設定画面のデザインをその場で切り替える
+            for _ in 0..<(Int(ProcessInfo.processInfo.environment["TERAMAC_THEMESNAP_SWITCH"] ?? "") ?? 0) { SetupSheet.current?.debugToggleStyle() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 if let sh = SetupSheet.current?.panel { snapWindow(sh, path) }
                 exit(0)

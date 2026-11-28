@@ -92,8 +92,8 @@ final class FeedbackPanel: NSObject, NSTextViewDelegate, NSWindowDelegate {
     static let err = NSColor(srgbRed: 1.0, green: 0.45, blue: 0.45, alpha: 1)
     /// てらたーむくんのセリフの中の「…」(例の言葉) の色
     static let quote = NSColor(srgbRed: 1.0, green: 0.62, blue: 0.80, alpha: 1)
-    static let mono = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    static let monoBold = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    static let mono = NSFont.monoSystemFont(ofSize: 13, weight: .regular)
+    static let monoBold = NSFont.monoSystemFont(ofSize: 13, weight: .bold)
     static let robotName = Lang.m("FEEDBACK_ROBOT_NAME", "てらたーむくん")
 
     static func show() { shared.open() }
@@ -113,7 +113,7 @@ final class FeedbackPanel: NSObject, NSTextViewDelegate, NSWindowDelegate {
         title.font = FeedbackPanel.monoBold
         title.textColor = FeedbackPanel.fg
         let sub = NSTextField(wrappingLabelWithString: Lang.m("FEEDBACK_PRIVACY", "内容は公開されません、開発者だけに届きます。"))
-        sub.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        sub.font = .monoSystemFont(ofSize: 11, weight: .regular)
         sub.textColor = FeedbackPanel.dim
         let header = bar([title, sub], vertical: true)
 
@@ -138,15 +138,15 @@ final class FeedbackPanel: NSObject, NSTextViewDelegate, NSWindowDelegate {
         kindPopup.removeAllItems()
         kindPopup.addItems(withTitles: Feedback.kinds.map { Lang.m($0.key, $0.ja) })
         kindPopup.controlSize = .small
-        kindPopup.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        kindPopup.font = .monoSystemFont(ofSize: 11, weight: .regular)
         envCheck.title = Lang.m("FEEDBACK_INCLUDE_ENV", "アプリと macOS の版を添える")
         envCheck.state = .on
         envCheck.controlSize = .small
-        envCheck.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        envCheck.font = .monoSystemFont(ofSize: 11, weight: .regular)
         envCheck.toolTip = Feedback.environment
         let issues = NSButton(title: Lang.m("FEEDBACK_ISSUES_BUTTON", "GitHub の Issues で送る…"), target: self, action: #selector(openIssues))
         issues.isBordered = false
-        issues.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        issues.font = .monoSystemFont(ofSize: 11, weight: .regular)
         issues.contentTintColor = FeedbackPanel.robot
         issues.toolTip = Lang.m("FEEDBACK_ISSUES_NOTE",
             "返事がほしいときや、やりとりしながら直したいときは「GitHub の Issues で送る」を使ってください (GitHub のアカウントが要ります)。書いた内容はブラウザの Issue の画面に入ります。")

@@ -193,11 +193,11 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         term.onResponseBytes = { [weak self] b in self?.sendBytes(b, echo: false, reconnect: false) }
         // OSC 0 / 1 / 2: 端末がリモートのタイトルを覚えている (AcceptTitleChangeRequest=off なら受けない)。タイトルを組み立て直す
         term.onTitle = { [weak self] _ in self?.updateTitle() }
-        term.onBell = { NSSound.beep() }
+        term.onBell = { [weak self] in self?.ringBell(visual: false) }
         term.onBellKind = { [weak self] k in
             switch k {
-            case .sound: NSSound.beep()
-            case .visual: self?.flashTerminal()
+            case .sound: self?.ringBell(visual: false)
+            case .visual: self?.ringBell(visual: true)
             case .off: break
             }
         }
@@ -250,6 +250,12 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
 
     /// ビジュアルベル (vtterm.c VisualBell。8e22ce326 #333): 文字色と背景色を入れ替え (CSQExchangeColor)、
     /// BeepVBellWait ミリ秒 (1 未満は 1) たったら戻す。本家は Sleep で止めるが、Mac 版は止めずにあとで戻す
+    /// ベル。ほかのアプリを使っているあいだは Dock のアイコンを 1 回跳ねさせて知らせる (Terminal.app と同じ)
+    func ringBell(visual: Bool) {
+        if visual { flashTerminal() } else { NSSound.beep() }
+        if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
+    }
+
     func flashTerminal() {
         guard !termView.bellInverted else { return }
         termView.bellInverted = true
@@ -409,14 +415,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         w.title = t
         w.tab.title = tabMarked ? TabMarks.prefix + t : t   // 分割に使うタブとして選んだ印 (Shift+クリック / タブメニュー)
         tabCheck?.refresh()
-        // Windows と同じくタイトルバーにアプリのアイコン
-        if w.representedURL == nil {
-            w.representedURL = Bundle.main.bundleURL
-            if let icon = NSApp.applicationIconImage?.copy() as? NSImage {
-                icon.size = NSSize(width: 16, height: 16)
-                w.standardWindowButton(.documentIconButton)?.image = icon
-            }
-        }
+        // タイトルバーのアイコン (representedURL) は出さない: ドラッグするとアイコンが浮き出して、ウインドウを動かしにくいため
     }
 
     /// ChangeTitle の材料 (GetConnectHostName は ts.HostName: ホスト名だけ。ポートは ts.TCPPort)
@@ -457,7 +456,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             default: break
             }
             if dlg?.telnetBinary == true { self.settings.telBin = true }   // /B
-            self.connect(spec, password: password)
+            self.connect(spec, password: password, sshArgs: dlg?.entrySSHArgs ?? [])
         }
     }
 
@@ -1424,3 +1423,4 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 }
+

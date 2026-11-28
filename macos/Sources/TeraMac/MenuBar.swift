@@ -43,6 +43,8 @@ enum MenuBar {
             .separator(),
             item(Lang.m("MENU_APP_TTMENU_EDIT", "TeraTerm Menu のリスト編集…"), #selector(AppDelegate.showMenuEditor(_:))),
             .separator(),
+            SecureInput.shared.menuItem(),
+            .separator(),
             item(Lang.m("MENU_APP_HIDE", "Tera Term Mac を隠す"), #selector(NSApplication.hide(_:)), "h"),
             item(Lang.m("MENU_APP_HIDE_OTHERS", "ほかを隠す"), #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
             item(Lang.m("MENU_APP_SHOW_ALL", "すべてを表示"), #selector(NSApplication.unhideAllApplications(_:))),
@@ -108,12 +110,13 @@ enum MenuBar {
             .separator(),
             item(tt("MENU_EDIT_SELECTSCREEN", "表示画面を選択"), #selector(T.selectScreen(_:))),
             item(tt("MENU_EDIT_SELECTALL", "全て選択"), #selector(T.selectAll(_:)), "a"),
+        ] + (FindFeature.isEnabled ? [
+            // 端末の中を検索 (履歴も含む)。Mac の決まりどおり ⌘F / ⌘G / ⇧⌘G。セットアップで切ると出さない
             .separator(),
-            // 端末の中を検索 (履歴も含む)。Mac の決まりどおり ⌘F / ⌘G / ⇧⌘G
             item(Lang.m("MENU_EDIT_FIND", "検索…"), #selector(T.showFind(_:)), "f"),
             item(Lang.m("MENU_EDIT_FINDNEXT", "前を検索"), #selector(T.findNext(_:)), "g"),
             item(Lang.m("MENU_EDIT_FINDPREV", "次を検索"), #selector(T.findPrevious(_:)), "g", [.command, .shift]),
-        ])
+        ] : []))
 
         // 設定 (プロキシと SSH の項目は TTProxy・TTSSH が T&CP/IP の前に入れる)
         // 設定: その他の設定と同じ 5 つのまとまり (全般/デザイン/通信/操作/その他) から選んで進む
@@ -137,7 +140,7 @@ enum MenuBar {
                 i = item(p.title + "...", #selector(S.setupPage(_:)))
                 i.tag = p.rawValue
             }
-            i.image = NSImage(systemSymbolName: p.icon.0, accessibilityDescription: nil)
+            i.image = Sym.image(p.icon.0, nil)
             return i
         }
         let groupSymbols = ["gearshape", "paintbrush", "network", "keyboard", "ellipsis.circle"]
@@ -155,7 +158,7 @@ enum MenuBar {
                 ]
             }
             let g = sub(sec.title, items)
-            g.image = NSImage(systemSymbolName: groupSymbols[n], accessibilityDescription: nil)
+            g.image = Sym.image(groupSymbols[n], nil)
             groups.append(g)
         }
         _ = add(tt("MENU_SETUP", "設定"), groups + [

@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.7.1}"
+VERSION="${VERSION:-0.8.0}"
 BUILD_NUMBER="1"
 BUNDLE_ID="${BUNDLE_ID:-net.satoru.teramac}"
 NAME="Tera Term Mac"
@@ -48,7 +48,7 @@ plist() {
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleDevelopmentRegion</key><string>ja</string>
     <key>CFBundleAllowMixedLocalizations</key><true/>
-    <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>LSMinimumSystemVersion</key><string>10.14.4</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>

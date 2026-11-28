@@ -173,7 +173,7 @@ struct TermSettings {
 
     /// Terminal.app の既定プロファイルのフォント (読めなければ Terminal の初期値 Menlo 11pt)
     static let terminalAppFont: NSFont = {
-        let fallback = NSFont(name: "Menlo-Regular", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let fallback = NSFont(name: "Menlo-Regular", size: 11) ?? NSFont.monoSystemFont(ofSize: 11, weight: .regular)
         guard let t = UserDefaults(suiteName: "com.apple.Terminal"),
               let profile = t.string(forKey: "Default Window Settings"),
               let all = t.dictionary(forKey: "Window Settings"),
@@ -290,7 +290,7 @@ struct TermSettings {
     }
 
     var font: NSFont {
-        NSFont(name: fontName, size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        NSFont(name: fontName, size: fontSize) ?? NSFont.monoSystemFont(ofSize: fontSize, weight: .regular)
     }
 
     var sendNewlineBytes: [UInt8] {

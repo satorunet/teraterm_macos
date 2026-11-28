@@ -746,7 +746,7 @@ extension TTLInterpreter {
         endOfLine(&err)
         if err != 0 { return err }
         if fhi >= 0 && fhi < fileHandles.count, let h = fileHandles[fhi] {
-            try? h.close()
+            h.closeFile()
             fileHandles[fhi] = nil
             filePaths[fhi] = ""
             setLocked(fhi, false)

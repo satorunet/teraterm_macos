@@ -1303,7 +1303,7 @@ public final class TTLInterpreter {
         recv.lock(); endWait4all(); recv.unlock()
         TTLMacroRegistry.remove(self)
         host?.ttlCloseStatus()
-        for i in 0..<fileHandles.count { try? fileHandles[i]?.close(); fileHandles[i] = nil }
+        for i in 0..<fileHandles.count { fileHandles[i]?.closeFile(); fileHandles[i] = nil }
         closeBuff(0)
     }
 
