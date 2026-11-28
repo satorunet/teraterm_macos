@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAppIcon()
         AsciiInput.install()
         SecureInput.shared.install()
+        LinkServer.shared.startIfEnabled()
         AppUpdater.shared.start()
         buildMenu()
         // TTMado (タブ・窓割り): 入のときだけ、タブの Shift+クリック・タブやウインドウのドラッグを見張る (TTMado/)
@@ -249,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showMenuEditor(_ sender: Any?) { TeraMenuController.shared.showEditor(sender) }
+    @objc func showLink(_ sender: Any?) { LinkWindowController.shared.show() }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let live = SessionWindowController.all.filter { $0.isConnected }

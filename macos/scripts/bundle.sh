@@ -52,6 +52,9 @@ plist() {
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSUserActivityTypes</key><array><string>net.satoru.teraterm.session</string></array>
+    <key>NSBonjourServices</key><array><string>_teraterm-link._tcp</string></array>
+    <key>NSLocalNetworkUsageDescription</key><string>近くの iPhone / iPad (Tera Term SP) と連携するために使います</string>
     <key>NSHumanReadableCopyright</key><string>© 2026 satorunet. MIT License. https://github.com/teraterm-mac/teraterm-mac</string>
 $6
 </dict>

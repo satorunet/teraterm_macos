@@ -1,0 +1,299 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 55;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		34E5399898368E6C1666A1AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72DD3E98BEAB6BADE3C1CFA /* AppDelegate.swift */; };
+		55ADE10D936C1062E76F04A2 /* Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60DC934596D854B18968100 /* Connection.swift */; };
+		963C7940ABB0EE041B32E646 /* HostListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02BDFA811083249A70CE2C29 /* HostListViewController.swift */; };
+		CA5E38726FD78CEF28A6073C /* Hosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80C70C9C1AF7450DF7A8C03 /* Hosts.swift */; };
+		9A3B55004E9A2DF77FBE02C8 /* KeyBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E0B1286248E4386DB6AC6F6 /* KeyBar.swift */; };
+		E2F76555B8DC98B0C12FDBEC /* LinkViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAF4730A69E7676BCA9D6EF /* LinkViewController.swift */; };
+		E2007F2CAF4026A19977C6DC /* MacroRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BBD996D5518A34AE8A5512E /* MacroRunner.swift */; };
+		D0F4B496CE3F687F9C9D3FB9 /* SSH2Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D0F318A05C19516286C173D /* SSH2Connection.swift */; };
+		0DFF82A2F64D0616744596DE /* SSHAlertAsker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07EBE3F29C3E24FCB4257ECE /* SSHAlertAsker.swift */; };
+		32DF9698E1C9E4016B483D2F /* SessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB85EDEF93DC1BAF9A1F79BE /* SessionViewController.swift */; };
+		4874780A1849784820F6E10B /* TerminalTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858A7E324F4BBB41F2C0AC6A /* TerminalTextInput.swift */; };
+		68BF31E55BD2352FC8461EE7 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61040DE2896FA648A8780D74 /* TerminalView.swift */; };
+		388C5E44C130DC2C9F5B5933 /* TeraCore in Frameworks */ = {isa = PBXBuildFile; productRef = 514E7B12CA52EEFA77A5B5CA /* TeraCore */; };
+		3AC3ABB8FC11D02A14FBB291 /* CSSH2 in Frameworks */ = {isa = PBXBuildFile; productRef = E54CA6D7DE63A1A04B773014 /* CSSH2 */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		F72DD3E98BEAB6BADE3C1CFA /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDelegate.swift"; sourceTree = "<group>"; };
+		F60DC934596D854B18968100 /* Connection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Connection.swift"; sourceTree = "<group>"; };
+		02BDFA811083249A70CE2C29 /* HostListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostListViewController.swift"; sourceTree = "<group>"; };
+		D80C70C9C1AF7450DF7A8C03 /* Hosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hosts.swift"; sourceTree = "<group>"; };
+		6E0B1286248E4386DB6AC6F6 /* KeyBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "KeyBar.swift"; sourceTree = "<group>"; };
+		3BAF4730A69E7676BCA9D6EF /* LinkViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LinkViewController.swift"; sourceTree = "<group>"; };
+		5BBD996D5518A34AE8A5512E /* MacroRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacroRunner.swift"; sourceTree = "<group>"; };
+		1D0F318A05C19516286C173D /* SSH2Connection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SSH2Connection.swift"; sourceTree = "<group>"; };
+		07EBE3F29C3E24FCB4257ECE /* SSHAlertAsker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SSHAlertAsker.swift"; sourceTree = "<group>"; };
+		CB85EDEF93DC1BAF9A1F79BE /* SessionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionViewController.swift"; sourceTree = "<group>"; };
+		858A7E324F4BBB41F2C0AC6A /* TerminalTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalTextInput.swift"; sourceTree = "<group>"; };
+		61040DE2896FA648A8780D74 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalView.swift"; sourceTree = "<group>"; };
+		D2A57DC1D883FD21FB995169 /* TeraSP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TeraSP.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A46A1BCE0B67C45BEC8F435B /* TeraSP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TeraSP; path = .; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8F51EF3B9040A527832BEBBA = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				388C5E44C130DC2C9F5B5933,
+				3AC3ABB8FC11D02A14FBB291,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		FAD58DE7366495DB4650CFEF = {
+			isa = PBXGroup;
+			children = (
+				A46A1BCE0B67C45BEC8F435B,
+				107135D82C0898ACC5295C33,
+				36DD8FEC2A722EA27EAAF5D5,
+				3936A56E033FE156B0D38F79,
+			);
+			sourceTree = "<group>";
+		};
+		107135D82C0898ACC5295C33 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F72DD3E98BEAB6BADE3C1CFA,
+				F60DC934596D854B18968100,
+				02BDFA811083249A70CE2C29,
+				D80C70C9C1AF7450DF7A8C03,
+				6E0B1286248E4386DB6AC6F6,
+				3BAF4730A69E7676BCA9D6EF,
+				5BBD996D5518A34AE8A5512E,
+				1D0F318A05C19516286C173D,
+				07EBE3F29C3E24FCB4257ECE,
+				CB85EDEF93DC1BAF9A1F79BE,
+				858A7E324F4BBB41F2C0AC6A,
+				61040DE2896FA648A8780D74,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		36DD8FEC2A722EA27EAAF5D5 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		3936A56E033FE156B0D38F79 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D2A57DC1D883FD21FB995169,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		058DE92451763E137316DF3A /* TeraSP */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD5B959833E219C36151D647;
+			buildPhases = (
+				25D902C24283AB8CFBAC54DF,
+				8F51EF3B9040A527832BEBBA,
+				EECD67B7D03BAB4A6D76100B,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TeraSP;
+			packageProductDependencies = (
+				514E7B12CA52EEFA77A5B5CA,
+				E54CA6D7DE63A1A04B773014,
+			);
+			productName = TeraSP;
+			productReference = D2A57DC1D883FD21FB995169;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4DC844ABCCFC0D132D087C1C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1310;
+				LastUpgradeCheck = 1310;
+			};
+			buildConfigurationList = 2CA666E9AB7FD185F98B8152;
+			compatibilityVersion = "Xcode 13.0";
+			developmentRegion = ja;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				ja,
+				en,
+				Base,
+			);
+			mainGroup = FAD58DE7366495DB4650CFEF;
+			productRefGroup = 3936A56E033FE156B0D38F79;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				058DE92451763E137316DF3A,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EECD67B7D03BAB4A6D76100B = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		25D902C24283AB8CFBAC54DF = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				34E5399898368E6C1666A1AF,
+				55ADE10D936C1062E76F04A2,
+				963C7940ABB0EE041B32E646,
+				CA5E38726FD78CEF28A6073C,
+				9A3B55004E9A2DF77FBE02C8,
+				E2F76555B8DC98B0C12FDBEC,
+				E2007F2CAF4026A19977C6DC,
+				D0F4B496CE3F687F9C9D3FB9,
+				0DFF82A2F64D0616744596DE,
+				32DF9698E1C9E4016B483D2F,
+				4874780A1849784820F6E10B,
+				68BF31E55BD2352FC8461EE7,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		EC329CBA9EDA0E990ADA4552 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_BITCODE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		35F8F5364DB985DA51E7BF0A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tera Term SP";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "同じネットワークの機器 (サーバー・ルーター・Tera Term Mac など) につなぐために使います";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = net.satoru.terasp;
+				PRODUCT_NAME = TeraSP;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		473B54CD36B1F927492FAABC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_BITCODE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				ONLY_ACTIVE_ARCH = NO;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		1D035EC01667947DFEC7FE1D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tera Term SP";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "同じネットワークの機器 (サーバー・ルーター・Tera Term Mac など) につなぐために使います";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = net.satoru.terasp;
+				PRODUCT_NAME = TeraSP;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2CA666E9AB7FD185F98B8152 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EC329CBA9EDA0E990ADA4552,
+				473B54CD36B1F927492FAABC,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DD5B959833E219C36151D647 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				35F8F5364DB985DA51E7BF0A,
+				1D035EC01667947DFEC7FE1D,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		514E7B12CA52EEFA77A5B5CA /* TeraCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeraCore;
+		};
+		E54CA6D7DE63A1A04B773014 /* CSSH2 */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CSSH2;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4DC844ABCCFC0D132D087C1C;
+}

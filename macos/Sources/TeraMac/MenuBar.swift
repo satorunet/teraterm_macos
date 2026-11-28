@@ -42,6 +42,7 @@ enum MenuBar {
         ] + AppUpdater.shared.menuItems() + [
             .separator(),
             item(Lang.m("MENU_APP_TTMENU_EDIT", "TeraTerm Menu のリスト編集…"), #selector(AppDelegate.showMenuEditor(_:))),
+            item(Lang.m("MENU_APP_LINK", "iPhone / iPad と連携…"), #selector(AppDelegate.showLink(_:))),
             .separator(),
             SecureInput.shared.menuItem(),
             .separator(),

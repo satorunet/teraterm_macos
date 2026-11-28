@@ -324,6 +324,7 @@ private func ucrtFormatDouble(_ spec: [UInt8], _ stars: [Int32], _ v: Double) ->
 
 // MARK: exec で起動したものを終わるまで持っておく
 
+#if os(macOS)
 private final class ExecKeeper {
     private let lock = NSLock()
     private var running: [ObjectIdentifier: Process] = [:]
@@ -335,6 +336,7 @@ private final class ExecKeeper {
     }
 }
 private let execKeeper = ExecKeeper()
+#endif
 
 // MARK: 環境変数 (Windows と同じく名前の大文字小文字は区別しない)
 
@@ -1084,6 +1086,11 @@ extension TTLInterpreter {
         if err == 0 && (cmd.isEmpty || getFirstChar() != 0) { err = E.syntax }
         if err != 0 { return err }
 
+        #if !os(macOS)
+        // iPhone / iPad ではほかのプログラムを起動できない (CreateProcess が失敗したのと同じ)
+        setResult(-1)
+        return err
+        #else
         // コマンド行は Mac らしく /bin/sh -c で動かす。
         // 作業フォルダの既定は (CreateProcess に NULL を渡すのと同じく) マクロを始めたときのフォルダ。
         // setdir / changedir では変わらない。4 番目の引数の相対パスも同じフォルダ基準
@@ -1128,6 +1135,7 @@ extension TTLInterpreter {
             setResult(notStarted() ? -1 : 0)
         }
         return err
+        #endif
     }
 
     func cmdSetExitCode() -> Int {

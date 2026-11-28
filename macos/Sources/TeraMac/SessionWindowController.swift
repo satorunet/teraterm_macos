@@ -496,6 +496,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
         c.onData = { [weak self] b in self?.received(b) }
         c.onClose = { [weak self, weak c] msg in
             guard let self = self, c === self.conn else { return }
+            self.window?.userActivity?.invalidate(); self.window?.userActivity = nil
             let wasConnecting = self.connecting
             // ssh 自身が失敗して終わった (認証失敗など): 何か出力があって「接続中」でなくなっていても、接続できなかった扱いで理由を出す
             let sshFailed = (c as? PTYConnection)?.sshFailed == true
@@ -524,6 +525,7 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
             guard let self = self, c === self.conn, self.connecting else { return }
             self.connecting = false
             self.connected = true
+            self.updateHandoff()
             self.transfer?.isReady = true
             self.connectedAt = Date()
             self.teraLog?.connectedTime = self.connectedAt
@@ -579,6 +581,17 @@ final class SessionWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var isConnected: Bool { connected }
+
+    /// Handoff: この接続を iPhone / iPad (Tera Term SP) で続けられるように知らせる (SSH / Telnet のとき)
+    func updateHandoff() {
+        guard let h = LinkServer.linkHost(spec, name: window?.title ?? "") else { return }
+        let a = NSUserActivity(activityType: TeraLink.activityType)
+        a.title = h.host
+        a.isEligibleForHandoff = true
+        a.userInfo = ["host": h.host, "port": h.port, "proto": h.proto, "user": h.user, "name": h.name]
+        window?.userActivity = a
+        a.becomeCurrent()
+    }
     /// 接続を始めたが、まだつながっていない (TCP の接続中・ssh の接続中・接続ダイアログを出している)
     var isConnecting: Bool { connecting || connectDialogOpen }
     /// マクロの connect '' で出した接続ダイアログ
