@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        refreshAppIcon()
         AsciiInput.install()
         SecureInput.shared.install()
         AppUpdater.shared.start()
@@ -311,6 +312,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() {
         NSApp.mainMenu = MenuBar.build(app: self)
     }
+    /// アップデートでアイコンが変わっても、Mac が古い絵を覚えていて Dock や Finder が前のままになることがある。
+    /// - 起動中の Dock: いつもアプリのアイコンを自分で渡す (覚えている古い絵を使わせない)
+    /// - Finder・Launchpad: 新しい版を初めて起動したときだけ、アプリが変わったことを Mac に知らせる
+    private func refreshAppIcon() {
+        let b = Bundle.main
+        guard b.bundleURL.pathExtension == "app" else { return }
+        if let url = b.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
+        let key = "TeraMacIconRefreshedVersion"
+        let ver = b.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        guard UserDefaults.standard.string(forKey: key) != ver else { return }
+        UserDefaults.standard.set(ver, forKey: key)
+        let path = b.bundlePath
+        DispatchQueue.global(qos: .utility).async {
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: path)
+            LSRegisterURL(b.bundleURL as CFURL, true)
+            DispatchQueue.main.async { NSWorkspace.shared.noteFileSystemChanged(path) }
+        }
+    }
+
     /// メニューを作り直す (端末の検索の入/切など)
     func rebuildMenu() { buildMenu() }
 
