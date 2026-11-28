@@ -25,18 +25,21 @@ defaults:
 
 jobs:
   testflight:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - name: Xcode
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          # App Store Connect は iOS 26 SDK (Xcode 26) 以降で作ったものだけ受け付ける。いちばん新しい Xcode (beta は除く) を使う
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)"
           xcodebuild -version
 
       - name: SSH の部品 (キャッシュ)
-        uses: actions/cache@v4
+        id: sshcache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ios/Vendor/ssh-device
@@ -46,6 +49,15 @@ jobs:
       - name: SSH の部品 (libssh2 + OpenSSL)
         run: |
           if [ ! -f ios/Vendor/ssh-device/lib/libssh2.a ]; then ./ios/scripts/build-ssh-libs.sh device; fi
+
+      - name: SSH の部品を取っておく (このあと失敗しても次に使う)
+        if: steps.sshcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ios/Vendor/ssh-device
+            ios/Sources/CSSH2/include/libssh2*.h
+          key: ssh-device-${{ hashFiles('ios/scripts/build-ssh-libs.sh') }}
 
       - name: API キー
         env:
