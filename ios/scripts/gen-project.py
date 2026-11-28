@@ -79,7 +79,7 @@ w("/* End PBXResourcesBuildPhase section */\n\n/* Begin PBXSourcesBuildPhase sec
 w(f'\t\t{uid("src")} = {{\n\t\t\tisa = PBXSourcesBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n' + "".join(f'\t\t\t\t{uid("bf",f)},\n' for f in swift) + '\t\t\t);\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};')
 w("/* End PBXSourcesBuildPhase section */\n\n/* Begin XCBuildConfiguration section */")
 common = {"ALWAYS_SEARCH_USER_PATHS":"NO","CLANG_ENABLE_MODULES":"YES","IPHONEOS_DEPLOYMENT_TARGET":"15.0","SDKROOT":"iphoneos","SWIFT_VERSION":"5.0","ENABLE_BITCODE":"NO"}
-tgt = {"PRODUCT_NAME":"TeraSP","PRODUCT_BUNDLE_IDENTIFIER":"net.satoru.terasp","GENERATE_INFOPLIST_FILE":"YES",
+tgt = {"PRODUCT_NAME":"TeraSP","PRODUCT_BUNDLE_IDENTIFIER":"net.satoru.teraterm","GENERATE_INFOPLIST_FILE":"YES",
        "INFOPLIST_KEY_CFBundleDisplayName":'"Tera Term SP"',"INFOPLIST_KEY_UILaunchScreen_Generation":"YES",
        "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents":"YES","INFOPLIST_KEY_UIRequiresFullScreen":"NO",
        "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone":'"UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"',

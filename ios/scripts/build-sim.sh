@@ -14,4 +14,4 @@ APP="build/dd/Build/Products/Debug-iphonesimulator/TeraSP.app"
 xcrun simctl boot "$DEV" 2>/dev/null || true
 open -a Simulator
 xcrun simctl install "$DEV" "$APP"
-xcrun simctl launch "$DEV" net.satoru.terasp
+xcrun simctl launch "$DEV" net.satoru.teraterm

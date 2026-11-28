@@ -76,7 +76,7 @@ enum SPHostStore {
 
 /// パスワードの置き場所 (キーチェーン。この端末だけ)
 enum Keychain {
-    private static let service = "net.satoru.terasp.password"
+    private static let service = "net.satoru.teraterm.password"
     static func get(_ account: String) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]

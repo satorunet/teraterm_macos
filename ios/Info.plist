@@ -12,7 +12,7 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleURLName</key><string>net.satoru.terasp.pair</string>
+			<key>CFBundleURLName</key><string>net.satoru.teraterm.pair</string>
 			<key>CFBundleURLSchemes</key><array><string>teraterm-sp</string></array>
 		</dict>
 	</array>
