@@ -19,6 +19,10 @@ concurrency:
   group: terasp-testflight
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash   # -eo pipefail (xcodebuild | xcbeautify の失敗も止める)
+
 jobs:
   testflight:
     runs-on: macos-15
@@ -62,7 +66,7 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/asc/key.p8" \
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
-            archive | xcbeautify --quiet || exit ${PIPESTATUS[0]}
+            archive | xcbeautify --quiet
 
       - name: TestFlight に上げる
         run: |
