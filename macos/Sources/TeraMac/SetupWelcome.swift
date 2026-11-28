@@ -286,8 +286,11 @@ final class FeatureSwitchRow: NSStackView {
     var onChange: ((Bool) -> Void)?
     var isOn: Bool {
         get { Self.state(of: control) }
-        set { Self.set(control, newValue) }
+        set { Self.set(control, newValue); updateDim() }
     }
+    /// 切のときは、その行のアイコンと説明をうす暗くする
+    private var dimmed: [NSView] = []
+    private func updateDim() { for v in dimmed { v.alphaValue = isOn ? 1 : 0.38 } }
 
     init(icon: NSImage?, title: String, detail: String) {
         if #available(macOS 10.15, *) { control = NSSwitch() } else { control = NSButton(checkboxWithTitle: "", target: nil, action: nil) }
@@ -314,13 +317,16 @@ final class FeatureSwitchRow: NSStackView {
         control.target = self
         control.action = #selector(toggled)
         control.setAccessibilityLabel(title)
+        // スイッチは左に (右の端だと、どの行のものか分かりにくいため)
+        addArrangedSubview(control)
         addArrangedSubview(iv)
         addArrangedSubview(texts)
-        addArrangedSubview(control)
+        dimmed = [iv, texts]
+        updateDim()
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc private func toggled() { onChange?(isOn) }
+    @objc private func toggled() { updateDim(); onChange?(isOn) }
 
     private static func state(of c: NSControl) -> Bool {
         if #available(macOS 10.15, *), let s = c as? NSSwitch { return s.state == .on }
