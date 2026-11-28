@@ -5,7 +5,9 @@ import PackageDescription
 import Foundation
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-let sshKind = ProcessInfo.processInfo.environment["TERASP_SSH_KIND"] ?? "sim"
+// SSH の部品: TERASP_SSH_KIND があればそれ、なければシミュレーター用があればそれ (手元)、なければ実機用 (GitHub の Mac)
+let sshKind = ProcessInfo.processInfo.environment["TERASP_SSH_KIND"]
+    ?? (FileManager.default.fileExists(atPath: root + "/Vendor/ssh-sim/lib/libssh2.a") ? "sim" : "device")
 
 let package = Package(
     name: "TeraSP",

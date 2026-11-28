@@ -19,6 +19,7 @@
 		32DF9698E1C9E4016B483D2F /* SessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB85EDEF93DC1BAF9A1F79BE /* SessionViewController.swift */; };
 		4874780A1849784820F6E10B /* TerminalTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858A7E324F4BBB41F2C0AC6A /* TerminalTextInput.swift */; };
 		68BF31E55BD2352FC8461EE7 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61040DE2896FA648A8780D74 /* TerminalView.swift */; };
+		9C9B6D811B88457195BF16BE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A9455E0A996A4BC2C8D9198 /* Assets.xcassets */; };
 		388C5E44C130DC2C9F5B5933 /* TeraCore in Frameworks */ = {isa = PBXBuildFile; productRef = 514E7B12CA52EEFA77A5B5CA /* TeraCore */; };
 		3AC3ABB8FC11D02A14FBB291 /* CSSH2 in Frameworks */ = {isa = PBXBuildFile; productRef = E54CA6D7DE63A1A04B773014 /* CSSH2 */; };
 /* End PBXBuildFile section */
@@ -36,6 +37,7 @@
 		CB85EDEF93DC1BAF9A1F79BE /* SessionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionViewController.swift"; sourceTree = "<group>"; };
 		858A7E324F4BBB41F2C0AC6A /* TerminalTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalTextInput.swift"; sourceTree = "<group>"; };
 		61040DE2896FA648A8780D74 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalView.swift"; sourceTree = "<group>"; };
+		3A9455E0A996A4BC2C8D9198 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 		D2A57DC1D883FD21FB995169 /* TeraSP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TeraSP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A46A1BCE0B67C45BEC8F435B /* TeraSP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TeraSP; path = .; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -85,6 +87,7 @@
 		36DD8FEC2A722EA27EAAF5D5 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				3A9455E0A996A4BC2C8D9198,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -154,6 +157,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9C9B6D811B88457195BF16BE,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -203,6 +207,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 99NFJH4MCR;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Tera Term SP";
@@ -242,6 +247,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 99NFJH4MCR;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Tera Term SP";

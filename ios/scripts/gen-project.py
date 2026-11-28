@@ -18,7 +18,7 @@ for p in products: w(f'\t\t{uid("bfp",p)} /* {p} in Frameworks */ = {{isa = PBXB
 w("/* End PBXBuildFile section */\n\n/* Begin PBXFileReference section */")
 for f in swift: w(f'\t\t{uid("fr",f)} /* {f} */ = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "{f}"; sourceTree = "<group>"; }};')
 for f in res:
-    t = "folder" if os.path.isdir(os.path.join(HERE,"Resources",f)) else "file"
+    t = "folder.assetcatalog" if f.endswith(".xcassets") else ("folder" if os.path.isdir(os.path.join(HERE,"Resources",f)) else "file")
     w(f'\t\t{uid("frr",f)} /* {f} */ = {{isa = PBXFileReference; lastKnownFileType = {t}; path = "{f}"; sourceTree = "<group>"; }};')
 w(f'\t\t{uid("app")} /* TeraSP.app */ = {{isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TeraSP.app; sourceTree = BUILT_PRODUCTS_DIR; }};')
 w(f'\t\t{uid("pkg")} /* TeraSP */ = {{isa = PBXFileReference; lastKnownFileType = folder; name = TeraSP; path = .; sourceTree = "<group>"; }};')
@@ -85,7 +85,9 @@ tgt = {"PRODUCT_NAME":"TeraSP","PRODUCT_BUNDLE_IDENTIFIER":"net.satoru.terasp","
        "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone":'"UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"',
        "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad":'"UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"',
        "INFOPLIST_KEY_NSLocalNetworkUsageDescription":'"同じネットワークの機器 (サーバー・ルーター・Tera Term Mac など) につなぐために使います"',
-       "TARGETED_DEVICE_FAMILY":'"1,2"',"MARKETING_VERSION":"0.1.0","CURRENT_PROJECT_VERSION":"1","CODE_SIGN_STYLE":"Automatic",
+       "TARGETED_DEVICE_FAMILY":'"1,2"',"MARKETING_VERSION":"0.1.0",
+       # ビルド番号: GitHub Actions では実行の番号 (TestFlight は毎回大きくする)
+       "CURRENT_PROJECT_VERSION":os.environ.get("TERASP_BUILD","1"),"CODE_SIGN_STYLE":"Automatic","DEVELOPMENT_TEAM":"99NFJH4MCR",
        "LD_RUNPATH_SEARCH_PATHS":'"$(inherited) @executable_path/Frameworks"',"ASSETCATALOG_COMPILER_APPICON_NAME":"AppIcon",
        # ファイル App に「Tera Term SP」フォルダを出す (keys・macros を入れられる)
        "INFOPLIST_KEY_UIFileSharingEnabled":"YES","INFOPLIST_FILE":"Info.plist","INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace":"YES"}
