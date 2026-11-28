@@ -785,7 +785,12 @@ extension TTLInterpreter {
         localtime_r(&t, &tmv)
         let f = msvcStrftimeToDarwin(format).map { CChar(bitPattern: $0) } + [0]
         var out = [CChar](repeating: 0, count: MaxStrLen)
+        // iOS 26 の SDK には strftime_l がない。アプリはロケールを変えないので strftime で同じ (C ロケール)
+        #if os(macOS)
         let n = strftime_l(&out, MaxStrLen, f, &tmv, nil)
+        #else
+        let n = strftime(&out, MaxStrLen, f, &tmv)
+        #endif
         if n > 0 {
             setStrVal(id, Array(out[0..<n]).map { UInt8(bitPattern: $0) })
             if setRes { setResult(0) }
