@@ -318,9 +318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshAppIcon() {
         let b = Bundle.main
         guard b.bundleURL.pathExtension == "app" else { return }
-        if let url = b.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
-            NSApp.applicationIconImage = icon
-        }
+        // 初期設定で選んだアイコン (新しいアイコン / クラシック)
+        if let icon = AppIconChoice.image(classic: AppIconChoice.isClassic) { NSApp.applicationIconImage = icon }
         let key = "TeraMacIconRefreshedVersion"
         let ver = b.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         guard UserDefaults.standard.string(forKey: key) != ver else { return }

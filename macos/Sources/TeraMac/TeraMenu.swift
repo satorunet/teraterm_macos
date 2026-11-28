@@ -353,6 +353,14 @@ final class TeraMenuController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// アプリのアイコンを変えたとき (初期設定の「アプリのアイコン」)、メニューバーのアイコンも合わせる
+    func refreshStatusIcon() {
+        guard let b = statusItem?.button else { return }
+        let img = (NSApp.applicationIconImage.copy() as? NSImage) ?? NSImage()
+        img.size = NSSize(width: 18, height: 18)
+        b.image = img
+    }
+
     func install() {
         // 設定でアイコンを消しているときは出さない (ホットキーは使える)
         guard Self.showsStatusItem else { updateHotkey(); return }

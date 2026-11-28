@@ -17,12 +17,50 @@ enum FindFeature {
     }
 }
 
+// MARK: - アプリのアイコン (新しいアイコン / クラシック)
+
+/// Dock・メニューバー・アプリの中の画面に使うアイコン。Finder のアイコンは変えない
+/// (アプリの中身を書き換えると署名がこわれるため)
+enum AppIconChoice {
+    static let defaultsKey = "TeraMacAppIcon"
+    static var isClassic: Bool {
+        get { UserDefaults.standard.string(forKey: defaultsKey) == "classic" }
+        set { UserDefaults.standard.set(newValue ? "classic" : "new", forKey: defaultsKey) }
+    }
+    static func image(classic: Bool) -> NSImage? {
+        let name = classic ? "AppIconClassic" : "AppIcon"
+        if let url = Bundle.main.url(forResource: name, withExtension: "icns") { return NSImage(contentsOf: url) }
+        // バンドルの外 (自己テスト) では Resources から
+        return NSImage(contentsOfFile: FileManager.default.currentDirectoryPath + "/Resources/\(name).icns")
+    }
+    /// いまの選択をアプリに当てる (Dock・メニューバーのアイコン)
+    static func apply() {
+        guard let icon = image(classic: isClassic) else { return }
+        NSApp.applicationIconImage = icon
+        TeraMenuController.shared.refreshStatusIcon()
+    }
+    /// カードの絵: 明るい台の上にアイコン
+    static func thumb(classic: Bool) -> NSImage {
+        let icon = image(classic: classic)
+        return NSImage(size: SetupThumbs.size, flipped: false) { r in
+            NSColor.labelColor.withAlphaComponent(0.06).setFill()
+            NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6).fill()
+            let side: CGFloat = 92
+            NSGraphicsContext.current?.imageInterpolation = classic ? .none : .high
+            icon?.draw(in: NSRect(x: (r.width - side) / 2, y: (r.height - side) / 2, width: side, height: side))
+            return true
+        }
+    }
+}
+
 // MARK: - 見本の絵 (アプリの中で描く。言語によらず、ダークモードにも合う)
 
 enum SetupThumbs {
     enum Kind { case startupMenu, startupTerminal, styleSidebar, styleTabs }
 
     static let size = NSSize(width: 176, height: 110)
+    /// カードに出す大きさ (絵は size で描いて縮める)
+    static let displaySize = NSSize(width: 136, height: 85)
 
     static func image(_ k: Kind) -> NSImage {
         NSImage(size: size, flipped: true) { r in
@@ -156,18 +194,22 @@ final class ThumbCard: NSView {
     init(image: NSImage, title: String, caption: String) {
         super.init(frame: .zero)
         let iv = NSImageView(image: image)
-        iv.imageScaling = .scaleNone
+        iv.imageScaling = .scaleProportionallyUpOrDown
         let t = NSTextField(labelWithString: title)
-        t.font = .boldSystemFont(ofSize: 13)
+        t.font = .boldSystemFont(ofSize: 12)
         t.alignment = .center
+        t.lineBreakMode = .byWordWrapping
+        t.maximumNumberOfLines = 2
+        t.preferredMaxLayoutWidth = SetupThumbs.displaySize.width + 16
         let c = NSTextField(wrappingLabelWithString: caption)
         c.font = .systemFont(ofSize: 11)
         c.textColor = .secondaryLabelColor
         c.alignment = .center
-        c.preferredMaxLayoutWidth = SetupThumbs.size.width
+        c.isHidden = caption.isEmpty
+        c.preferredMaxLayoutWidth = SetupThumbs.displaySize.width + 16
         let st = NSStackView(views: [iv, t, c])
         st.orientation = .vertical
-        st.spacing = 5
+        st.spacing = 3
         st.translatesAutoresizingMaskIntoConstraints = false
         addSubview(st)
         badge.image = Sym.image("checkmark.circle.fill", nil, size: 18) ?? Sym.glyphImage("✓", size: 16, weight: .bold)
@@ -176,13 +218,13 @@ final class ThumbCard: NSView {
         badge.translatesAutoresizingMaskIntoConstraints = false
         addSubview(badge)
         NSLayoutConstraint.activate([
-            st.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            st.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            st.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            st.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-            iv.widthAnchor.constraint(equalToConstant: SetupThumbs.size.width),
-            iv.heightAnchor.constraint(equalToConstant: SetupThumbs.size.height),
-            c.widthAnchor.constraint(equalToConstant: SetupThumbs.size.width),
+            st.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            st.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            st.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            st.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            iv.widthAnchor.constraint(equalToConstant: SetupThumbs.displaySize.width),
+            iv.heightAnchor.constraint(equalToConstant: SetupThumbs.displaySize.height),
+            c.widthAnchor.constraint(equalToConstant: SetupThumbs.displaySize.width + 16),
             badge.topAnchor.constraint(equalTo: topAnchor, constant: 4),
             badge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
         ])
@@ -221,7 +263,7 @@ final class ThumbChoice: NSStackView {
         super.init(frame: .zero)
         orientation = .horizontal
         alignment = .top
-        spacing = 14
+        spacing = 10
         for (i, it) in items.enumerated() {
             let c = ThumbCard(image: it.0, title: it.1, caption: it.2)
             c.onClick = { [weak self] in
@@ -263,12 +305,12 @@ final class FeatureSwitchRow: NSStackView {
         let d = NSTextField(wrappingLabelWithString: detail)
         d.font = .systemFont(ofSize: 11)
         d.textColor = .secondaryLabelColor
-        d.preferredMaxLayoutWidth = 330
+        d.preferredMaxLayoutWidth = 290
         let texts = NSStackView(views: [t, d])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 2
-        texts.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        texts.widthAnchor.constraint(equalToConstant: 300).isActive = true
         control.target = self
         control.action = #selector(toggled)
         control.setAccessibilityLabel(title)
@@ -313,19 +355,21 @@ final class FeatureSwitchRow: NSStackView {
 // MARK: - セットアップの中身 (設定のページと「ようこそ」で共通)
 
 final class SetupChoicesView: NSStackView {
-    enum Field { case startup, style, statusIcon, ttmado, background, find }
+    enum Field { case startup, style, appIcon, statusIcon, ttmado, background, find }
 
     let startup = ThumbChoice([
-        (SetupThumbs.image(.startupMenu), Lang.m("SETUP_STARTUP_MENU_SHORT", "接続先リスト"),
-         Lang.m("SETUP_STARTUP_MENU_DESC", "よく使う接続先の一覧 (TeraTerm Menu) から選んで開きます")),
-        (SetupThumbs.image(.startupTerminal), Lang.m("SETUP_STARTUP_TERMINAL_SHORT", "端末と新しい接続"),
-         Lang.m("SETUP_STARTUP_TERMINAL_DESC", "Windows 版と同じく、端末と「新しい接続」の画面を開きます")),
+        (SetupThumbs.image(.startupMenu), Lang.m("SETUP_STARTUP_MENU_SHORT", "接続先一覧 (TTMenu) から選ぶ"), ""),
+        (SetupThumbs.image(.startupTerminal), Lang.m("SETUP_STARTUP_TERMINAL_SHORT2", "Windows 版と同じく「新しい接続」画面が開く"), ""),
     ])
     let style = ThumbChoice([
         (SetupThumbs.image(.styleSidebar), Lang.m("SETUP_STYLE_SIDEBAR_SHORT", "一覧"),
          Lang.m("SETUP_STYLE_SIDEBAR_DESC", "左の一覧からページを選びます (Mac のシステム設定風。検索もできます)")),
         (SetupThumbs.image(.styleTabs), Lang.m("SETUP_STYLE_TABS_SHORT", "タブ"),
          Lang.m("SETUP_STYLE_TABS_DESC", "上の 2 段のタブでページを切り替えます (Windows 版と同じ)")),
+    ])
+    let appIcon = ThumbChoice([
+        (AppIconChoice.thumb(classic: false), Lang.m("SETUP_ICON_NEW", "新しいアイコン"), ""),
+        (AppIconChoice.thumb(classic: true), Lang.m("SETUP_ICON_CLASSIC", "クラシック"), ""),
     ])
     let statusIcon = FeatureSwitchRow(
         icon: { let i = (NSApp.applicationIconImage.copy() as? NSImage) ?? NSImage(); i.size = NSSize(width: 28, height: 28); return i }(),
@@ -347,7 +391,11 @@ final class SetupChoicesView: NSStackView {
     var onChange: ((Field) -> Void)?
 
     /// wide: 2 つの絵の組を横に並べる (ようこそ。縦に長くならないように)
-    init(wide: Bool = false) {
+    /// ようこそでは設定画面のデザインは出さず、上の段を「起動時の画面」と「アプリのアイコン」にする
+    private let includeStyle: Bool
+
+    init(wide: Bool = false, includeStyle: Bool = true) {
+        self.includeStyle = includeStyle
         super.init(frame: .zero)
         orientation = .vertical
         alignment = .leading
@@ -366,27 +414,44 @@ final class SetupChoicesView: NSStackView {
         }
         let g1 = group(Lang.m("SETUP_STARTUP_HEAD", "起動したときに開く画面"), startup)
         let g2 = group(Lang.m("SETUP_STYLE_HEAD", "設定画面のデザイン"), style)
-        if wide {
-            let row = NSStackView(views: [g1, g2])
-            row.orientation = .horizontal
-            row.alignment = .top
-            row.spacing = 28
-            addArrangedSubview(row)
-            setCustomSpacing(22, after: row)
-        } else {
-            addArrangedSubview(g1)
-            setCustomSpacing(18, after: g1)
-            addArrangedSubview(g2)
-            setCustomSpacing(18, after: g2)
-        }
-        addArrangedSubview(heading(Lang.m("SETUP_FEAT_HEAD", "使う機能")))
         let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_FEAT_NOTE", "Mac 版で足した機能です。使わないものは切っておけます。"))
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
-        addArrangedSubview(note)
-        for r in [statusIcon, ttmado, background, find] { addArrangedSubview(r) }
+        let feats = NSStackView(views: [heading(Lang.m("SETUP_FEAT_HEAD", "使う機能")), note, statusIcon, ttmado, background, find])
+        feats.orientation = .vertical
+        feats.alignment = .leading
+        feats.spacing = 8
+        let iconNote = NSTextField(wrappingLabelWithString: Lang.m("SETUP_ICON_NOTE", "Dock・メニューバー・アプリの画面のアイコンが変わります (Finder のアイコンはそのまま)"))
+        iconNote.font = .systemFont(ofSize: 11)
+        iconNote.textColor = .secondaryLabelColor
+        iconNote.preferredMaxLayoutWidth = 2 * (SetupThumbs.displaySize.width + 32) + 10
+        let g3 = group(Lang.m("SETUP_ICON_HEAD", "アプリのアイコン"), appIcon)
+        g3.addArrangedSubview(iconNote)
+        func hrow(_ v: [NSView]) -> NSStackView {
+            let r = NSStackView(views: v)
+            r.orientation = .horizontal
+            r.alignment = .top
+            r.spacing = 28
+            return r
+        }
+        if !includeStyle {
+            // ようこそ: 上に起動時の画面とアイコン、下に使う機能
+            let row = hrow([g1, g3])
+            addArrangedSubview(row)
+            setCustomSpacing(22, after: row)
+            addArrangedSubview(feats)
+        } else if wide {
+            let row = hrow([g1, g2])
+            addArrangedSubview(row)
+            setCustomSpacing(22, after: row)
+            addArrangedSubview(hrow([feats, g3]))
+        } else {
+            for g in [g1, g2, g3] as [NSView] { addArrangedSubview(g); setCustomSpacing(18, after: g) }
+            addArrangedSubview(feats)
+        }
         startup.onChange = { [weak self] _ in self?.onChange?(.startup) }
         style.onChange = { [weak self] _ in self?.onChange?(.style) }
+        appIcon.onChange = { [weak self] _ in self?.onChange?(.appIcon) }
         statusIcon.onChange = { [weak self] _ in self?.onChange?(.statusIcon) }
         ttmado.onChange = { [weak self] _ in self?.onChange?(.ttmado) }
         background.onChange = { [weak self] _ in self?.onChange?(.background) }
@@ -398,6 +463,7 @@ final class SetupChoicesView: NSStackView {
     func loadFromApp() {
         startup.selectedIndex = AppDelegate.startupOpensMenu ? 0 : 1
         style.selectedIndex = SetupSheet.classicTabs ? 1 : 0
+        appIcon.selectedIndex = AppIconChoice.isClassic ? 1 : 0
         statusIcon.isOn = TeraMenuController.showsStatusItem
         ttmado.isOn = TTMado.isEnabled
         background.isOn = ThemeRuntime.shared.macImage.enabled
@@ -407,7 +473,9 @@ final class SetupChoicesView: NSStackView {
     /// 選んだものをアプリに当てる (ようこそ用)
     func applyToApp() {
         AppDelegate.startupOpensMenu = startup.selectedIndex == 0
-        SetupSheet.classicTabs = style.selectedIndex == 1
+        if includeStyle { SetupSheet.classicTabs = style.selectedIndex == 1 }
+        AppIconChoice.isClassic = appIcon.selectedIndex == 1
+        AppIconChoice.apply()
         TeraMenuController.showsStatusItem = statusIcon.isOn
         TTMado.setEnabled(ttmado.isOn)
         var m = ThemeRuntime.shared.macImage
@@ -436,8 +504,10 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
     static var shouldShow: Bool { !UserDefaults.standard.bool(forKey: shownKey) }
 
     private static var current: WelcomeWindowController?
-    private let choices = SetupChoicesView(wide: true)
+    private let choices = SetupChoicesView(wide: true, includeStyle: false)
     private var then: (() -> Void)?
+    private weak var iconHeader: NSImageView?
+    private var finished = false
 
     static func show(then: @escaping () -> Void) {
         let c = WelcomeWindowController(then: then)
@@ -456,6 +526,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         w.isReleasedWhenClosed = false
 
         let icon = NSImageView(image: NSApp.applicationIconImage)
+        iconHeader = icon
         icon.widthAnchor.constraint(equalToConstant: 56).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 56).isActive = true
         let title = NSTextField(labelWithString: Lang.m("WELCOME_TITLE", "Tera Term Mac へようこそ"))
@@ -496,11 +567,20 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         ])
         w.contentView = container
         choices.loadFromApp()
+        // アイコンは選んだらすぐ Dock・メニューバーに出す (閉じるボタンで閉じたら元に戻す)
+        choices.onChange = { [weak self] f in
+            guard f == .appIcon, let self = self,
+                  let icon = AppIconChoice.image(classic: self.choices.appIcon.selectedIndex == 1) else { return }
+            NSApp.applicationIconImage = icon
+            TeraMenuController.shared.refreshStatusIcon()
+            self.iconHeader?.image = icon
+        }
         w.setContentSize(container.fittingSize)
     }
     required init?(coder: NSCoder) { fatalError() }
 
     @objc private func finish() {
+        finished = true
         choices.applyToApp()
         window?.close()
     }
@@ -508,6 +588,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
     /// 「はじめる」でも閉じるボタンでも: 出したことを覚えて、起動時の画面を開く
     func windowWillClose(_ notification: Notification) {
         UserDefaults.standard.set(true, forKey: Self.shownKey)
+        if !finished { AppIconChoice.apply() }
         let t = then
         then = nil
         Self.current = nil
@@ -517,8 +598,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
     /// 自己テスト用: ようこそを写す
     static func snapshot(to path: String) {
         // バンドルの外で写すときは、アイコンを Resources/AppIcon.icns から読む
-        if Bundle.main.bundleURL.pathExtension != "app",
-           let icon = NSImage(contentsOfFile: FileManager.default.currentDirectoryPath + "/Resources/AppIcon.icns") {
+        if Bundle.main.bundleURL.pathExtension != "app", let icon = AppIconChoice.image(classic: AppIconChoice.isClassic) {
             NSApp.applicationIconImage = icon
         }
         let c = WelcomeWindowController(then: {})

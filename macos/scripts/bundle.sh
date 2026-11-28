@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.8.1}"
+VERSION="${VERSION:-0.8.2}"
 BUILD_NUMBER="1"
 BUNDLE_ID="${BUNDLE_ID:-net.satoru.teramac}"
 NAME="Tera Term Mac"
@@ -74,6 +74,7 @@ SPB="$APP/Contents/Frameworks/Sparkle.framework"
 rm -rf "$SPB/Versions/B/Headers" "$SPB/Versions/B/PrivateHeaders" "$SPB/Versions/B/Modules" "$SPB/Versions/B/XPCServices" \
        "$SPB/Headers" "$SPB/PrivateHeaders" "$SPB/Modules" "$SPB/XPCServices"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/AppIconClassic.icns "$APP/Contents/Resources/AppIconClassic.icns"
 # ライセンス (アイコンの元の Tera Term の BSD ライセンス表示も含む)
 cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 # 設定の初期値 (TermSettings.initial) に使う本家同梱の TERATERM.INI

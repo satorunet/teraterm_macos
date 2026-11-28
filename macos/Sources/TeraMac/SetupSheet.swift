@@ -590,7 +590,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     // 値はほかのページの項目 (startupPopup・stylePopup・statusIconCheck・ttMadoCheck・bgImageCheck) が持ち、
     // ここのカードとスイッチはそれを絵で選べるようにしたもの (refresh で写し合う)
 
-    private let setupChoices = SetupChoicesView()
+    private let setupChoices = SetupChoicesView(wide: true)
 
     private func setupPage() -> NSView {
         custom(load: { [unowned self] in
@@ -599,6 +599,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             self.startupPopup.selectItem(at: AppDelegate.startupOpensMenu ? 0 : 1)
             self.stylePopup.selectItem(at: SetupSheet.classicTabs ? 1 : 0)
             self.setupChoices.find.isOn = FindFeature.isEnabled
+            self.setupChoices.appIcon.selectedIndex = AppIconChoice.isClassic ? 1 : 0
         }, store: {})
         statusIconCheck.target = self
         statusIconCheck.action = #selector(statusIconToggled)
@@ -616,6 +617,13 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
                 }
                 self.bgImageCheckToggled()
             case .find: self.changed(nil)
+            case .appIcon:
+                // その場で Dock・メニューバーのアイコンを変える (キャンセルで元に戻す。OK で保存)
+                if let icon = AppIconChoice.image(classic: c.appIcon.selectedIndex == 1) {
+                    NSApp.applicationIconImage = icon
+                    TeraMenuController.shared.refreshStatusIcon()
+                }
+                self.changed(nil)
             }
         }
         let note = NSTextField(wrappingLabelWithString: Lang.m("SETUP_SETUP_NOTE", "使いかたに合わせて選んでください。絵を押すと選べます。"))
@@ -948,6 +956,7 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         case .setup:
             return startupPopup.indexOfSelectedItem != 0 || stylePopup.indexOfSelectedItem != 0 || statusIconCheck.state != .on
                 || ttMadoCheck.state != .on || bgImageCheck.state == .on || !setupChoices.find.isOn
+                || setupChoices.appIcon.selectedIndex != 0
         default: break
         }
         guard let r = pageBinders[page], !r.isEmpty else { return false }
@@ -997,6 +1006,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
             if statusIconCheck.state != .on { statusIconCheck.state = .on; statusIconToggled() }
             ttMadoCheck.state = .on
             setupChoices.find.isOn = true
+            setupChoices.appIcon.selectedIndex = 0
+            if let icon = AppIconChoice.image(classic: false) { NSApp.applicationIconImage = icon; TeraMenuController.shared.refreshStatusIcon() }
             if bgImageCheck.state == .on { bgImageCheck.state = .off; bgImageCheckToggled() }
             refresh()
             return
@@ -2374,6 +2385,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
         AppDelegate.startupOpensMenu = startupPopup.indexOfSelectedItem != 1
         SetupSheet.classicTabs = stylePopup.indexOfSelectedItem == 1
         FindFeature.isEnabled = setupChoices.find.isOn
+        AppIconChoice.isClassic = setupChoices.appIcon.selectedIndex == 1
+        AppIconChoice.apply()
         s.optionAsMeta = s.metaKey.lowercased() != "off"
         // シリアルポート
         if portPopup.isEnabled, let p = portPopup.titleOfSelectedItem { serial.path = p }
@@ -2395,6 +2408,8 @@ final class SetupSheet: SheetDialog, NSTabViewDelegate, NSTextFieldDelegate {
     override func cancel() {
         revertPreview()
         if let o = statusIconOriginal, o != TeraMenuController.showsStatusItem { TeraMenuController.showsStatusItem = o }
+        // アプリのアイコン: 選びかけで見せていたものを、保存してある方に戻す
+        AppIconChoice.apply()
         // PSN_RESET: 開いているポートの RTS / DTR / フロー制御を元に戻す
         if let o = serialOriginal, let sc = session?.conn as? SerialConnection { sc.setRTSDTR(rts: o.rts, dtr: o.dtr, flow: o.flow) }
         serialOriginal = nil
