@@ -3,41 +3,62 @@ import TeraCore
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
-
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         SPPaths.prepare()
-        let w = UIWindow(frame: UIScreen.main.bounds)
+        return true
+    }
+
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let c = UISceneConfiguration(name: "Default", sessionRole: connectingSceneSession.role)
+        c.delegateClass = SceneDelegate.self
+        return c
+    }
+}
+
+/// 画面 (シーン)。新しい iOS ではシーンの作りが必須になるので、ウインドウはここで作る
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+    static weak var current: SceneDelegate?
+    private var nav: UINavigationController? { window?.rootViewController as? UINavigationController }
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
+        guard let ws = scene as? UIWindowScene else { return }
+        Self.current = self
+        let w = UIWindow(windowScene: ws)
         let nav = UINavigationController(rootViewController: HostListViewController())
         w.rootViewController = nav
         w.tintColor = UIColor(red: 0.95, green: 0.72, blue: 0.0, alpha: 1)   // Tera Term の黄色
         w.makeKeyAndVisible()
         window = w
+        // 起動のきっかけ (QR コードのリンク・Handoff)
+        if let u = options.urlContexts.first?.url { open(u) }
+        if let a = options.userActivities.first { continueActivity(a) }
         // 確認用: TERASP_OPEN="ssh user@host:22" ですぐつなぐ (シミュレーターの起動引数)
-        if let s = ProcessInfo.processInfo.environment["TERASP_OPEN"], var h = SPHost.parse(s) {
+        let env = ProcessInfo.processInfo.environment
+        if let s = env["TERASP_OPEN"], var h = SPHost.parse(s) {
             // TERASP_MACRO="hello.ttl": つないだあとに macros フォルダのマクロを動かす
-            h.macro = ProcessInfo.processInfo.environment["TERASP_MACRO"] ?? ""
+            h.macro = env["TERASP_MACRO"] ?? ""
             nav.pushViewController(SessionViewController(host: h), animated: false)
         }
         // 確認用: TERASP_LINK="Mac の名前,コード" で「Mac と連携」を開いてすぐつなぐ (リンクの確認を通さない)
-        if let s = ProcessInfo.processInfo.environment["TERASP_LINK"] {
+        if let s = env["TERASP_LINK"] {
             let p = s.split(separator: ",").map(String.init)
             if p.count == 2 {
                 LinkViewController.saveCode(p[1], for: p[0])
                 DispatchQueue.main.async { self.showLink(autoConnect: p[0]) }
             }
         }
-        return true
     }
 
-    private var nav: UINavigationController? { window?.rootViewController as? UINavigationController }
-
     /// Mac の QR コードを読んで開いた (teraterm-sp://pair?mac=...&code=...)
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        guard let p = TeraLink.parsePairURL(url) else { return false }
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        if let u = URLContexts.first?.url { open(u) }
+    }
+    private func open(_ url: URL) {
+        guard let p = TeraLink.parsePairURL(url) else { return }
         LinkViewController.saveCode(p.code, for: p.mac)
-        showLink(autoConnect: p.mac)
-        return true
+        DispatchQueue.main.async { self.showLink(autoConnect: p.mac) }
     }
 
     func showLink(autoConnect: String? = nil) {
@@ -49,17 +70,18 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     /// Handoff: Mac で開いている接続の続きを開く
-    func application(_ application: UIApplication, continue userActivity: NSUserActivity,
-                     restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) { continueActivity(userActivity) }
+    private func continueActivity(_ userActivity: NSUserActivity) {
         guard userActivity.activityType == TeraLink.activityType, let i = userActivity.userInfo,
-              let host = i["host"] as? String, let port = i["port"] as? Int else { return false }
+              let host = i["host"] as? String, let port = i["port"] as? Int else { return }
         var h = SPHost()
         h.host = host; h.port = port
         h.proto = SPHost.Proto(rawValue: i["proto"] as? String ?? "ssh") ?? .ssh
         h.user = i["user"] as? String ?? ""
         h.name = i["name"] as? String ?? ""
-        nav?.popToRootViewController(animated: false)
-        nav?.pushViewController(SessionViewController(host: h), animated: true)
-        return true
+        DispatchQueue.main.async {
+            self.nav?.popToRootViewController(animated: false)
+            self.nav?.pushViewController(SessionViewController(host: h), animated: true)
+        }
     }
 }

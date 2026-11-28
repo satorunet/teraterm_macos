@@ -351,12 +351,27 @@ final class TerminalView: UIView {
         }
     }
 
+    /// 長押しのメニュー (画面をコピー・貼り付け)。iOS 16 からは新しい仕組み (UIEditMenuInteraction)
+    private var editMenu: AnyObject?
     @objc private func longPressed(_ g: UILongPressGestureRecognizer) {
         guard g.state == .began else { return }
         becomeFirstResponder()
+        let p = g.location(in: self)
+        #if compiler(>=5.7)   // iOS 16 の SDK (Xcode 14) 以降で組み立てるとき
+        if #available(iOS 16.0, *) {
+            let m: UIEditMenuInteraction
+            if let e = editMenu as? UIEditMenuInteraction { m = e } else {
+                m = UIEditMenuInteraction(delegate: self)
+                addInteraction(m)
+                editMenu = m
+            }
+            m.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: p))
+            return
+        }
+        #endif
         let m = UIMenuController.shared
         m.menuItems = [UIMenuItem(title: "画面をコピー", action: #selector(copyScreen(_:)))]
-        m.showMenu(from: self, rect: CGRect(origin: g.location(in: self), size: CGSize(width: 1, height: 1)))
+        m.showMenu(from: self, rect: CGRect(origin: p, size: CGSize(width: 1, height: 1)))
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
@@ -384,3 +399,17 @@ enum Palette {
         return out
     }()
 }
+
+#if compiler(>=5.7)
+@available(iOS 16.0, *)
+extension TerminalView: UIEditMenuInteractionDelegate {
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
+                             suggestedActions: [UIMenuElement]) -> UIMenu? {
+        var items: [UIMenuElement] = [UIAction(title: "画面をコピー", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in self?.copyScreen(nil) }]
+        if UIPasteboard.general.hasStrings {
+            items.append(UIAction(title: "貼り付け", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in self?.paste(nil) })
+        }
+        return UIMenu(children: items)
+    }
+}
+#endif

@@ -16,5 +16,20 @@
 			<key>CFBundleURLSchemes</key><array><string>teraterm-sp</string></array>
 		</dict>
 	</array>
+	<!-- 画面はシーンで作る (SceneDelegate。新しい iOS では必須) -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key><false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key><string>Default</string>
+					<key>UISceneDelegateClassName</key><string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 </dict>
 </plist>

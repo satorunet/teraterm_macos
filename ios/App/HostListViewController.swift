@@ -15,7 +15,7 @@ final class HostListViewController: UITableViewController, UISearchBarDelegate {
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(systemItem: .add, primaryAction: UIAction { [weak self] _ in self?.edit(nil) }),
             UIBarButtonItem(title: "Mac と連携", image: UIImage(systemName: "laptopcomputer.and.iphone"),
-                            primaryAction: UIAction { _ in (UIApplication.shared.delegate as? AppDelegate)?.showLink() }),
+                            primaryAction: UIAction { _ in SceneDelegate.current?.showLink() }),
         ]
         navigationItem.leftBarButtonItem = editButtonItem
         quick.placeholder = "すぐつなぐ: ssh user@host:22 / telnet host"
