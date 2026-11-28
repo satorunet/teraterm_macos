@@ -5,12 +5,12 @@
     <link>https://github.com/teraterm-mac/teraterm-mac</link>
     <language>ja</language>
     <item>
-      <title>Tera Term Mac 0.8.1</title>
-      <pubDate>Sat, 28 Nov 2026 01:35:29 +0000</pubDate>
-      <sparkle:version>0.8.1</sparkle:version>
-      <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
+      <title>Tera Term Mac 0.8.2</title>
+      <pubDate>Sat, 28 Nov 2026 02:21:26 +0000</pubDate>
+      <sparkle:version>0.8.2</sparkle:version>
+      <sparkle:shortVersionString>0.8.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>10.14.4</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.8.1</sparkle:fullReleaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/teraterm-mac/teraterm-mac/releases/tag/v0.8.2</sparkle:fullReleaseNotesLink>
       <description><![CDATA[<style>
 body { font: 13px -apple-system, "Hiragino Sans", sans-serif; line-height: 1.5; margin: 8px 12px; color: #222; }
 @media (prefers-color-scheme: dark) { body { color: #ddd; background: transparent; } code { background: #333; } }
@@ -27,15 +27,20 @@ td.r, th.r { text-align: right; }
 td.c, th.c { text-align: center; }
 .note { color: #888; font-size: 11px; }
 </style>
-<p>アップデートしても、Dock などのアイコンが前のままになることがあったのを直しました。</p>
+<p>アプリのアイコンを、新しいアイコンと寺西さん作のクラシックアイコンから選べるようにしました。</p>
+<h3>アイコンを選べるように</h3>
 <ul>
-<li>起動したときに、Dock のアイコンをいつも新しいアイコンにするようにしました</li>
-<li>アップデート後に初めて起動したとき、Finder・Launchpad にもアイコンが変わったことを知らせます</li>
+<li>設定 ＞ 初期設定 の「アプリのアイコン」で選べます。選ぶとすぐ Dock・メニューバーのアイコンが変わります</li>
+<li>Finder のアイコンは変わりません (アプリの中身を書き換えると署名がこわれるため)</li>
 </ul>
-<p>かんたんマニュアルの「起動と終了、アップデート」に、初めて起動したときの初期設定の説明を足しました。</p>
-<p>それでも前のアイコンのままのときは、Dock のアイコンを右クリック ＞ オプション ＞ Dock から削除 してから起動し直すか、Mac を再起動してください。</p>
+<h3>初期設定</h3>
+<ul>
+<li>初めて起動したときの「ようこそ」で、起動したときに開く画面とアプリのアイコンを選べるようにしました (設定画面のデザインは 設定 ＞ 初期設定 で選べます)</li>
+<li>絵を小さくして、使う機能まで 1 画面に収まるようにしました</li>
+</ul>
+<p>ご意見・ご要望は、アプリの ヘルプ ＞ 要望・お知らせを送る… や X (<a href="https://x.com/satorunet">@satorunet</a>)、GitHub の <a href="https://github.com/teraterm-mac/teraterm-mac/issues">Issues</a> からお気軽にどうぞ。</p>
 <p class="foot">対応: macOS 10.14.4 以降 (Apple Silicon / Intel)。Developer ID 署名・公証済み。Tera Term の原作者 T. Teranishi (寺西 高) 氏の公認を受け、TeraTerm Project とは別に開発しています。</p>]]></description>
-      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.8.1/TeraTermMac-0.8.1.dmg" sparkle:edSignature="e9GMBrF9VSVqvfyY6kP+AmCf2txMVXwLPxbfJQgX4zJ9QdP7DLScMv/5vD833qxm/RGXhc81Urpv7lSciAcQAA==" length="12682848" type="application/octet-stream"/>
+      <enclosure url="https://github.com/teraterm-mac/teraterm-mac/releases/download/v0.8.2/TeraTermMac-0.8.2.dmg" sparkle:edSignature="AM2TOCbkQeIVRJA55wmsxd1FS/YwQMio3fpqgyJ+JU+AMYASrUMlWCWP602CgB9JgYtkrL5++lUTyXGd+DZ3AA==" length="12727511" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
